@@ -94,6 +94,10 @@ ends. Unknown option ids are skipped, so the format extends without a version
 bump: new per-session / per-participant attributes are just new TLVs, and old
 readers ignore what they do not understand.
 
+The tables above are the *overview*; exact widths, alignment, the option-id
+registry, and conformance rules are pinned down in
+[Binary encoding (normative reference)](#binary-encoding-normative-reference).
+
 ### Declaration order: declare-on-first-use
 
 The nesting in [Conceptual model](#conceptual-model) is *logical*, not a
@@ -394,6 +398,414 @@ with an explicit **Gap block** rather than silently dropping bytes:
 
 A consumer can then distinguish "no message here" from "a message we could not
 parse," and a re-derivation can target just the gaps.
+
+## Binary encoding (normative reference)
+
+This section is **normative**: a conformant reader/writer pair must agree on
+everything here. Keywords **MUST**, **SHOULD**, **MAY** are used in the usual
+sense. The narrative sections above are explanatory; where they disagree with
+this one, this one wins.
+
+### Primitives
+
+- **Integers** are fixed-width two's-complement. Byte order is fixed for the
+  whole file by the File Header (below); every multi-byte integer in the file
+  uses it. There is no per-block byte order.
+- **Strings** are UTF-8, **not** NUL-terminated. A string carried in a TLV
+  option occupies exactly the option's `len` bytes. A string in a fixed body
+  field is `len: u16` followed by that many bytes.
+- **Digests** are strings of the form `"<alg>:<hex>"`, e.g.
+  `"sha256:9f2c…"`. `sha256` MUST be supported; other algorithms MAY be used.
+- **Alignment / padding.** Every item is zero-padded so the next one begins on a
+  **4-byte boundary measured from the start of the block content** (the byte
+  after `length`). Concretely: each block's fixed body is a multiple of 4 bytes
+  (reserved fields ensure this); a Record's `payload` is zero-padded to a
+  multiple of 4 before its options begin; and each TLV option `value` is
+  zero-padded to a multiple of 4. Padding is counted in the block `length` only
+  — never in a TLV `len` or in `payload_len`, which always give the true value
+  size.
+- **Reserved** fields and reserved bits MUST be written as 0 and MUST be ignored
+  on read.
+
+### Block frame
+
+Every block, without exception:
+
+```
++--------+----------+-------------------------------+
+| type   | length   | content  (length bytes)       |
+| u16    | u32      | = body ++ options ++ padding  |
++--------+----------+-------------------------------+
+```
+
+`length` counts the bytes **after** the `length` field — i.e. body + options +
+padding. The next block begins at `offset_of_type + 6 + length`. A reader that
+does not recognise `type` MUST skip the block using `length`; this is how
+unknown block types stay forward-compatible, exactly as unknown option ids do.
+
+### File Header (`0x01`)
+
+MUST be the first block in the file. Body:
+
+| Field           | Type | Value                                                        |
+|-----------------|------|--------------------------------------------------------------|
+| `bom`           | u32  | byte-order magic `0x5A495046` (`"ZIPF"`), written in the file's order |
+| `version_major` | u16  | `1` for this document                                        |
+| `version_minor` | u16  | `0`                                                          |
+| `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns)|
+
+A reader detects endianness by reading `bom` both ways and seeing which yields
+`0x5A495046`. Tools may sniff a ZPF file by the leading `type=0x01` followed,
+six bytes in, by the BOM — `5A 49 50 46` (`"ZIPF"`, big-endian file) or
+`46 50 49 5A` (little-endian file). Suggested file extension `.zpf`. A **minor**
+version bump only adds blocks/options (old readers keep working); a **major**
+bump may break frame/body layout.
+
+Header options: `time_epoch` (i64, `tick_hz` ticks; default Unix epoch
+1970-01-01T00:00:00Z), `creator` (string), `comment`.
+
+### Descriptor blocks
+
+Each fixed body ends with a `_reserved: u16` (0) where needed to round it to a
+multiple of 4 bytes. The `Options` line under each table lists that block's TLV
+options (see the [id registry](#tlv-option-framing--id-registry)).
+
+**Source Descriptor (`0x02`)**
+
+| Field        | Type | Notes                       |
+|--------------|------|-----------------------------|
+| `source_id`  | u16  | id referenced by records    |
+| `_reserved`  | u16  | 0                           |
+
+Options: `uri`, `capture_digest`, `link_type` (u16, e.g. a pcap LINKTYPE),
+`comment`.
+
+**Derivation (`0x03`)** — derived files only
+
+| Field        | Type | Notes                       |
+|--------------|------|-----------------------------|
+| `input_id`   | u16  | id referenced by record `spans` |
+| `_reserved`  | u16  | 0                           |
+
+Options: `uri`, `digest`, `produced_by` (string), `produced_at` (i64,
+**wall-clock** Unix seconds — the artifact's build time, not packet time),
+`comment`.
+
+**Decoder Descriptor (`0x04`)** — derived files only
+
+| Field        | Type | Notes                       |
+|--------------|------|-----------------------------|
+| `decoder_id` | u16  | id referenced per-record    |
+| `_reserved`  | u16  | 0                           |
+
+Options: `name`, `version`, `params_digest`, `dec_boundary` (u8, see enums),
+`comment`.
+
+**Session Descriptor (`0x10`)**
+
+| Field        | Type | Notes                       |
+|--------------|------|-----------------------------|
+| `session_id` | u32  | id referenced by participants and records |
+
+Options: `proto` (string, lowercase, e.g. `tcp`/`udp`/`irc`/`http`/`tls`),
+`flow_key` (string), `comment`.
+
+**Participant Descriptor (`0x11`)**
+
+| Field            | Type | Notes                                   |
+|------------------|------|-----------------------------------------|
+| `session_id`     | u32  | session this participant belongs to     |
+| `participant_id` | u16  | id within that session (the `pid`)      |
+| `_reserved`      | u16  | 0                                       |
+
+Options: `endpoint` (string), `isn` (u32, TCP initial sequence number),
+`tcp_role` (u8, see enums), `identity` (string), `comment`.
+
+`tcp_role` records, **when the handshake was observed**, which side opened the
+connection: the participant that sent the initial SYN is the *initiator* (active
+open), its peer the *responder* (passive open). Omit it when the capture began
+mid-stream and the opener is unknown — absence means "unknown", not "responder".
+
+### Record (`0x20`)
+
+Body (fixed part), matching [Record block fields](#record-block-fields):
+
+| Field         | Type  | Notes                                              |
+|---------------|-------|----------------------------------------------------|
+| `session_id`  | u32   | refers to a Session Descriptor                     |
+| `sender_pid`  | u16   | participant id within that session                 |
+| `source_id`   | u16   | refers to a Source Descriptor                      |
+| `timestamp`   | i64   | packet time, in `tick_hz` ticks (see timestamp rule)|
+| `boundary`    | u8    | see enum                                           |
+| `_reserved`   | u8    | 0                                                  |
+| `flags`       | u16   | see bit table                                      |
+| `payload_len` | u32   | length of `payload`                                |
+| `payload`     | bytes | `payload_len` raw bytes (source of truth)          |
+
+`payload` is zero-padded to a multiple of 4 bytes; options then follow (TCP
+hints, provenance — see registry). `payload_len` gives the unpadded length and
+MAY be 0 (e.g. a pure-ACK record carrying only an `ack` hint).
+
+**Timestamp rule.** When a record's payload is reassembled from more than one
+packet, `timestamp` is the packet time of the **last** packet that contributed
+bytes to the reassembled payload, in capture order — i.e. the moment the unit
+became complete. This is the only choice consistent with the causal order: a
+peer's `ack` cannot precede arrival of the last segment it acknowledges, so a
+last-packet stamp never contradicts a seq/ack happens-before edge (a first-packet
+stamp could). Consequences:
+
+- A single-packet record uses that packet's time; a zero-length pure-ACK record
+  uses its ACK segment's time.
+- Under the favor-old overlap policy, a later retransmit that contributes no
+  *accepted* bytes does not move `timestamp`.
+- A **decoded** record's `timestamp` is the time of the last raw byte in its
+  span set — when the decoded message was complete.
+
+The first-packet time is recoverable from `capture_spans` provenance; a writer
+that wants it without full provenance MAY add an optional `ts_first` TLV. The
+canonical `timestamp` is always the completion (last-packet) time.
+
+### Gap (`0x21`)
+
+Derived files only.
+
+| Field            | Type | Notes                                              |
+|------------------|------|----------------------------------------------------|
+| `session_id`     | u32  | session the uncovered region belongs to            |
+| `participant_id` | u16  | participant (stream) the region is in              |
+| `_reserved`      | u16  | 0                                                  |
+| `off_start`      | u64  | ISN-relative stream offset, first byte = 1         |
+| `off_end`        | u64  | one past the last byte (half-open `[start, end)`)  |
+
+Offsets use the same convention as `seq_start`/`seq_end`. Options: `reason`
+(string, e.g. `undecodable` / `tcp-gap` / `truncated`), `decoder_id` (u16).
+
+### Name/Identity Resolution (`0x30`)
+
+Optional.
+
+| Field            | Type | Notes                                   |
+|------------------|------|-----------------------------------------|
+| `session_id`     | u32  | the session, or `0` for file-global     |
+| `participant_id` | u16  | participant being labelled              |
+| `_reserved`      | u16  | 0                                       |
+
+Options: `label` (string, the human name), `kind` (string, e.g. `nick` / `dns` /
+`tls-sni`), `comment`. Use this to attach labels *after the fact*; the inline
+`endpoint`/`identity` on a Participant Descriptor is preferred when known at
+declaration time.
+
+### Custom (`0xFF`)
+
+| Field       | Type  | Notes                                            |
+|-------------|-------|--------------------------------------------------|
+| `pen`       | u32   | IANA Private Enterprise Number (vendor namespace)|
+| `subtype`   | u16   | vendor-defined block subtype                     |
+| `_reserved` | u16   | 0                                                |
+| `payload`   | bytes | opaque, vendor-defined (runs to end of block)    |
+
+Readers without knowledge of `pen`/`subtype` skip via the frame `length`.
+
+### TLV option framing & id registry
+
+`id: u16, len: u16, value` (then pad to 4 bytes). `id 0x0000` is the optional
+end-of-options sentinel; `id 0x0001` is `comment` (UTF-8) on any block. Ids are
+grouped by the block they belong to but an id never changes meaning across
+blocks where it is reused (e.g. `decoder_id`).
+
+| Id       | Name             | Value type | Used in                  | Meaning                                                        |
+|----------|------------------|------------|--------------------------|----------------------------------------------------------------|
+| `0x0000` | end-of-options   | —          | any                      | optional sentinel marking the end of a block's options         |
+| `0x0001` | comment          | string     | any                      | free-text human note attached to the block                     |
+| `0x0010` | time_epoch       | i64        | File Header              | origin for record timestamps (Unix-epoch ticks); default 0     |
+| `0x0011` | creator          | string     | File Header              | tool + version that wrote the file                             |
+| `0x0020` | uri              | string     | Source, Derivation       | where the referenced capture/input file lives                  |
+| `0x0021` | capture_digest   | string     | Source                   | content hash of the originating capture                        |
+| `0x0022` | link_type        | u16        | Source                   | link-layer type of the capture (e.g. a pcap LINKTYPE)          |
+| `0x0031` | digest           | string     | Derivation               | content hash of the input file — the dependency edge           |
+| `0x0032` | produced_by      | string     | Derivation               | tool + version that ran the transform                          |
+| `0x0033` | produced_at      | i64        | Derivation               | wall-clock build time of this artifact (Unix seconds)          |
+| `0x0041` | name             | string     | Decoder                  | decoder identifier, e.g. `http/1.1`                            |
+| `0x0042` | version          | string     | Decoder                  | decoder version                                                |
+| `0x0043` | params_digest    | string     | Decoder                  | hash of the decoder config, so the decode is reproducible      |
+| `0x0044` | dec_boundary     | u8         | Decoder                  | boundary scheme the decoder imposes (see enums)                |
+| `0x0050` | proto            | string     | Session                  | session protocol, lowercase (`tcp`/`udp`/`irc`/`http`/`tls`)   |
+| `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
+| `0x0060` | endpoint         | string     | Participant              | participant address/identity, e.g. `ip:port` or a nick         |
+| `0x0061` | isn              | u32        | Participant              | TCP initial sequence number; `offset = abs_seq - isn`          |
+| `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
+| `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
+| `0x0070` | seq_start        | u64        | Record (TCP)             | sender stream offset of the first payload byte                 |
+| `0x0071` | seq_end          | u64        | Record (TCP)             | offset one past the last payload byte                          |
+| `0x0072` | ack              | u64        | Record (TCP)             | highest peer-stream offset the sender had received when sent   |
+| `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
+| `0x0080` | capture_spans    | span-list  | Record (raw provenance)  | byte ranges in the source capture these bytes came from        |
+| `0x0090` | decoder_id       | u16        | Record, Gap (decoded)    | which Decoder Descriptor produced this record/gap              |
+| `0x0091` | derive_spans     | span-list  | Record (decoded prov.)   | source stream ranges this decoded record was built from        |
+| `0x00A0` | reason           | string     | Gap                      | why the region is uncovered (`undecodable`/`tcp-gap`/…)        |
+| `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
+| `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
+
+A **span-list** value is `count` packed entries, each 24 bytes:
+`input_id: u16, session_id: u32, pid: u16, off_start: u64, off_end: u64`
+(`count = len / 24`). `capture_spans` instead references source-capture byte
+ranges; entries use the same 24-byte shape with `input_id` naming a Source.
+
+### Enums
+
+`boundary` (Record body, u8): `0` = byte run, `1` = protocol message.
+
+`dec_boundary` (Decoder option, u8): `0` = byte-run / raw fallback,
+`1` = protocol-message, `2` = record-layer (e.g. TLS records).
+
+`tcp_role` (Participant option, u8): `0` = unknown (handshake not observed),
+`1` = initiator (active open, sent the SYN), `2` = responder (passive open).
+
+`flags` (Record body, u16):
+
+| Bit    | Meaning                                                    |
+|--------|------------------------------------------------------------|
+| `0x0001` | TCP PSH seen in this run                                 |
+| `0x0002` | TCP FIN seen                                             |
+| `0x0004` | TCP RST seen                                             |
+| `0x0008` | TCP SYN (handshake record)                              |
+| `0x0010` | TCP URG seen                                             |
+| `0x0020` | a decoded view exists for these bytes in some derived file|
+| `0x0040` | retransmission/overlap was resolved inside this record   |
+| `0x0080` | datagram boundary (UDP: record is exactly one datagram)  |
+| `0xFF00` | reserved, MUST be 0                                      |
+
+### Identifiers & ordering
+
+- `session_id` and `source_id`/`decoder_id`/`input_id` are unique within a
+  file. `participant_id` is scoped to its session. Ids MUST NOT be reused.
+- On-disk block order is unconstrained beyond declare-on-first-use; in
+  particular a participant's records need **not** be stored in `seq_start`
+  order — the [merge algorithm](#merge-algorithm) sorts them. Within one source,
+  records SHOULD be emitted in capture order to keep the timestamp tie-breaker
+  meaningful.
+
+### Conformance
+
+A **raw** file MUST: start with one File Header; declare each Source, Session,
+and Participant before any block references it; contain **no** Derivation,
+Decoder, or Gap blocks. TCP participants SHOULD carry `isn`; TCP records SHOULD
+carry `seq_start`/`seq_end` (and `ack` where known). UDP records SHOULD set the
+datagram-boundary flag.
+
+A **derived** file MUST: contain ≥1 Derivation and every Decoder it references;
+give each record a `derive_spans` (or inherit the file's primary `decoder_id`);
+state uncovered regions as Gap blocks rather than dropping them.
+
+Readers MUST skip unknown block types (via frame `length`) and unknown option
+ids (via `len`), and MUST treat reserved fields/bits as ignored-on-read.
+
+### Truncation
+
+There is no global trailer — the format is forward-only and streamable. A reader
+that finds fewer than `length` bytes remaining for a block MUST treat the file
+as **truncated at that block** (a writer crash mid-flush) and discard the
+partial tail; all complete prior blocks remain valid. Detecting *intentional*
+completeness (vs. truncation) requires the optional index discussed in
+[Open questions](#open-questions).
+
+### JSONL ↔ binary field mapping
+
+The JSON-Lines projection (above) is lossless for the fields below; the
+`type` string selects the block. Names differ where JSONL favours brevity:
+
+| JSONL key            | Binary field / option        |
+|----------------------|------------------------------|
+| `format`             | `version_major.version_minor`|
+| `time_units`         | `tick_hz`                    |
+| `ts`                 | Record `timestamp`           |
+| `pid`                | Participant `participant_id` |
+| `proto`, `key`       | `proto`, `flow_key` options  |
+| `spans`              | `derive_spans` / `capture_spans` |
+| `payload` (base64)   | `payload` (raw bytes)        |
+
+`payload` uses **standard** base64 (RFC 4648 §4, with `=` padding) in JSONL.
+Options not in this table round-trip through a generic `options` array so the
+converter stays lossless.
+
+### Worked example: a minimal raw file
+
+A complete, conformant **raw** `.zpf` file (194 bytes, **little-endian**) holding
+one TCP session with one declared participant and one record — the client's
+`GET / HTTP/1.1\r\n\r\n` from the [JSONL example](#json-lines-projection)
+(`session_id 7`, `pid 0`, `ts 1000`, `seq [1,19)`, `ack 1`). Offsets are hex;
+each line is annotated.
+
+```text
+# ── File Header (0x01) ──────────────────────────────────────────────
+0000  01 00                    type   = 0x0001  File Header
+0002  10 00 00 00              length = 16
+0006  46 50 49 5A              bom    = 0x5A495046  ("ZIPF", LE on disk)
+000A  01 00                    version_major = 1
+000C  00 00                    version_minor = 0
+000E  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
+
+# ── Source Descriptor (0x02) ────────────────────────────────────────
+0016  02 00                    type   = 0x0002  Source Descriptor
+0018  14 00 00 00              length = 20
+001C  01 00                    source_id = 1
+001E  00 00                    _reserved
+0020  20 00 0A 00              option 0x0020 uri, len = 10
+0024  73 69 64 65 41 2E 70 63  "sideA.pc
+002C  61 70                     ap"
+002E  00 00                    value padding → 4-byte boundary
+
+# ── Session Descriptor (0x10) ───────────────────────────────────────
+0030  10 00                    type   = 0x0010  Session Descriptor
+0032  0C 00 00 00              length = 12
+0036  07 00 00 00              session_id = 7
+003A  50 00 03 00              option 0x0050 proto, len = 3
+003E  74 63 70                 "tcp"
+0041  00                       value padding
+
+# ── Participant Descriptor (0x11) ───────────────────────────────────
+0042  11 00                    type   = 0x0011  Participant Descriptor
+0044  24 00 00 00              length = 36
+0048  07 00 00 00              session_id = 7
+004C  00 00                    participant_id = 0
+004E  00 00                    _reserved
+0050  60 00 0E 00              option 0x0060 endpoint, len = 14
+0054  31 30 2E 30 2E 30 2E 31  "10.0.0.1
+005C  3A 35 31 30 30 30        :51000"
+0062  00 00                    value padding
+0064  61 00 04 00              option 0x0061 isn, len = 4
+0068  E8 03 00 00              isn = 1000
+
+# ── Record (0x20) ───────────────────────────────────────────────────
+006C  20 00                    type   = 0x0020  Record
+006E  50 00 00 00              length = 80
+0072  07 00 00 00              session_id = 7
+0076  00 00                    sender_pid = 0
+0078  01 00                    source_id  = 1
+007A  E8 03 00 00 00 00 00 00  timestamp  = 1000
+0082  01                       boundary   = 1  (protocol message)
+0083  00                       _reserved
+0084  01 00                    flags      = 0x0001  (PSH seen)
+0086  12 00 00 00              payload_len = 18
+008A  47 45 54 20 2F 20 48 54  "GET / HT
+0092  54 50 2F 31 2E 31 0D 0A  TP/1.1\r\n
+009A  0D 0A                    \r\n"
+009C  00 00                    payload padding → 4-byte boundary
+009E  70 00 08 00              option 0x0070 seq_start, len = 8
+00A2  01 00 00 00 00 00 00 00  seq_start = 1
+00AA  71 00 08 00              option 0x0071 seq_end, len = 8
+00AE  13 00 00 00 00 00 00 00  seq_end = 19
+00B6  72 00 08 00              option 0x0072 ack, len = 8
+00BA  01 00 00 00 00 00 00 00  ack = 1
+00C2                           (end of file, 194 bytes)
+```
+
+Things to read off it: the BOM resolves endianness; `length` jumps a reader from
+each block to the next (`0x0006 + 16 = 0x0016`, `… + 20 = 0x0030`, …); the
+`GET` payload is 18 bytes but is padded to 20 so the option stream resumes on a
+4-byte boundary; and the record references `session_id 7` / `sender_pid 0` /
+`source_id 1`, every one of which was declared by an earlier block — the
+declare-on-first-use contract holding in the byte stream.
 
 ## Prior art this borrows from
 
