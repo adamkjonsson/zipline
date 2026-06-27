@@ -518,13 +518,23 @@ Options: `proto` (string, lowercase, e.g. `tcp`/`udp`/`irc`/`http`/`tls`),
 | `participant_id` | u16  | id within that session (the `pid`)      |
 | `_reserved`      | u16  | 0                                       |
 
-Options: `endpoint` (string), `isn` (u32, TCP initial sequence number),
-`tcp_role` (u8, see enums), `identity` (string), `comment`.
+Options: `endpoint` (string, **may repeat** — see below), `isn` (u32, TCP
+initial sequence number), `tcp_role` (u8, see enums), `identity` (string),
+`comment`.
 
 `tcp_role` records, **when the handshake was observed**, which side opened the
 connection: the participant that sent the initial SYN is the *initiator* (active
 open), its peer the *responder* (passive open). Omit it when the capture began
 mid-stream and the opener is unknown — absence means "unknown", not "responder".
+
+**Tunnelled endpoints.** When the traffic was carried through one or more
+tunnels (VXLAN, GRE, IP-in-IP, a VPN, …), a participant has an address at each
+layer. The `endpoint` option therefore MAY appear more than once, and the order
+is significant: the **outermost** (carrier) address comes first, each subsequent
+`endpoint` is one layer further in, and the **last** is the innermost — the
+address at which the participant actually speaks the session protocol. A reader
+that wants "the" address uses the last `endpoint`; the earlier ones describe the
+delivery path. A single un-tunnelled participant has exactly one `endpoint`.
 
 ### Record (`0x20`)
 
@@ -613,6 +623,11 @@ end-of-options sentinel; `id 0x0001` is `comment` (UTF-8) on any block. Ids are
 grouped by the block they belong to but an id never changes meaning across
 blocks where it is reused (e.g. `decoder_id`).
 
+An option id appears **at most once** per block unless its registry entry marks
+it repeatable (e.g. `endpoint`). For a repeatable id, **the order of occurrences
+is significant** and readers MUST preserve it; for any other id a reader MAY use
+the first occurrence and ignore the rest.
+
 | Id       | Name             | Value type | Used in                  | Meaning                                                        |
 |----------|------------------|------------|--------------------------|----------------------------------------------------------------|
 | `0x0000` | end-of-options   | —          | any                      | optional sentinel marking the end of a block's options         |
@@ -631,7 +646,7 @@ blocks where it is reused (e.g. `decoder_id`).
 | `0x0044` | dec_boundary     | u8         | Decoder                  | boundary scheme the decoder imposes (see enums)                |
 | `0x0050` | proto            | string     | Session                  | session protocol, lowercase (`tcp`/`udp`/`irc`/`http`/`tls`)   |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
-| `0x0060` | endpoint         | string     | Participant              | participant address/identity, e.g. `ip:port` or a nick         |
+| `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick; **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | TCP initial sequence number; `offset = abs_seq - isn`          |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
 | `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
