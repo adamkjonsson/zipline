@@ -126,13 +126,13 @@ streaming contract.)
 
 | Field             | Type   | Notes                                                  |
 |-------------------|--------|--------------------------------------------------------|
-| `session_id`      | u32    | refers to a Session Descriptor                         |
+| `session_id`      | u64    | refers to a Session Descriptor                         |
 | `sender_pid`      | u16    | participant id within that session                     |
 | `source_id`       | u16    | which Source Descriptor these bytes came from          |
 | `timestamp`       | i64    | packet time, in the file's time units                  |
 | `boundary`        | u8     | `0` = byte run, `1` = protocol message                 |
-| `flags`           | u16    | PSH/FIN/RST seen, decoded-view-present, etc.            |
-| `payload_len`     | u32    | length of raw payload                                   |
+| `flags`           | u16    | PSH/FIN/RST seen, decoded-view-present, etc.           |
+| `payload_len`     | u32    | length of raw payload                                  |
 | `payload`         | bytes  | raw reassembled bytes (source of truth)                |
 | TLV options       | …      | TCP ordering hints, provenance (below)                 |
 
@@ -505,7 +505,7 @@ Options: `name`, `version`, `params_digest`, `dec_boundary` (u8, see enums),
 
 | Field        | Type | Notes                       |
 |--------------|------|-----------------------------|
-| `session_id` | u32  | id referenced by participants and records |
+| `session_id` | u64  | id referenced by participants and records |
 
 Options: `proto` (string, lowercase, e.g. `tcp`/`udp`/`irc`/`http`/`tls`),
 `flow_key` (string), `comment`.
@@ -514,7 +514,7 @@ Options: `proto` (string, lowercase, e.g. `tcp`/`udp`/`irc`/`http`/`tls`),
 
 | Field            | Type | Notes                                   |
 |------------------|------|-----------------------------------------|
-| `session_id`     | u32  | session this participant belongs to     |
+| `session_id`     | u64  | session this participant belongs to     |
 | `participant_id` | u16  | id within that session (the `pid`)      |
 | `_reserved`      | u16  | 0                                       |
 
@@ -542,7 +542,7 @@ Body (fixed part), matching [Record block fields](#record-block-fields):
 
 | Field         | Type  | Notes                                              |
 |---------------|-------|----------------------------------------------------|
-| `session_id`  | u32   | refers to a Session Descriptor                     |
+| `session_id`  | u64   | refers to a Session Descriptor                     |
 | `sender_pid`  | u16   | participant id within that session                 |
 | `source_id`   | u16   | refers to a Source Descriptor                      |
 | `timestamp`   | i64   | packet time, in `tick_hz` ticks (see timestamp rule)|
@@ -575,13 +575,21 @@ The first-packet time is recoverable from `capture_spans` provenance; a writer
 that wants it without full provenance MAY add an optional `ts_first` TLV. The
 canonical `timestamp` is always the completion (last-packet) time.
 
+`timestamp` is **signed** (i64, as are `ts_first`, `time_epoch`, and
+`produced_at`) for two reasons: the configurable `time_epoch` origin admits
+times *before* it (negative ticks), and inter-record deltas — central to the
+skew-tolerant ordering — are inherently signed, so the same width holds both an
+instant and a difference without underflow. The range given up versus u64 is
+immaterial: i64 ticks span centuries around the epoch at the resolutions
+`tick_hz` is meant for.
+
 ### Gap (`0x21`)
 
 Derived files only.
 
 | Field            | Type | Notes                                              |
 |------------------|------|----------------------------------------------------|
-| `session_id`     | u32  | session the uncovered region belongs to            |
+| `session_id`     | u64  | session the uncovered region belongs to            |
 | `participant_id` | u16  | participant (stream) the region is in              |
 | `_reserved`      | u16  | 0                                                  |
 | `off_start`      | u64  | ISN-relative stream offset, first byte = 1         |
@@ -596,7 +604,7 @@ Optional.
 
 | Field            | Type | Notes                                   |
 |------------------|------|-----------------------------------------|
-| `session_id`     | u32  | the session, or `0` for file-global     |
+| `session_id`     | u64  | the session, or `0` for file-global     |
 | `participant_id` | u16  | participant being labelled              |
 | `_reserved`      | u16  | 0                                       |
 
@@ -661,10 +669,11 @@ the first occurrence and ignore the rest.
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 
-A **span-list** value is `count` packed entries, each 24 bytes:
-`input_id: u16, session_id: u32, pid: u16, off_start: u64, off_end: u64`
-(`count = len / 24`). `capture_spans` instead references source-capture byte
-ranges; entries use the same 24-byte shape with `input_id` naming a Source.
+A **span-list** value is `count` packed entries, each 28 bytes:
+`input_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
+(`count = len / 28`). The two u16s lead so the u64 fields stay 4-byte aligned
+within the packed entry. `capture_spans` instead references source-capture byte
+ranges; entries use the same 28-byte shape with `input_id` naming a Source.
 
 ### Enums
 
@@ -694,6 +703,25 @@ ranges; entries use the same 24-byte shape with `input_id` naming a Source.
 
 - `session_id` and `source_id`/`decoder_id`/`input_id` are unique within a
   file. `participant_id` is scoped to its session. Ids MUST NOT be reused.
+- **Identifier widths.** `session_id` is u64; every other id
+  (`participant_id`, `source_id`, `decoder_id`, `input_id`) is u16. The width
+  mirrors the population each id counts. A `session_id` is file-global and names
+  an entity from an *unbounded, streaming* source: a flush-and-forget writer
+  mints a fresh id for every sessionized flow over a capture that may run
+  indefinitely, and because ids MUST NOT be reused the counter only ever grows.
+  A 16- or even 32-bit space could plausibly wrap on a long, busy capture; u64
+  removes that ceiling. The width is also deliberately large enough that a writer
+  MAY draw `session_id`s from a single *global*, monotonic sequence — a
+  process-wide or fleet-wide counter — rather than restarting per file. The
+  format only requires uniqueness *within* a file, but a globally-allocated id is
+  never reused across files either, so a cross-file reference (a decoded file's
+  `derive_spans`, a chained derivation) names exactly one session with no
+  ambiguity and no risk of collision when files are later merged or cross-linked.
+  u64 makes that practically inexhaustible. The other ids count small, *bounded*,
+  per-file sets —
+  participants within a session (two for TCP, a handful for a chat room),
+  capture sources, decoders, derivation inputs — none of which approach the u16
+  limit, so a wider field would only waste space.
 - On-disk block order is unconstrained beyond declare-on-first-use; in
   particular a participant's records need **not** be stored in `seq_start`
   order — the [merge algorithm](#merge-algorithm) sorts them. Within one source,
@@ -745,7 +773,7 @@ converter stays lossless.
 
 ### Worked example: a minimal raw file
 
-A complete, conformant **raw** `.zpf` file (194 bytes, **little-endian**) holding
+A complete, conformant **raw** `.zpf` file (206 bytes, **little-endian**) holding
 one TCP session with one declared participant and one record — the client's
 `GET / HTTP/1.1\r\n\r\n` from the [JSONL example](#json-lines-projection)
 (`session_id 7`, `pid 0`, `ts 1000`, `seq [1,19)`, `ack 1`). Offsets are hex;
@@ -772,47 +800,47 @@ each line is annotated.
 
 # ── Session Descriptor (0x10) ───────────────────────────────────────
 0030  10 00                    type   = 0x0010  Session Descriptor
-0032  0C 00 00 00              length = 12
-0036  07 00 00 00              session_id = 7
-003A  50 00 03 00              option 0x0050 proto, len = 3
-003E  74 63 70                 "tcp"
-0041  00                       value padding
+0032  10 00 00 00              length = 16
+0036  07 00 00 00 00 00 00 00  session_id = 7  (u64)
+003E  50 00 03 00              option 0x0050 proto, len = 3
+0042  74 63 70                 "tcp"
+0045  00                       value padding
 
 # ── Participant Descriptor (0x11) ───────────────────────────────────
-0042  11 00                    type   = 0x0011  Participant Descriptor
-0044  24 00 00 00              length = 36
-0048  07 00 00 00              session_id = 7
-004C  00 00                    participant_id = 0
-004E  00 00                    _reserved
-0050  60 00 0E 00              option 0x0060 endpoint, len = 14
-0054  31 30 2E 30 2E 30 2E 31  "10.0.0.1
-005C  3A 35 31 30 30 30        :51000"
-0062  00 00                    value padding
-0064  61 00 04 00              option 0x0061 isn, len = 4
-0068  E8 03 00 00              isn = 1000
+0046  11 00                    type   = 0x0011  Participant Descriptor
+0048  28 00 00 00              length = 40
+004C  07 00 00 00 00 00 00 00  session_id = 7  (u64)
+0054  00 00                    participant_id = 0
+0056  00 00                    _reserved
+0058  60 00 0E 00              option 0x0060 endpoint, len = 14
+005C  31 30 2E 30 2E 30 2E 31  "10.0.0.1
+0064  3A 35 31 30 30 30        :51000"
+006A  00 00                    value padding
+006C  61 00 04 00              option 0x0061 isn, len = 4
+0070  E8 03 00 00              isn = 1000
 
 # ── Record (0x20) ───────────────────────────────────────────────────
-006C  20 00                    type   = 0x0020  Record
-006E  50 00 00 00              length = 80
-0072  07 00 00 00              session_id = 7
-0076  00 00                    sender_pid = 0
-0078  01 00                    source_id  = 1
-007A  E8 03 00 00 00 00 00 00  timestamp  = 1000
-0082  01                       boundary   = 1  (protocol message)
-0083  00                       _reserved
-0084  01 00                    flags      = 0x0001  (PSH seen)
-0086  12 00 00 00              payload_len = 18
-008A  47 45 54 20 2F 20 48 54  "GET / HT
-0092  54 50 2F 31 2E 31 0D 0A  TP/1.1\r\n
-009A  0D 0A                    \r\n"
-009C  00 00                    payload padding → 4-byte boundary
-009E  70 00 08 00              option 0x0070 seq_start, len = 8
-00A2  01 00 00 00 00 00 00 00  seq_start = 1
-00AA  71 00 08 00              option 0x0071 seq_end, len = 8
-00AE  13 00 00 00 00 00 00 00  seq_end = 19
-00B6  72 00 08 00              option 0x0072 ack, len = 8
-00BA  01 00 00 00 00 00 00 00  ack = 1
-00C2                           (end of file, 194 bytes)
+0074  20 00                    type   = 0x0020  Record
+0076  54 00 00 00              length = 84
+007A  07 00 00 00 00 00 00 00  session_id = 7  (u64)
+0082  00 00                    sender_pid = 0
+0084  01 00                    source_id  = 1
+0086  E8 03 00 00 00 00 00 00  timestamp  = 1000
+008E  01                       boundary   = 1  (protocol message)
+008F  00                       _reserved
+0090  01 00                    flags      = 0x0001  (PSH seen)
+0092  12 00 00 00              payload_len = 18
+0096  47 45 54 20 2F 20 48 54  "GET / HT
+009E  54 50 2F 31 2E 31 0D 0A  TP/1.1\r\n
+00A6  0D 0A                    \r\n"
+00A8  00 00                    payload padding → 4-byte boundary
+00AA  70 00 08 00              option 0x0070 seq_start, len = 8
+00AE  01 00 00 00 00 00 00 00  seq_start = 1
+00B6  71 00 08 00              option 0x0071 seq_end, len = 8
+00BA  13 00 00 00 00 00 00 00  seq_end = 19
+00C2  72 00 08 00              option 0x0072 ack, len = 8
+00C6  01 00 00 00 00 00 00 00  ack = 1
+00CE                           (end of file, 206 bytes)
 ```
 
 Things to read off it: the BOM resolves endianness; `length` jumps a reader from
