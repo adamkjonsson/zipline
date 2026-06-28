@@ -46,7 +46,11 @@ File
 ```
 
 A **record** is one directed payload unit: it names the session, the **sender**
-participant, a packet-time timestamp, the payload bytes, and ordering hints. A
+participant, a packet-time timestamp, the payload bytes, and ordering hints. It
+names no recipient — a record is implicitly addressed to **every other
+participant in its session**: the single peer when `N = 2`, the whole room when
+`N > 2`, and no modelled party for a one-way `N = 1` feed. ("Directed" here means
+the record has a sender and a direction, not a specific addressee.) A
 record may be either a *raw byte run* (transport-truthful; boundaries fall where
 reassembly produced them) or a *decoder-imposed unit* (boundaries set by an app
 decoder). A `boundary` field says which — `0` for a raw byte run, non-zero for a
@@ -378,6 +382,34 @@ did not parse. A record's `decoder_id` is exactly what gives its non-zero
 `boundary` meaning. **Reproducibility contract:** same input `digest` + same
 decoder `version`/`params_digest` ⇒ identical output.
 
+### Typing a decoded record
+
+A decoder *frames* — it assembles raw bytes into one logical unit and marks its
+edges — but the assembled bytes are still just bytes. What they **are** (a PNG, a
+UTF-8 string, a 64-bit integer) is a separate, optional label the decoder may
+attach: a `content_type` on the record. Absent, the payload is opaque and a
+consumer falls back to the decoder `name`; the bytes always stay the source of
+truth — the label never replaces them.
+
+`content_type` is a `<scheme>:<value>` string with three schemes:
+
+- `mime:<media-type>` — an IANA media type: `mime:image/png`,
+  `mime:application/json`, `mime:text/plain;charset=utf-8`.
+- `prim:<primitive>` — a scalar from a small spec-defined vocabulary
+  (`prim:u64-be`, `prim:i32-le`, `prim:utf-32`, …), for values media types
+  describe poorly.
+- `dec:<token>` — a type **private to the record's decoder**, meaning whatever
+  that decoder documents. Its namespace is the decoder's `name` — the same
+  `decoder_id` → Decoder `name` resolution that already gives a non-zero
+  `boundary` its meaning — and is **name-scoped**, not versioned: an incompatible
+  type change means a new decoder `name`. Two decoders may reuse a token without
+  colliding, since each is read in its own namespace; a decoder wanting a
+  globally-unique type simply gives itself a globally-unique `name`.
+
+An unknown scheme is treated as opaque. This is the named, richer form of the
+`boundary` 2–255 space: the decoder says *what each unit is* without the format
+having to parse it.
+
 ### Coverage honesty: Gap blocks
 
 A decoder can fail partway, or hit a TCP gap (where it can only decode the
@@ -393,8 +425,9 @@ Putting the pieces together — a decoded file derived from the raw TCP capture 
 the [skewed two-file worked example](#worked-example-a-skewed-two-file-capture).
 The input `.zpf` is a
 `source` of `kind:"zpf-input"`, each record cites the `spans` it was built from
-(logical stream offsets, not transport offsets), and the undecodable tail is
-stated as an explicit `gap`:
+(logical stream offsets, not transport offsets) and a `content_type` saying what
+its bytes are (here the http decoder's own `dec:` types), and the undecodable
+tail is stated as an explicit `gap`:
 
 ```jsonl
 {"type":"file","format":"zipline-payload/1","time_units":"us",
@@ -410,10 +443,10 @@ stated as an explicit `gap`:
 
 {"type":"record","session_id":7,"sender_pid":0,"ts":1000,"boundary":1,"decoder_id":1,
  "spans":[{"source_id":1,"session_id":7,"pid":0,"off_start":0,"off_end":18}],
- "payload":"…decoded request…"}
+ "content_type":"dec:request","payload":"…decoded request…"}
 {"type":"record","session_id":7,"sender_pid":1,"ts":995,"boundary":1,"decoder_id":1,
  "spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],
- "payload":"…decoded response…"}
+ "content_type":"dec:response","payload":"…decoded response…"}
 {"type":"gap","session_id":7,"pid":1,"off_start":100,"off_end":139,
  "reason":"undecodable","decoder_id":1}
 ```
@@ -579,7 +612,7 @@ Body (fixed part):
 | Field         | Type  | Notes                                              |
 |---------------|-------|----------------------------------------------------|
 | `session_id`  | u64   | refers to a Session Descriptor                     |
-| `sender_pid`  | u16   | participant id within that session                 |
+| `sender_pid`  | u16   | sender participant; recipients are implicit (all other participants — see [Conceptual model](#conceptual-model)) |
 | `source_id`   | u16   | refers to a Source Descriptor — a `capture` for a raw record, a `zpf-input` for a decoded one |
 | `timestamp`   | i64   | packet time, in `tick_hz` ticks (see timestamp rule)|
 | `boundary`    | u8    | see enum (`0` raw, `≥1` decoder-imposed)            |
@@ -592,6 +625,8 @@ Body (fixed part):
 hints, provenance — see registry). `payload_len` gives the unpadded length and
 MAY be 0 (e.g. a pure-ACK record carrying only an `ack` hint). A record with
 `boundary ≥ 1` MUST carry a `decoder_id`; a record with `boundary = 0` MUST NOT.
+A decoded record MAY also carry a `content_type` labelling what its `payload` is
+(see [Typing a decoded record](#typing-a-decoded-record)).
 Because the frame `length` (u32) bounds the whole block, `payload_len` is in
 practice capped a little below 4 GiB (it must share the block with the body and
 options).
@@ -702,6 +737,7 @@ the first occurrence and ignore the rest.
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
 | `0x0080` | spans            | span-list  | Record, Gap              | source ranges these bytes were built from (see below)          |
 | `0x0090` | decoder_id       | u16        | Record, Gap (decoded)    | which Decoder Descriptor produced this record/gap              |
+| `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x00A0` | reason           | string     | Gap                      | why the region is uncovered (`undecodable`/`tcp-gap`/…)        |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
@@ -946,3 +982,6 @@ declare-on-first-use contract holding in the byte stream.
 - Do decoded records keep their own packet-time `ts` (copied from the spanning
   raw bytes), or only the File Header `produced_at`? Probably both: `ts` for
   ordering, `produced_at` for provenance.
+- The `prim:` [`content_type`](#typing-a-decoded-record) vocabulary is given by
+  example only; it needs a fixed normative list (which scalars, what
+  endianness/width naming, how text encodings are spelled).
