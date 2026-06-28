@@ -6,6 +6,16 @@
 > been reassembled into sessions, plus the metadata needed to consume them. The
 > format is tool-independent — any program can read or write it.
 
+**Terminology.** The **producer** (a *sessionizer*) writes a `.zpf`; a
+**consumer** (or *reader*) reads one. Two producer stages are named where the
+distinction matters. The **reassembler** turns each direction's raw TCP segment
+stream — out-of-order, retransmitted, overlapping — into one clean, in-order byte
+stream; the **writer** emits that result as blocks. Reassembly always completes
+*before* a record is written, so a `.zpf` holds the reassembled bytes, never raw
+retransmits (see [Caveats](#caveats)). A **decoder** is a separate, later stage
+that derives a decoded `.zpf` from a raw one (see
+[Layers](#layers-raw-and-decoded-live-in-separate-files)).
+
 ## Goals
 
 - Hold **more than one session** per file.
@@ -43,6 +53,12 @@ decoder). A `boundary` field says which — `0` for a raw byte run, non-zero for
 decoder-imposed unit — so a generic consumer can fall back to byte runs when no
 decoder ran. What a non-zero boundary *means* (HTTP message, TLS record, …) comes
 from the record's `decoder_id`, not from the number itself.
+
+Raw and decoded records rarely share boundaries, so decoding is modelled as a
+*file → file transform* (`raw.zpf → decoded.zpf`) rather than a layer inside a
+record (see [Layers](#layers-raw-and-decoded-live-in-separate-files)); the
+`boundary`/`decoder_id` pair still lets one file mix the two where a decoder
+falls back to raw on what it cannot parse.
 
 This single shape expresses all the target cases:
 
@@ -125,30 +141,35 @@ reads, exactly as the writer built them. (A future [index block](#open-questions
 could gather descriptor offsets for random access without changing this
 streaming contract.)
 
-### Record block fields
+### A first example
 
-| Field             | Type   | Notes                                                  |
-|-------------------|--------|--------------------------------------------------------|
-| `session_id`      | u64    | refers to a Session Descriptor                         |
-| `sender_pid`      | u16    | participant id within that session                     |
-| `source_id`       | u16    | which Source Descriptor these bytes came from          |
-| `timestamp`       | i64    | packet time, in the file's time units                  |
-| `boundary`        | u8     | `0` = raw byte run, `≥1` = decoder-imposed unit         |
-| `flags`           | u16    | PSH/FIN/RST/SYN seen, datagram boundary, etc.          |
-| `payload_len`     | u32    | length of raw payload                                  |
-| `payload`         | bytes  | raw reassembled bytes (source of truth)                |
-| TLV options       | …      | TCP ordering hints, provenance (below)                 |
+In the JSON-Lines face — one object per line, `type` discriminating the block,
+payloads base64 — a small multi-party capture shows the shape. A 3-party chat
+room is just additional descriptors, participants beyond two, and records with no
+TCP hints (ordering falls back to timestamps, since a single chat server saw all
+messages on one clock). Participants are declared as they appear: `dave` joins
+mid-stream and is declared only at that point.
 
-Per-record TLV options of interest:
+```jsonl
+{"type":"file","format":"zipline-payload/1","time_units":"us"}
+{"type":"source","source_id":1,"uri":"chat.pcap"}
 
-- **TCP ordering hints** (`seq_start`, `seq_end`, `ack`) — absolute wire sequence
-  numbers; see next section.
-- **Provenance** (`spans`) — the byte ranges of a `source_id` these bytes were
-  built from. For a *raw* record the source is a capture (`spans` give frame /
-  byte ranges, invaluable for debugging the sessionizer); for a *decoded* record
-  the source is a `.zpf` input (`spans` give stream offsets) and a `decoder_id`
-  names the decoder. One `spans` option serves both. See
-  [Layers](#layers-raw-and-decoded-live-in-separate-files).
+{"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
+{"type":"participant","session_id":8,"pid":0,"endpoint":"alice"}
+{"type":"participant","session_id":8,"pid":1,"endpoint":"bob"}
+{"type":"participant","session_id":8,"pid":2,"endpoint":"carol"}
+
+{"type":"record","session_id":8,"sender_pid":0,"source_id":1,"ts":2000,
+ "boundary":0,"payload":"aGksIGFsbCE="}
+{"type":"record","session_id":8,"sender_pid":2,"source_id":1,"ts":2100,
+ "boundary":0,"payload":"aGV5IGFsaWNl"}
+{"type":"record","session_id":8,"sender_pid":1,"source_id":1,"ts":2150,
+ "boundary":0,"payload":"bW9ybmluZw=="}
+
+{"type":"participant","session_id":8,"pid":3,"endpoint":"dave"}
+{"type":"record","session_id":8,"sender_pid":3,"source_id":1,"ts":2300,
+ "boundary":0,"payload":"YW0gSSBsYXRlPw=="}
+```
 
 ## Causal ordering from TCP seq/ack
 
@@ -216,7 +237,7 @@ OUTPUT: one interleaved, causally-consistent sequence
 2. Build edges between participants from acks:
      for each record R from participant P with ack value a:
          add edge  Q_record -> R   for every record Q_record from the
-         *peer* whose seq_end <= a   (serial-number comparison)
+         *peer* whose seq_end <= a
      (R's sender had already received those peer bytes, so they precede R.)
 
 3. Topologically sort the resulting DAG.
@@ -226,9 +247,8 @@ OUTPUT: one interleaved, causally-consistent sequence
    fall back to round-robin / source order.
 ```
 
-Step 2 is the payoff: it stitches the two separately-captured directions
-together on causality, using timestamps only as a tie-breaker rather than the
-primary key.
+Step 2 is the payoff — it stitches the two separately-captured directions
+together on causality rather than the skew-prone clock.
 
 ### Caveats
 
@@ -242,15 +262,15 @@ primary key.
 - SACK/retransmission/overlap are resolved by the *reassembler* before records
   are emitted; the format records the reassembled result and its favor-old
   overlap policy, not raw retransmits.
-- A **mid-stream** capture (handshake never seen) needs no special handling:
-  because the hints are absolute wire numbers, ordering works without the ISN.
-  The writer simply omits `isn`. (The writer is responsible for confirming the
-  SYN is genuinely absent rather than merely delayed before declaring a
-  participant ISN-less.)
+- A **mid-stream** capture (handshake never seen) needs no special handling —
+  the writer simply omits `isn` (it is responsible for confirming the SYN is
+  genuinely absent rather than merely delayed before declaring a participant
+  ISN-less).
 
-## JSON-Lines projection
+### Worked example: a skewed two-file capture
 
-One object per line. `type` discriminates. Payloads are base64.
+The canonical case for seq/ack ordering — the two directions captured to
+*separate files* with skewed clocks:
 
 ```jsonl
 {"type":"file","format":"zipline-payload/1","time_units":"us"}
@@ -276,61 +296,6 @@ the server record's `ts` (995) is *earlier* than the client request it answers
 (1000) — the two capture clocks are skewed. The server's `ack:1019` nonetheless
 places it **after** the client's `[1001,1019)` request via the causal edge, so
 the merge is correct despite the timestamp inversion.
-
-A 3-party chat room in the same file — sessions are just additional descriptors,
-participants beyond two, and records with no TCP hints (ordering falls back to
-timestamps, since a single chat server saw all messages on one clock):
-
-Participants are declared as they appear (see
-[declare-on-first-use](#declaration-order-declare-on-first-use)) — `dave` joins
-mid-stream and is declared only at that point:
-
-```jsonl
-{"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
-{"type":"participant","session_id":8,"pid":0,"endpoint":"alice"}
-{"type":"participant","session_id":8,"pid":1,"endpoint":"bob"}
-{"type":"participant","session_id":8,"pid":2,"endpoint":"carol"}
-
-{"type":"record","session_id":8,"sender_pid":0,"source_id":1,"ts":2000,
- "boundary":0,"payload":"aGksIGFsbCE="}
-{"type":"record","session_id":8,"sender_pid":2,"source_id":1,"ts":2100,
- "boundary":0,"payload":"aGV5IGFsaWNl"}
-{"type":"record","session_id":8,"sender_pid":1,"source_id":1,"ts":2150,
- "boundary":0,"payload":"bW9ybmluZw=="}
-
-{"type":"participant","session_id":8,"pid":3,"endpoint":"dave"}
-{"type":"record","session_id":8,"sender_pid":3,"source_id":1,"ts":2300,
- "boundary":0,"payload":"YW0gSSBsYXRlPw=="}
-```
-
-And a *decoded* file derived from the TCP capture above — the build provenance
-(`produced_by`/`produced_at`) sits on the `file` header, the input `.zpf` is a
-`source` of `kind:"zpf-input"`, and each record cites the `spans` of that source
-it was built from rather than carrying transport offsets of its own. Span offsets
-are **logical 0-based stream offsets** (the Nth byte of that participant's
-reassembled stream), independent of the absolute TCP numbers used for ordering:
-
-```jsonl
-{"type":"file","format":"zipline-payload/1","time_units":"us",
- "produced_by":"zpf-decode 0.4","produced_at":1719500000}
-{"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
- "digest":"sha256:9f2c…"}
-{"type":"decoder","decoder_id":1,"name":"http/1.1","version":"0.4",
- "params_digest":"sha256:00ab…"}
-
-{"type":"session","session_id":7,"proto":"http"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":"10.0.0.1:51000"}
-{"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80"}
-
-{"type":"record","session_id":7,"sender_pid":0,"ts":1000,"boundary":1,"decoder_id":1,
- "spans":[{"source_id":1,"session_id":7,"pid":0,"off_start":0,"off_end":18}],
- "payload":"…decoded request…"}
-{"type":"record","session_id":7,"sender_pid":1,"ts":995,"boundary":1,"decoder_id":1,
- "spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],
- "payload":"…decoded response…"}
-{"type":"gap","session_id":7,"pid":1,"off_start":100,"off_end":139,
- "reason":"undecodable","decoder_id":1}
-```
 
 ## Layers: raw and decoded live in separate files
 
@@ -382,16 +347,10 @@ survive the raw file being re-chunked or re-written.
 
 ### Source Descriptor (which input)
 
-A derived file declares each input `.zpf` as a Source of `kind = zpf-input`:
-
-| Field            | Meaning                                                     |
-|------------------|-------------------------------------------------------------|
-| `source_id`      | local id referenced by record `spans`                       |
-| `kind`           | `zpf-input` (the input is another `.zpf`)                   |
-| `uri`            | where the input file lives                                  |
-| `digest`         | content hash (e.g. SHA-256) of the input file               |
-
-The same block type describes a raw **capture** source (`kind = capture`, with a
+A derived file declares each input `.zpf` as a Source of `kind = zpf-input`,
+carrying a `source_id` (referenced by record `spans`), the `uri` where the input
+lives, and a `digest` (its content hash). The same block type describes a raw
+**capture** source (`kind = capture`, with a
 `link_type` instead of pointing at a `.zpf`); a raw file declares its captures
 this way, a derived file declares its `.zpf` inputs. One `source_id` space, one
 referencing mechanism.
@@ -407,14 +366,9 @@ file changes. It is `source → object` with a Makefile dependency, not a copy.
 
 ### Decoder Descriptor (which decoding)
 
-The decoder is a first-class, referenceable entity:
-
-| Field           | Meaning                                                      |
-|-----------------|-------------------------------------------------------------|
-| `decoder_id`    | local id referenced per-record                              |
-| `name`          | e.g. `http/1.1`                                             |
-| `version`       | decoder version                                             |
-| `params_digest` | hash of the decoder config, so the decode is reproducible   |
+The decoder is a first-class, referenceable entity: a `decoder_id` (referenced
+per-record), a `name` (e.g. `http/1.1`), a `version`, and a `params_digest` (hash
+of the decoder config, so the decode is reproducible).
 
 Every decoder-imposed record (`boundary ≥ 1`) carries an **explicit**
 `decoder_id` — there is no implicit "primary" default. The reference is
@@ -428,15 +382,41 @@ decoder `version`/`params_digest` ⇒ identical output.
 
 A decoder can fail partway, or hit a TCP gap (where it can only decode the
 gap-free runs on either side). The decoded file states what it did *not* cover
-with an explicit **Gap block** rather than silently dropping bytes:
+with an explicit **Gap block** rather than silently dropping bytes, so a consumer
+can distinguish "no message here" from "a message we could not parse," and a
+re-derivation can target just the gaps. (The `gap` line in the example below
+shows one.)
+
+### A decoded file, end to end
+
+Putting the pieces together — a decoded file derived from the raw TCP capture in
+the [skewed two-file worked example](#worked-example-a-skewed-two-file-capture).
+The input `.zpf` is a
+`source` of `kind:"zpf-input"`, each record cites the `spans` it was built from
+(logical stream offsets, not transport offsets), and the undecodable tail is
+stated as an explicit `gap`:
 
 ```jsonl
+{"type":"file","format":"zipline-payload/1","time_units":"us",
+ "produced_by":"zpf-decode 0.4","produced_at":1719500000}
+{"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
+ "digest":"sha256:9f2c…"}
+{"type":"decoder","decoder_id":1,"name":"http/1.1","version":"0.4",
+ "params_digest":"sha256:00ab…"}
+
+{"type":"session","session_id":7,"proto":"http"}
+{"type":"participant","session_id":7,"pid":0,"endpoint":"10.0.0.1:51000"}
+{"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80"}
+
+{"type":"record","session_id":7,"sender_pid":0,"ts":1000,"boundary":1,"decoder_id":1,
+ "spans":[{"source_id":1,"session_id":7,"pid":0,"off_start":0,"off_end":18}],
+ "payload":"…decoded request…"}
+{"type":"record","session_id":7,"sender_pid":1,"ts":995,"boundary":1,"decoder_id":1,
+ "spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],
+ "payload":"…decoded response…"}
 {"type":"gap","session_id":7,"pid":1,"off_start":100,"off_end":139,
  "reason":"undecodable","decoder_id":1}
 ```
-
-A consumer can then distinguish "no message here" from "a message we could not
-parse," and a re-derivation can target just the gaps.
 
 ## Binary encoding (normative reference)
 
@@ -594,7 +574,7 @@ delivery path. A single un-tunnelled participant has exactly one `endpoint`.
 
 ### Record (`0x20`)
 
-Body (fixed part), matching [Record block fields](#record-block-fields):
+Body (fixed part):
 
 | Field         | Type  | Notes                                              |
 |---------------|-------|----------------------------------------------------|
@@ -636,12 +616,10 @@ writer that wants it without full provenance MAY add an optional `ts_first` TLV.
 The canonical `timestamp` is always the completion (last-packet) time.
 
 `timestamp` is **signed** (i64, as are `ts_first`, `time_epoch`, and
-`produced_at`) for two reasons: the configurable `time_epoch` origin admits
-times *before* it (negative ticks), and inter-record deltas — central to the
-skew-tolerant ordering — are inherently signed, so the same width holds both an
-instant and a difference without underflow. The range given up versus u64 is
-immaterial: i64 ticks span centuries around the epoch at the resolutions
-`tick_hz` is meant for.
+`produced_at`): the configurable `time_epoch` origin admits times *before* it
+(negative ticks), and inter-record deltas — central to the skew-tolerant
+ordering — are inherently signed. The range given up versus u64 is immaterial at
+the resolutions `tick_hz` is meant for.
 
 ### Gap (`0x21`)
 
@@ -744,8 +722,8 @@ capture-provenance and decoded derivation-provenance.
 decoder). Any value `≥ 1` = a decoder-imposed unit; the value itself carries no
 standardised meaning — *which* boundary scheme it is comes from the record's
 `decoder_id` → Decoder `name`. Values `2`–`255` are reserved for future
-distinctions but are not defined here. A `boundary ≥ 1` record MUST carry a
-`decoder_id`; a `boundary = 0` record MUST NOT.
+distinctions but are not defined here. (A `boundary ≥ 1` record MUST carry a
+`decoder_id`, a `boundary = 0` record MUST NOT — see [Record](#record-0x20).)
 
 `kind` (Source body, u8): `0` = capture (a pcap/interface), `1` = zpf-input
 (another `.zpf` this file was derived from).
@@ -773,23 +751,18 @@ distinctions but are not defined here. A `boundary ≥ 1` record MUST carry a
   legal id value (no id is reserved as a sentinel — optional references like
   `decoder_id` signal "none" by *absence*, never by value 0).
 - **Identifier widths.** `session_id` is u64; every other id
-  (`participant_id`, `source_id`, `decoder_id`) is u16. The width
-  mirrors the population each id counts. A `session_id` is file-global and names
-  an entity from an *unbounded, streaming* source: a flush-and-forget writer
-  mints a fresh id for every sessionized flow over a capture that may run
-  indefinitely, and because ids MUST NOT be reused the counter only ever grows.
-  A 16- or even 32-bit space could plausibly wrap on a long, busy capture; u64
-  removes that ceiling. The width is also deliberately large enough that a writer
-  MAY draw `session_id`s from a single *global*, monotonic sequence — a
-  process-wide or fleet-wide counter — rather than restarting per file. The
-  format only requires uniqueness *within* a file, but a globally-allocated id is
-  never reused across files either, so a cross-file reference (a decoded file's
-  `spans` into a `zpf-input`, a chained derivation) names exactly one session
-  with no ambiguity and no risk of collision when files are later merged or
-  cross-linked. u64 makes that practically inexhaustible. The other ids count
-  small, *bounded*, per-file sets — participants within a session (two for TCP, a
-  handful for a chat room), sources (captures and `.zpf` inputs), decoders —
-  none of which approach the u16 limit, so a wider field would only waste space.
+  (`participant_id`, `source_id`, `decoder_id`) is u16 — each width mirrors the
+  population it counts. A `session_id` names an entity from an *unbounded,
+  streaming* source: a flush-and-forget writer mints a fresh, never-reused id for
+  every sessionized flow over a capture that may run indefinitely, so the counter
+  only grows and a 16- or 32-bit space could wrap. u64 removes that ceiling, and
+  is wide enough that a writer MAY draw `session_id`s from a single *global*
+  monotonic sequence (process- or fleet-wide) rather than restarting per file;
+  such an id is never reused across files either, so a cross-file reference (a
+  decoded file's `spans` into a `zpf-input`, a chained derivation) names exactly
+  one session with no risk of collision when files are merged or cross-linked. The
+  other ids count small, *bounded*, per-file sets — participants, sources,
+  decoders — none near the u16 limit, so a wider field would only waste space.
 - On-disk block order is unconstrained beyond declare-on-first-use; in
   particular a participant's records need **not** be stored in `seq_start`
   order — the [merge algorithm](#merge-algorithm) sorts them. Within one source,
@@ -868,7 +841,8 @@ passed through the JSONL face.
 
 A complete, conformant **raw** `.zpf` file (204 bytes, **little-endian**) holding
 one TCP session with one declared participant and one record — the client's
-`GET / HTTP/1.1\r\n\r\n` from the [JSONL example](#json-lines-projection)
+`GET / HTTP/1.1\r\n\r\n` from the
+[skewed two-file worked example](#worked-example-a-skewed-two-file-capture)
 (`session_id 7`, `pid 0`, `ts 1000`, absolute `seq [1001,1019)`, `ack 5001`).
 Offsets are hex; each line is annotated.
 
