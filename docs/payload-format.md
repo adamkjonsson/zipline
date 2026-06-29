@@ -643,8 +643,12 @@ stamp could). Consequences:
   uses its ACK segment's time.
 - Under the favor-old overlap policy, a later retransmit that contributes no
   *accepted* bytes does not move `timestamp`.
-- A **decoded** record's `timestamp` is the time of the last raw byte in its
-  span set — when the decoded message was complete.
+- A **decoded** record inherits its `timestamp` from the data it is built from:
+  the timestamp of the last source element in its span set — when the unit became
+  complete. That source is raw bytes in a one-step decode, or itself a decoded
+  record in a chained one (`raw → tls-records → http → …`), so the stamp
+  propagates down the chain and is always ultimately the packet time of the
+  contributing capture.
 
 The first-packet time is recoverable from capture-source `spans` provenance; a
 writer that wants it without full provenance MAY add an optional `ts_first` TLV.
@@ -994,6 +998,3 @@ declare-on-first-use contract holding in the byte stream.
 - Should a `zpf-input` Source reference a whole input file, or also pin a
   per-session digest, so a single changed session forces re-derivation of only
   that session?
-- Do decoded records keep their own packet-time `ts` (copied from the spanning
-  raw bytes), or only the File Header `produced_at`? Probably both: `ts` for
-  ordering, `produced_at` for provenance.
