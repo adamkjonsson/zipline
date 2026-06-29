@@ -395,9 +395,9 @@ truth — the label never replaces them.
 
 - `mime:<media-type>` — an IANA media type: `mime:image/png`,
   `mime:application/json`, `mime:text/plain;charset=utf-8`.
-- `prim:<primitive>` — a scalar from a small spec-defined vocabulary
-  (`prim:u64-be`, `prim:i32-le`, `prim:utf-32`, …), for values media types
-  describe poorly.
+- `prim:<primitive>` — a fixed-width integer or raw byte string from a small,
+  closed spec-defined vocabulary (`prim:u64-be`, `prim:i32-le`, `prim:bytes`;
+  full list in [Enums](#enums)), for values media types describe poorly.
 - `dec:<token>` — a type **private to the record's decoder**, meaning whatever
   that decoder documents. Its namespace is the decoder's `name` — the same
   `decoder_id` → Decoder `name` resolution that already gives a non-zero
@@ -780,6 +780,21 @@ distinctions but are not defined here. (A `boundary ≥ 1` record MUST carry a
 | `0x0080` | datagram boundary (UDP: record is exactly one datagram)  |
 | `0xFF20` | reserved, MUST be 0                                      |
 
+`content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
+tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
+uninterpreted byte string). `u`/`i` selects unsigned / signed two's-complement;
+the `-be`/`-le` suffix is byte order, omitted for 8-bit (a single byte has none).
+No other `prim:` token is legal — `mime:` and `dec:` carry everything else.
+
+| Width   | Unsigned                     | Signed                       |
+|---------|------------------------------|------------------------------|
+| 8-bit   | `prim:u8`                    | `prim:i8`                    |
+| 16-bit  | `prim:u16-be`, `prim:u16-le` | `prim:i16-be`, `prim:i16-le` |
+| 32-bit  | `prim:u32-be`, `prim:u32-le` | `prim:i32-be`, `prim:i32-le` |
+| 64-bit  | `prim:u64-be`, `prim:u64-le` | `prim:i64-be`, `prim:i64-le` |
+
+Plus `prim:bytes`.
+
 ### Identifiers & ordering
 
 - `session_id`, `source_id`, and `decoder_id` are unique within a file.
@@ -982,6 +997,3 @@ declare-on-first-use contract holding in the byte stream.
 - Do decoded records keep their own packet-time `ts` (copied from the spanning
   raw bytes), or only the File Header `produced_at`? Probably both: `ts` for
   ordering, `produced_at` for provenance.
-- The `prim:` [`content_type`](#typing-a-decoded-record) vocabulary is given by
-  example only; it needs a fixed normative list (which scalars, what
-  endianness/width naming, how text encodings are spelled).
