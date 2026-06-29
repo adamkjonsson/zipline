@@ -79,13 +79,26 @@ botch.
 
 Two reservations:
 
-- **The merge algorithm is presented but its cost is not.** Step 2 ("for each
-  record R… add an edge from every peer record with `seq_end ≤ ack`") is
-  naively O(N·M) per session and the topo sort adds more. For long-lived
-  high-volume sessions an implementer needs a hint that this is meant to run on
-  a sliding window (acks only advance), or they'll either write the quadratic
-  version or wonder whether the format is meant for bulk replay at all. A
-  sentence on intended scale / windowing would help.
+- **The merge algorithm's cost is unbounded — and it's *optional, consumer-side*
+  work that should be framed as such.** First, scope: TCP reassembly (resolving
+  out-of-order/retransmit/overlap *within* one direction) is firmly the
+  **producer's** job — a `.zpf` already holds clean, in-order, per-participant
+  byte streams, and a reader never reassembles. The merge algorithm is a
+  *different* operation: the cross-participant **interleaving** of
+  already-reassembled records into one causally-consistent timeline from seq/ack.
+  The spec deliberately places this on the **consumer** (on-disk order is
+  unconstrained — "a participant's records need not be stored in `seq_start`
+  order — the merge algorithm sorts them"), and it is **optional**: a reader that
+  only wants one participant's records in stream order never runs it (within a
+  participant `seq_start` is already a total order); only a reader that wants the
+  merged cross-participant view does. *When* a consumer opts in, though, the cost
+  is unstated: Step 2 ("for each record R… add an edge from every peer record
+  with `seq_end ≤ ack`") is naively O(N·M) per session, plus the topo sort. For
+  long-lived high-volume sessions an implementer needs a hint that this is meant
+  to run on a sliding window (acks only advance), or they'll write the quadratic
+  version. A sentence stating that the merge is optional consumer-side ordering
+  (reassembly is never the reader's job) and noting the intended scale / windowing
+  would help.
 - **Genuinely concurrent + known-skewed clocks** falls back to "round-robin /
   source order," which is explicitly non-deterministic across writers. That's an
   honest limitation, but it means two conformant consumers can produce different
