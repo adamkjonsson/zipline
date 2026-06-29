@@ -104,6 +104,7 @@ Block types:
 | 0x20 | Record                  | a directed payload unit (see fields below)      |
 | 0x21 | Gap                     | an uncovered/undecodable region (see Layers)    |
 | 0x30 | Name/Identity Resolution| optional: map participant ids → human labels    |
+| 0x41 | End                     | optional; if present, the last block — marks the file complete |
 | 0xFF | Custom                  | vendor/experimental, namespaced                 |
 
 A single **Source Descriptor** type covers both a raw capture and a derived input
@@ -141,9 +142,9 @@ participants to emit up front:
 - The same holds for **Decoder** and **Source** descriptors in derived files.
 
 A consumer therefore builds its session/participant tables incrementally as it
-reads, exactly as the writer built them. (A future [index block](#open-questions)
-could gather descriptor offsets for random access without changing this
-streaming contract.)
+reads, exactly as the writer built them. (A future
+[random-access index](#possible-future-extensions) could gather descriptor
+offsets without changing this streaming contract.)
 
 ### A first example
 
@@ -395,9 +396,9 @@ truth — the label never replaces them.
 
 - `mime:<media-type>` — an IANA media type: `mime:image/png`,
   `mime:application/json`, `mime:text/plain;charset=utf-8`.
-- `prim:<primitive>` — a scalar from a small spec-defined vocabulary
-  (`prim:u64-be`, `prim:i32-le`, `prim:utf-32`, …), for values media types
-  describe poorly.
+- `prim:<primitive>` — a fixed-width integer or raw byte string from a small,
+  closed spec-defined vocabulary (`prim:u64-be`, `prim:i32-le`, `prim:bytes`;
+  full list in [Enums](#enums)), for values media types describe poorly.
 - `dec:<token>` — a type **private to the record's decoder**, meaning whatever
   that decoder documents. Its namespace is the decoder's `name` — the same
   `decoder_id` → Decoder `name` resolution that already gives a non-zero
@@ -643,8 +644,12 @@ stamp could). Consequences:
   uses its ACK segment's time.
 - Under the favor-old overlap policy, a later retransmit that contributes no
   *accepted* bytes does not move `timestamp`.
-- A **decoded** record's `timestamp` is the time of the last raw byte in its
-  span set — when the decoded message was complete.
+- A **decoded** record inherits its `timestamp` from the data it is built from:
+  the timestamp of the last source element in its span set — when the unit became
+  complete. That source is raw bytes in a one-step decode, or itself a decoded
+  record in a chained one (`raw → tls-records → http → …`), so the stamp
+  propagates down the chain and is always ultimately the packet time of the
+  contributing capture.
 
 The first-packet time is recoverable from capture-source `spans` provenance; a
 writer that wants it without full provenance MAY add an optional `ts_first` TLV.
@@ -699,6 +704,28 @@ preferred when known at declaration time.
 | `payload`   | bytes | opaque, vendor-defined (runs to end of block)    |
 
 Readers without knowledge of `pen`/`subtype` skip via the frame `length`.
+
+### End of file (`0x41`)
+
+Optional. If present, it MUST be the **last block** in the file, and its presence
+means the writer finished cleanly — the file is **complete**, not truncated. A
+writer appends it on a clean close; a still-growing or crashed file simply omits
+it. Body:
+
+| Field       | Type | Value                                             |
+|-------------|------|---------------------------------------------------|
+| `end_magic` | u32  | `0x5A454E44` (`"ZEND"`), in the file's byte order  |
+
+Options: `comment`. Bytes after this block are invalid — a `.zpf` is never
+concatenated (see [Conformance](#conformance)).
+
+Completeness is detected by **forward reading alone**: reaching a valid End block
+as the final block means complete; reaching end-of-stream — or a short, partial
+block — without one means the file is still growing, truncated, or the writer
+crashed (see [Truncation and completeness](#truncation-and-completeness)). No
+seek-to-end is needed; the End block
+is found in the normal block walk. In the JSONL projection it is a final
+`{"type":"end"}` line.
 
 ### TLV option framing & id registry
 
@@ -780,6 +807,21 @@ distinctions but are not defined here. (A `boundary ≥ 1` record MUST carry a
 | `0x0080` | datagram boundary (UDP: record is exactly one datagram)  |
 | `0xFF20` | reserved, MUST be 0                                      |
 
+`content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
+tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
+uninterpreted byte string). `u`/`i` selects unsigned / signed two's-complement;
+the `-be`/`-le` suffix is byte order, omitted for 8-bit (a single byte has none).
+No other `prim:` token is legal — `mime:` and `dec:` carry everything else.
+
+| Width   | Unsigned                     | Signed                       |
+|---------|------------------------------|------------------------------|
+| 8-bit   | `prim:u8`                    | `prim:i8`                    |
+| 16-bit  | `prim:u16-be`, `prim:u16-le` | `prim:i16-be`, `prim:i16-le` |
+| 32-bit  | `prim:u32-be`, `prim:u32-le` | `prim:i32-be`, `prim:i32-le` |
+| 64-bit  | `prim:u64-be`, `prim:u64-le` | `prim:i64-be`, `prim:i64-le` |
+
+Plus `prim:bytes`.
+
 ### Identifiers & ordering
 
 - `session_id`, `source_id`, and `decoder_id` are unique within a file.
@@ -808,7 +850,11 @@ distinctions but are not defined here. (A `boundary ≥ 1` record MUST carry a
 ### Conformance
 
 Every file MUST start with exactly one File Header as its first block, and MUST
-declare each Source, Session, and Participant before any block references it.
+declare each Source, Session, and Participant before any block references it. A
+file MAY end with an [End block](#end-of-file-0x41); if present it MUST be the
+last block, and its presence marks the file complete. A file MAY omit it — a
+live/streaming or crashed writer does — and readers MUST still accept such a
+file, treating it as not-known-complete.
 
 Raw and decoded are **per-record** properties, not whole-file modes (a file MAY
 mix them — e.g. a decoder that emits decoded records directly while falling back
@@ -835,14 +881,19 @@ Concatenating two `.zpf` files does **not** yield a valid `.zpf`. To split a
 streaming intercept across several files, the producer is responsible for making
 their order recoverable out-of-band (a naming convention, a manifest, etc.).
 
-### Truncation
+### Truncation and completeness
 
-There is no global trailer — the format is forward-only and streamable. A reader
-that finds fewer than `length` bytes remaining for a block MUST treat the file
-as **truncated at that block** (a writer crash mid-flush) and discard the
-partial tail; all complete prior blocks remain valid. Detecting *intentional*
-completeness (vs. truncation) requires the optional index discussed in
-[Open questions](#open-questions).
+The format is forward-only and streamable. A reader that finds fewer than
+`length` bytes remaining for a block MUST treat the file as **truncated at that
+block** (a writer crash mid-flush) and discard the partial tail; all complete
+prior blocks remain valid.
+
+Completeness is signalled positively by the optional [End block](#end-of-file-0x41):
+a file ending in a valid End block was finalized cleanly, whereas one that reaches
+end-of-stream without it is either still growing, truncated, or the product of a
+crashed writer. The End block is the only thing that distinguishes "intentionally
+finished" from "stops here"; absent it, the two are indistinguishable (which is
+fine for a live stream that is legitimately still open).
 
 ### JSONL ↔ binary field mapping
 
@@ -973,15 +1024,19 @@ declare-on-first-use contract holding in the byte stream.
 
 ## Open questions
 
-- Index block (offsets of each Session Descriptor) for random access, vs.
-  strict streaming?
 - Compression: per-record, per-session, or whole-file?
 - Should a `zpf-input` Source reference a whole input file, or also pin a
   per-session digest, so a single changed session forces re-derivation of only
   that session?
-- Do decoded records keep their own packet-time `ts` (copied from the spanning
-  raw bytes), or only the File Header `produced_at`? Probably both: `ts` for
-  ordering, `produced_at` for provenance.
-- The `prim:` [`content_type`](#typing-a-decoded-record) vocabulary is given by
-  example only; it needs a fixed normative list (which scalars, what
-  endianness/width naming, how text encodings are spelled).
+
+## Possible future extensions
+
+- **Random-access index.** An optional `Index` block near the end (just before
+  the [End block](#end-of-file-0x41)) mapping `session_id` → the byte offset of
+  its Session Descriptor, so a reader can seek to a session instead of scanning
+  from the start. *Benefit:* O(1) lookup on finished files at rest. *Cost:* the
+  writer must hold a session→offset map until finalize (O(#sessions) memory,
+  unbounded for indefinite live captures), and — because records interleave — it
+  locates a session's *declaration*, not its scattered records. Stays fully
+  optional and streaming-compatible: a skippable block, absent on live or
+  truncated files, found via a back-pointer from the End block.
