@@ -104,6 +104,7 @@ Block types:
 | 0x20 | Record                  | a directed payload unit (see fields below)      |
 | 0x21 | Gap                     | an uncovered/undecodable region (see Layers)    |
 | 0x30 | Name/Identity Resolution| optional: map participant ids → human labels    |
+| 0x41 | End                     | optional; if present, the last block — marks the file complete |
 | 0xFF | Custom                  | vendor/experimental, namespaced                 |
 
 A single **Source Descriptor** type covers both a raw capture and a derived input
@@ -141,9 +142,9 @@ participants to emit up front:
 - The same holds for **Decoder** and **Source** descriptors in derived files.
 
 A consumer therefore builds its session/participant tables incrementally as it
-reads, exactly as the writer built them. (A future [index block](#open-questions)
-could gather descriptor offsets for random access without changing this
-streaming contract.)
+reads, exactly as the writer built them. (A future
+[random-access index](#possible-future-extensions) could gather descriptor
+offsets without changing this streaming contract.)
 
 ### A first example
 
@@ -704,6 +705,28 @@ preferred when known at declaration time.
 
 Readers without knowledge of `pen`/`subtype` skip via the frame `length`.
 
+### End of file (`0x41`)
+
+Optional. If present, it MUST be the **last block** in the file, and its presence
+means the writer finished cleanly — the file is **complete**, not truncated. A
+writer appends it on a clean close; a still-growing or crashed file simply omits
+it. Body:
+
+| Field       | Type | Value                                             |
+|-------------|------|---------------------------------------------------|
+| `end_magic` | u32  | `0x5A454E44` (`"ZEND"`), in the file's byte order  |
+
+Options: `comment`. Bytes after this block are invalid — a `.zpf` is never
+concatenated (see [Conformance](#conformance)).
+
+Completeness is detected by **forward reading alone**: reaching a valid End block
+as the final block means complete; reaching end-of-stream — or a short, partial
+block — without one means the file is still growing, truncated, or the writer
+crashed (see [Truncation and completeness](#truncation-and-completeness)). No
+seek-to-end is needed; the End block
+is found in the normal block walk. In the JSONL projection it is a final
+`{"type":"end"}` line.
+
 ### TLV option framing & id registry
 
 `id: u16, len: u16, value` (then pad to 4 bytes). Options run until the block
@@ -827,7 +850,11 @@ Plus `prim:bytes`.
 ### Conformance
 
 Every file MUST start with exactly one File Header as its first block, and MUST
-declare each Source, Session, and Participant before any block references it.
+declare each Source, Session, and Participant before any block references it. A
+file MAY end with an [End block](#end-of-file-0x41); if present it MUST be the
+last block, and its presence marks the file complete. A file MAY omit it — a
+live/streaming or crashed writer does — and readers MUST still accept such a
+file, treating it as not-known-complete.
 
 Raw and decoded are **per-record** properties, not whole-file modes (a file MAY
 mix them — e.g. a decoder that emits decoded records directly while falling back
@@ -854,14 +881,19 @@ Concatenating two `.zpf` files does **not** yield a valid `.zpf`. To split a
 streaming intercept across several files, the producer is responsible for making
 their order recoverable out-of-band (a naming convention, a manifest, etc.).
 
-### Truncation
+### Truncation and completeness
 
-There is no global trailer — the format is forward-only and streamable. A reader
-that finds fewer than `length` bytes remaining for a block MUST treat the file
-as **truncated at that block** (a writer crash mid-flush) and discard the
-partial tail; all complete prior blocks remain valid. Detecting *intentional*
-completeness (vs. truncation) requires the optional index discussed in
-[Open questions](#open-questions).
+The format is forward-only and streamable. A reader that finds fewer than
+`length` bytes remaining for a block MUST treat the file as **truncated at that
+block** (a writer crash mid-flush) and discard the partial tail; all complete
+prior blocks remain valid.
+
+Completeness is signalled positively by the optional [End block](#end-of-file-0x41):
+a file ending in a valid End block was finalized cleanly, whereas one that reaches
+end-of-stream without it is either still growing, truncated, or the product of a
+crashed writer. The End block is the only thing that distinguishes "intentionally
+finished" from "stops here"; absent it, the two are indistinguishable (which is
+fine for a live stream that is legitimately still open).
 
 ### JSONL ↔ binary field mapping
 
@@ -992,9 +1024,19 @@ declare-on-first-use contract holding in the byte stream.
 
 ## Open questions
 
-- Index block (offsets of each Session Descriptor) for random access, vs.
-  strict streaming?
 - Compression: per-record, per-session, or whole-file?
 - Should a `zpf-input` Source reference a whole input file, or also pin a
   per-session digest, so a single changed session forces re-derivation of only
   that session?
+
+## Possible future extensions
+
+- **Random-access index.** An optional `Index` block near the end (just before
+  the [End block](#end-of-file-0x41)) mapping `session_id` → the byte offset of
+  its Session Descriptor, so a reader can seek to a session instead of scanning
+  from the start. *Benefit:* O(1) lookup on finished files at rest. *Cost:* the
+  writer must hold a session→offset map until finalize (O(#sessions) memory,
+  unbounded for indefinite live captures), and — because records interleave — it
+  locates a session's *declaration*, not its scattered records. Stays fully
+  optional and streaming-compatible: a skippable block, absent on live or
+  truncated files, found via a back-pointer from the End block.
