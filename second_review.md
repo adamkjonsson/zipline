@@ -294,3 +294,117 @@ interoperability.
 10. **Note that `isn` is purely informational** at its definition site so
     implementers know it carries no behaviour, and decide whether it earns its
     place in a minimal v1.0.
+
+## Follow up questions
+
+**Q**: I've been thinking about how to handle the (naive) complexity of O(M*N) for the merge algorithm for readers. Given that I suspect that the typical use-case will be to read zpf-files alot more often then writing them, it would be a good idea to try to move that complexity to the writer, making reading fast and simple. How could that ne done? Please analyse this.
+
+**A**: Good instinct — and the asymmetry is even more favorable than "read more often than write" suggests. The writer isn't just a place to move the cost to; it's a place where the cost is fundamentally cheaper. Let me lay out why, then give you a spectrum of mechanisms from "almost free" to "reader does zero ordering work."
+
+### Why the writer is in a strictly better position
+
+The reader faces O(N·M) **only because of one rule**: `payload-format.md:844-848` says on-disk block order is unconstrained, so a reader handed an arbitrary pile of records can't assume anything and may compare records all-pairs to discover edges.
+
+The writer never has that problem:
+
+- It processes packets in **capture order**, and TCP acks/seqs advance monotonically. So a record becomes "settled" (nothing future can precede it) once both directions have advanced past it — which happens within roughly one **in-flight window / RTT**, not the whole session.
+- That means the writer can produce causal order with a **bounded reorder buffer** (≈ bandwidth-delay product), in near-linear time, without breaking the flush-and-forget / bounded-memory goal.
+
+So this isn't shifting an O(N·M) cost onto the writer — it's replacing it with an O(N)-with-small-window cost, paid once, by the party that's already streaming in the right order.
+
+### A spectrum of three mechanisms
+
+Think of it as three levels; you can stop at whichever cost/benefit point you like.
+
+**Level 1 — Constrain on-disk order (almost free, no new fields)**.
+Add one SHOULD/MAY: within a participant, records are stored in seq_start order (the writer already has them that way — it's the participant's own monotonic byte stream). That single guarantee collapses the reader's job from all-pairs into a streaming k-way merge: keep one frontier watermark per participant, release a record when every peer record with seq_end ≤ ack has already been emitted — an O(1) amortized check per record, so ~O(N) total with a bounded window. The reader still implements the merge, but it's the cheap, simple version, and memory stays bounded. This alone kills the quadratic blow-up.
+
+**Level 2 — Stamp a total-order ordinal (additive, backward-compatible)**.
+Add an optional per-record order TLV: a u64 (scoped per session) giving a total order consistent with the causal partial order, with the writer's tie-break already applied. A reader that sees it ignores seq/ack entirely and orders by a single scalar — one linear pass (or one sort key). A reader that wants to verify, or a file that lacks the field, falls back to Level 1. This is purely additive ("new TLVs, old readers ignore"), keeps physical storage order free for other purposes, and the merge algorithm becomes optional in readers.
+
+**Level 3 — Physical order is causal order + a "sequenced" flag (zero reader ordering logic)**.
+A File Header flag (or a distinct conformance profile) asserting: *records are stored in a causally-valid total order*. A conformant reader then reads **sequentially, no ordering code at all** — the tricky algorithm exists only in writers and merge tools, never in the read path. This is the strongest version of your goal: a minimal reader never implements the merge.
+
+These compose: Level 3 is Level 1 + "and I committed to a global interleaving"; Level 2 is the "keep storage order separate" variant of the same commitment.
+
+### The two capture cases map cleanly onto this
+
+- **Single tap sees both directions (the common case)**: the writer does Level 1/2/3 inline with a bounded reorder buffer, as described. No architectural change.
+- **Two separate files, skewed clocks (the showcase case)**: no single per-direction writer can merge — it doesn't see the peer. But that's already a transform in this format's worldview. Make it sideA.zpf + sideB.zpf → merged.zpf, exactly analogous to the existing raw.zpf → decoded.zpf decode transform (reuse Source(kind=zpf-input), digest, provenance). The merge tool reads two per-participant-ordered inputs, does the cheap streaming 2-way merge once, and emits a Level-3 sequenced file. Every downstream reader of merged.zpf then pays nothing. The O(N·M)-prone logic lives in one tool, not in every reader.
+
+### Keep seq/ack anyway — this is additive, not a replacement
+
+Don't drop the seq/ack fields when you add ordering:
+
+- Verification / trust: a paranoid or re-deriving reader can confirm the writer's order is actually causal.
+- Concurrency fidelity: a baked total order discards the "these two were genuinely concurrent" information. seq/ack lets a reader that cares recover the true partial order; the ordinal/flag is just a convenience linearization on top.
+- Re-merge: if the raw inputs change, you re-run the transform from seq/ack.
+
+### Two side benefits worth noting
+
+1. **It fixes my "permitted divergence" reservation for free**. Today, concurrent-records-under-known-skew fall back to a writer-chosen "round-robin / source order," so two conformant readers can disagree. If the writer commits to the tie-break (Levels 2/3), all readers agree by construction — ordering becomes deterministic.
+2. **It lets you define a lightweight conformance class**. A "sequenced .zpf" profile guarantees the order is present and correct, so a minimal reader can refuse to implement the merge at all and reject non-sequenced files — useful for constrained consumers.
+
+### The one real cost to weigh
+
+The writer must hold a reorder window before emitting (bounded by in-flight data — small, preserves flush-and-forget), and Levels 2/3 mean the reader trusts the writer (mitigated by keeping seq/ack for verification). And note Level 1 doesn't remove the merge from readers — it only makes it cheap; only Levels 2/3 let readers skip implementing it.
+
+### My recommendation
+
+Adopt **Level 1 as a SHOULD unconditionally** (almost free, removes the quadratic for everyone, no format change beyond one ordering rule) and **Level 3 as an optional "sequenced" profile / File Header flag** for the read-often workflow you're optimizing — with the separate-file merge defined as a transform that produces such a file. That gives you: cheap reads always, zero-ordering-logic reads when you want them, the algorithm confined to writers/merge-tools, deterministic tie-breaks, and full backward compatibility with seq/ack retained for verification.
+
+Want me to draft concrete spec text for this — the Level-1 ordering rule, the order TLV + "sequenced" flag, and a short "Merge transform" subsection mirroring the decode transform — and fold a condensed note into the review's improvements list?
+
+### Resolution — adopted into the spec
+
+This was acted on. `docs/payload-format.md` now implements **Level 1 + Level 3**
+(Level 2's per-record ordinal was deliberately *not* added — Level 3's "physical
+order = causal order + flag" reaches the read-cheap goal without a new per-record
+field):
+
+- **Level 1 (unconditional SHOULD).** "Identifiers & ordering" now says a writer
+  SHOULD store each participant's records in `seq_start` (logical stream) order;
+  the "Merge algorithm" section gained a *cost* note explaining this collapses a
+  reader's merge into a streaming k-way merge (~O(N), in-flight-window memory) and
+  that the merge is optional, consumer-side work.
+- **Level 3 (optional sequencing).** A new "Sequenced files (precomputed order)"
+  subsection, plus two **distinct, orthogonal** flags:
+  - **`SEQUENCED` — per *session*** (Session Descriptor `flags` option, bit
+    `0x0001`; TLV `0x0052`): this session's records are stored in valid causal
+    order, so a reader skips the merge for it. Marked per session because whether
+    a session *can* be soundly sequenced is itself per-session (TCP always; a
+    hint-less session only under a common clock), so a file may mix sequenced and
+    unsequenced sessions.
+  - **`SINGLE_CLOCK` — per *file*** (File Header `flags` option, bit `0x0001`; TLV
+    `0x0014`): all records share one trustworthy clock (timestamps globally
+    comparable, no inter-source skew). A *clock* assertion, not an ordering one.
+    Its use case: a raw writer that can't tell several one-way UDP streams form one
+    `N`-party session emits them unsequenced, but can assert `SINGLE_CLOCK` so a
+    later decoder that regroups them may sequence the regrouped session by
+    timestamp soundly.
+
+  The separate-direction case is handled by a **merge transform**
+  (`sideA.zpf + sideB.zpf → merged.zpf`) reusing the existing
+  `zpf-input`/digest/provenance machinery. Conformance paragraph and JSONL
+  mappings (`"single_clock"` on `file`, `"sequenced"` on `session`) updated to
+  match.
+
+Two decisions settled during review:
+
+- **Per-session guarantee, confirmed.** SEQUENCED is a *per-session* property:
+  TCP sessions are ordered clock-independently from `seq`/`ack`; hint-less
+  sessions (chat, one-way UDP) reduce to non-decreasing-timestamp order with a
+  fixed tie-break. The spec states a producer **MUST NOT** set SEQUENCED on a
+  hint-less session unless all its records share a single trustworthy clock; the
+  separate file-level `SINGLE_CLOCK` bit is the file-wide way to assert exactly
+  that precondition (and is what a regrouping decoder relies on).
+- **`seq`/`ack` kept mandatory in sequenced sessions.** They are retained (not
+  dropped to save space) so a reader can still verify the committed order and
+  recover the true partial order / genuine concurrency; sequencing is a
+  convenience linearization layered on top, never a replacement.
+
+Effect on the items above: this **fully addresses** Nice-to-have #7 (merge scale/
+windowing is now documented) and the **first reservation** in §4 (merge cost), and
+**resolves** the **second reservation / permitted divergence** for sequenced files
+(the producer's fixed tie-break makes all readers agree). Non-sequenced files
+retain the original, honestly-stated divergence.

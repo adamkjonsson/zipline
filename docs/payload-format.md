@@ -255,6 +255,30 @@ OUTPUT: one interleaved, causally-consistent sequence
 Step 2 is the payoff — it stitches the two separately-captured directions
 together on causality rather than the skew-prone clock.
 
+**Cost, and why a reader rarely pays it in full.** Stated naively, step 2 is
+O(N·M) per session — every record weighed against every peer record — plus the
+topological sort. Two things tame it, and a reader should rely on both:
+
+- **Sorted inputs (always available).** Because a writer **SHOULD** store each
+  participant's records in `seq_start` order (see
+  [Identifiers & ordering](#identifiers--ordering)), the per-participant streams
+  are already totally ordered. Step 1 is then a no-op and the merge becomes a
+  **streaming k-way merge**: hold one frontier per participant and release a
+  stream's next record once every peer record it acks (`seq_end ≤ ack`) has been
+  emitted — a single-watermark, O(1)-amortised check. Total work is ~O(N) and
+  memory is bounded by the in-flight window, not the session. No reader needs the
+  quadratic form.
+- **A sequenced session (no merge at all).** A producer MAY commit the resolved
+  order to disk and mark the session *sequenced* (see
+  [Sequenced files](#sequenced-files-precomputed-order)); a reader then consumes
+  its records in stored order and skips this algorithm entirely.
+
+The merge is **optional, consumer-side** work. Reassembly *within* a direction is
+the producer's job — a reader never does it — and a reader that only wants one
+participant's stream (already `seq_start`-ordered) need not merge at all. Only a
+consumer that wants the single cross-participant timeline of a *non-sequenced*
+file runs the algorithm above.
+
 ### Caveats
 
 - Acks are **cumulative** and may be **delayed**, so `ack` is a *lower bound* on
@@ -301,6 +325,82 @@ the server record's `ts` (995) is *earlier* than the client request it answers
 (1000) — the two capture clocks are skewed. The server's `ack:1019` nonetheless
 places it **after** the client's `[1001,1019)` request via the causal edge, so
 the merge is correct despite the timestamp inversion.
+
+### Sequenced files (precomputed order)
+
+The merge is consumer work, and a given file is typically read far more often
+than it is written. A producer that has already resolved the cross-participant
+order MAY therefore *bake it into the file* and let every downstream reader skip
+the merge. Sequencing is marked **per session**, on the
+[Session Descriptor](#session-descriptor-0x10): a session carrying the
+`SEQUENCED` flag stores its records so that the order of its Record blocks in the
+file is a valid causal linearization — every record appears after all records
+that causally precede it, with the producer's tie-break already applied to
+concurrent records. The flag is per session because *whether a session can be
+soundly sequenced is itself a per-session fact* (a TCP session can always be; a
+hint-less one only under a common clock — see below). A file may therefore mix
+sequenced and unsequenced sessions, and a reader decides per session — records of
+different sessions interleave freely, and a reader recovers one session's order by
+filtering. In the JSONL projection the flag is a boolean `"sequenced":true` on the
+`session` line.
+
+A reader consumes a sequenced session's records in stored order and does **no
+ordering work at all** for it — the [merge algorithm](#merge-algorithm) lives
+only in the producer. The `seq_start`/`seq_end`/`ack` hints stay present, so a
+reader MAY still verify the order, or recover the true partial order (which
+records were genuinely concurrent); the flag only asserts that *stored order is
+one correct answer*, not that it is the only one.
+
+Who sets the flag depends on the capture:
+
+- A **single tap that sees both directions** emits a sequenced session directly,
+  holding only a bounded reorder window (≈ the in-flight data) before releasing
+  each record — this keeps the flush-and-forget, bounded-memory contract intact.
+- **Two separately-captured directions** cannot be sequenced by either
+  per-direction writer alone (neither sees the peer's acks). They are combined by
+  a **merge transform** — `sideA.zpf + sideB.zpf → merged.zpf` — that reuses the
+  existing derived-file machinery (a [Source](#source-descriptor-which-input) of
+  `kind = zpf-input`, its `digest`, and provenance, exactly as a decoder does):
+  it runs the streaming merge once and writes sequenced sessions. The expensive
+  logic thus exists in exactly one tool, never in every reader.
+
+Sequencing is **optional** and orthogonal to raw-vs-decoded. A reader MUST still
+accept unsequenced sessions (and run the merge itself if it wants their
+interleaved view). Determinism is a free side benefit: because the producer fixes
+the tie-break for concurrent records, every reader of a sequenced session observes
+the *same* order — which independent per-reader merges (step 4's
+clock/round-robin tie-break) do not guarantee.
+
+**What a sequenced session rests on.** A session's causal order comes from
+whatever ordering hints its records carry. A **TCP** session has `seq`/`ack`, so
+its sequenced order is clock-independent — sound regardless of capture skew. A
+session **without** such hints (a chat room, a one-way UDP feed) has no causal
+edges, so its order is purely the timestamp tie-break (non-decreasing
+`timestamp`, ties resolved by the producer's fixed rule, e.g. source/pid order).
+That is a *sound* order only when all the session's records share **one
+trustworthy clock** — the normal case when a single observer (one chat server,
+one receiver) saw the whole session. A producer therefore **MUST NOT** mark a
+hint-less session `SEQUENCED` unless its records share a single trustworthy clock.
+
+**File-level `SINGLE_CLOCK`.** That clock precondition has a file-wide form, the
+`SINGLE_CLOCK` flag on the [File Header](#file-header-0x01): it asserts that
+*every record in the file was stamped against one trustworthy clock*, so
+timestamps are globally comparable across all sessions and sources, with no
+inter-source skew. Its value is forward-looking. A raw writer often cannot tell
+that a handful of one-way UDP streams are really one `N`-party session (the `N=5`
+case), so it emits them as separate, unsequenced streams — it can commit no
+cross-stream order. But it *can* honestly assert `SINGLE_CLOCK` if it was a single
+capture point, and a later decoder that regroups those streams into one session
+can then rely on the bit to sequence the regrouped session by timestamp soundly.
+`SINGLE_CLOCK` set also satisfies the per-session clock requirement above for
+every hint-less session in the file.
+
+The two flags are independent. A **merged two-tap TCP file** carries per-session
+`SEQUENCED` but **not** `SINGLE_CLOCK` (it used seq/ack precisely because the
+clocks were skewed); a **single-tap UDP capture** carries `SINGLE_CLOCK` but its
+sessions are **not** yet `SEQUENCED` (no writer has committed an order). A reader
+that wants "is this whole file already ordered?" simply ANDs the `SEQUENCED` bits
+of the sessions it sees.
 
 ## Layers: raw and decoded live in separate files
 
@@ -535,7 +635,17 @@ operands are signed, so times before the origin are representable.
 Header options: `time_epoch` (i64, `tick_hz` ticks; default Unix epoch
 1970-01-01T00:00:00Z), `creator` (string), `produced_by` (string, derived files —
 tool + version that produced this file), `produced_at` (i64, derived files —
-wall-clock build time in Unix seconds), `comment`.
+wall-clock build time in Unix seconds), `flags` (u16, file-level flags; see
+below), `comment`.
+
+**File flags.** The `flags` option is a u16 bitfield of file-level assertions;
+when absent, every bit is 0. Bit `0x0001` (**SINGLE_CLOCK**) asserts that every
+record in the file was stamped against one trustworthy clock, so timestamps are
+globally comparable across all sessions and sources with no inter-source skew
+(see [Sequenced files](#sequenced-files-precomputed-order)). It is a clock
+assertion, *not* an ordering one — per-record/per-session ordering is the
+Session Descriptor `SEQUENCED` flag. All other bits are reserved, MUST be written
+0, and MUST be ignored on read.
 
 ### Descriptor blocks
 
@@ -577,7 +687,14 @@ Options: `name`, `version`, `params_digest`, `comment`.
 | `session_id` | u64  | id referenced by participants and records |
 
 Options: `proto` (string, lowercase, e.g. `tcp`/`udp`/`irc`/`http`/`tls`),
-`flow_key` (string), `comment`.
+`flow_key` (string), `flags` (u16, session-level flags; see below), `comment`.
+
+**Session flags.** The `flags` option is a u16 bitfield; when absent, every bit
+is 0. Bit `0x0001` (**SEQUENCED**) asserts this session is a
+[sequenced session](#sequenced-files-precomputed-order) — its Record blocks
+appear in the file in a valid causal order, so a reader MAY consume them in stored
+order without running the [merge](#merge-algorithm). All other bits are reserved,
+MUST be written 0, and MUST be ignored on read.
 
 **Participant Descriptor (`0x11`)**
 
@@ -746,6 +863,7 @@ the first occurrence and ignore the rest.
 | `0x0011` | creator          | string     | File Header              | tool + version that wrote the file                             |
 | `0x0012` | produced_by      | string     | File Header              | tool + version that ran the transform (derived files)          |
 | `0x0013` | produced_at      | i64        | File Header              | wall-clock build time of this artifact (Unix seconds)          |
+| `0x0014` | flags            | u16        | File Header              | file-level flags bitfield; bit `0x0001` = SINGLE_CLOCK (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0020` | uri              | string     | Source                   | where the referenced capture/input file lives                  |
 | `0x0021` | digest           | string     | Source                   | content hash of the referenced file — the dependency edge      |
 | `0x0022` | link_type        | u16        | Source (capture)         | link-layer type of the capture (e.g. a pcap LINKTYPE)          |
@@ -754,6 +872,7 @@ the first occurrence and ignore the rest.
 | `0x0043` | params_digest    | string     | Decoder                  | hash of the decoder config, so the decode is reproducible      |
 | `0x0050` | proto            | string     | Session                  | session protocol, lowercase (`tcp`/`udp`/`irc`/`http`/`tls`)   |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
+| `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick; **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number, informational; not an offset base   |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
@@ -841,11 +960,20 @@ Plus `prim:bytes`.
   one session with no risk of collision when files are merged or cross-linked. The
   other ids count small, *bounded*, per-file sets — participants, sources,
   decoders — none near the u16 limit, so a wider field would only waste space.
-- On-disk block order is unconstrained beyond declare-on-first-use; in
-  particular a participant's records need **not** be stored in `seq_start`
-  order — the [merge algorithm](#merge-algorithm) sorts them. Within one source,
-  records SHOULD be emitted in capture order to keep the timestamp tie-breaker
-  meaningful.
+- On-disk block order is unconstrained beyond declare-on-first-use, with one
+  ordering **SHOULD** that keeps reading cheap: within a given
+  `(session_id, participant_id)`, a writer **SHOULD** emit that participant's
+  records in `seq_start` order (logical stream order for non-TCP streams that
+  have no sequence numbers) — the order in which it already produced them. A
+  reader MAY still meet out-of-order records and fall back to sorting, but when
+  the SHOULD holds the cross-participant [merge](#merge-algorithm) collapses from
+  an all-pairs comparison into a **streaming k-way merge** over already-sorted
+  per-participant streams (see [merge cost](#merge-algorithm)). This costs the
+  writer nothing — each participant's byte stream is monotonic by construction —
+  and bounds a reader's working set to the in-flight window rather than the whole
+  session. *Across* participants, records MAY be interleaved in any order (capture
+  order is the natural choice and keeps the timestamp tie-breaker meaningful);
+  only the *per-participant* subsequence is constrained.
 
 ### Conformance
 
@@ -871,6 +999,24 @@ to raw on what it cannot parse):
   Source, set the File Header `produced_by`/`produced_at`, and state uncovered
   regions as **Gap** blocks rather than dropping them. Decoder, Gap, and
   `zpf-input` Sources appear only in files that carry decoded records.
+
+**Ordering and sequencing.** A writer **SHOULD** store each participant's records
+in `seq_start` (logical stream) order; this bounds an unsequenced reader's merge
+to a streaming pass (see [Identifiers & ordering](#identifiers--ordering)).
+Separately, a session MAY set the Session Descriptor `flags` **SEQUENCED** bit; if
+it does, the producer MUST store that session's records so their Record-block file
+order is a valid causal linearization (concurrent records ordered by the
+producer's tie-break), and a reader MAY then consume them in stored order without
+running the [merge](#merge-algorithm). A reader MUST NOT assume a session is
+sequenced unless its bit is set, and MUST still accept sessions that omit it. For
+a session with no causal hints (no TCP `seq`/`ack` — e.g. chat or one-way UDP),
+the sequenced order is the timestamp order, so the producer MUST NOT set SEQUENCED
+unless every record in that session shares a single trustworthy clock. The File
+Header `flags` **SINGLE_CLOCK** bit is the file-wide assertion of that property
+(timestamps globally comparable, no inter-source skew); when set it satisfies the
+clock requirement for every hint-less session, and a downstream tool may rely on
+it to sequence streams it regroups (see
+[Sequenced files](#sequenced-files-precomputed-order)).
 
 Readers MUST skip unknown block types (via frame `length`) and unknown option
 ids (via `len`), and MUST treat reserved fields/bits as ignored-on-read.
@@ -905,6 +1051,8 @@ brevity:
 |----------------------|------------------------------|
 | `format`             | `version_major.version_minor`|
 | `time_units`         | `tick_hz`                    |
+| `single_clock` (bool, on `file`)    | File Header `flags` SINGLE_CLOCK bit (`0x0001`) |
+| `sequenced` (bool, on `session`)    | Session Descriptor `flags` SEQUENCED bit (`0x0001`) |
 | `ts`                 | Record `timestamp`           |
 | `pid`                | Participant `participant_id` |
 | `proto`, `key`       | `proto`, `flow_key` options  |
