@@ -118,6 +118,9 @@ These are the items I'd file as blocking questions before writing code:
   implementer cannot resolve a gap to a concrete stream from the block alone.
   **Fix:** either add a `source_id` field to the Gap body, or make Gap use
   `spans` exclusively and drop the inline `off_start/off_end`.
+  **→ RESOLVED.** Gap was generalised into the **Undecoded** block (`0x21`), which
+  carries an explicit `source_id` naming the `zpf-input` whose stream its offsets
+  index. (See the [I1 resolution](#resolution-undecoded-block-i1-and-g1).)
 
 - **G2 — JSONL key set is not actually specified.** The "JSONL ↔ binary field
   mapping" table is the only normative statement about JSON key names, yet the
@@ -170,6 +173,7 @@ These are the items I'd file as blocking questions before writing code:
   mixed files, or fallback content should be expressed as a Gap / a passthrough
   decoder rather than a `boundary = 0` record. This needs resolving — it's the
   one contradiction that affects the central raw/decoded model.
+  **→ RESOLVED** — see [I1/G1 resolution](#resolution-undecoded-block-i1-and-g1) below.
 
 - **I2 — Span field order differs between the narrative, JSONL, and binary.**
   Narrative provenance (`{source_id, session_id, pid, …}`) and the JSONL mapping
@@ -247,16 +251,13 @@ interoperability.
 
 **Must-fix before calling it 1.0 (interoperability hazards):**
 
-1. **Resolve the raw-in-decoded-file contradiction (I1).** Decide whether
-   fallback bytes in a decoded file are `boundary = 0` records referencing a
-   zpf-input (and relax the "raw ⇒ capture source" rule accordingly), or whether
-   they must be Gaps / passthrough-decoded records. The central model depends on
-   this being unambiguous. *Why:* today two readers can legitimately disagree on
-   whether such a file is even conformant.
+1. ~~**Resolve the raw-in-decoded-file contradiction (I1).**~~ **DONE** —
+   resolved by the [Undecoded block](#resolution-undecoded-block-i1-and-g1):
+   derived files carry no `boundary = 0` records, and undecoded regions are
+   references, not raw bytes.
 
-2. **Give the Gap block a defined offset space (G1).** Add a `source_id` to the
-   Gap body, or switch Gap to `spans` and drop the inline offsets. *Why:* gaps
-   in multi-input decoded files are currently unresolvable from the block alone.
+2. ~~**Give the Gap block a defined offset space (G1).**~~ **DONE** — the
+   Undecoded block carries an explicit `source_id`; `spans` is now Record-only.
 
 3. **Make the JSONL key mapping authoritative and complete (G2).** Either list
    every field/option's JSON key, or state the rule "registered option name =
@@ -408,3 +409,39 @@ windowing is now documented) and the **first reservation** in §4 (merge cost), 
 **resolves** the **second reservation / permitted divergence** for sequenced files
 (the producer's fixed tie-break makes all readers agree). Non-sequenced files
 retain the original, honestly-stated divergence.
+
+### Resolution: Undecoded block (I1 and G1)
+
+I1 (raw-fallback records contradict the source-kind rule) and G1 (the Gap block
+has no `source_id`) were resolved together by **replacing the Gap block with an
+`Undecoded` block (`0x21`)** and **disallowing raw passthrough in derived files**.
+
+- **I1.** A derived file now contains **no** `boundary = 0` records, so "raw ⇒
+  capture source" never has to bend — raw records live only in raw files. A region
+  a decoder could not parse is recorded as an `Undecoded` *reference* (it carries
+  no bytes), not copied back as a raw record. The conceptual-model and conformance
+  prose were rewritten accordingly ("decoded records + Undecoded markers; no raw
+  records in derived files"), and a **coverage guarantee** added: within each input
+  participant stream, every offset is covered by some decoded record's `spans` or
+  by an Undecoded block.
+- **G1.** `Undecoded` carries an explicit `source_id` naming the `zpf-input` whose
+  logical offsets `off_start`/`off_end` index — resolving the multi-input
+  ambiguity. `spans` is now Record-only (no competing mechanism).
+- **Gap = the no-data case.** `reason` distinguishes `undecodable` (bytes exist
+  upstream, recoverable by walking the provenance chain to the raw file) from
+  `tcp-gap`/`truncated` (the offset range is a hole, no bytes anywhere). A plain
+  gap is just an Undecoded block with a no-data `reason`.
+
+Trade-off accepted in the process: a derived file no longer stands alone for the
+*bytes* of undecoded regions — recovering them is a one-level-at-a-time walk back
+toward the raw file (a missing intermediate stops it). The "stands alone" claim was
+softened to cover decoded content only. Two supporting clarifications also landed:
+the **offset space is hole-inclusive** (a gap occupies an offset range — now stated
+normatively, which the unification relies on), and **raw-file gaps stay implicit**
+(a sequence-number discontinuity; a decoder writer reconstructs them via software
+support and emits explicit Undecoded blocks in the derived file).
+
+This closes the two most serious findings (I1, G1). Remaining open from the
+original review: G2 (JSONL key set), G3/I2 (option repeatability & span field
+order), G4 (span id-namespaces), G5/#8 (`prim:` width), I3/#6 (`boundary` as a
+flag), and the prose-tightening item.

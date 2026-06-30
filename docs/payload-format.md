@@ -60,9 +60,11 @@ from the record's `decoder_id`, not from the number itself.
 
 Raw and decoded records rarely share boundaries, so decoding is modelled as a
 *file → file transform* (`raw.zpf → decoded.zpf`) rather than a layer inside a
-record (see [Layers](#layers-raw-and-decoded-live-in-separate-files)); the
-`boundary`/`decoder_id` pair still lets one file mix the two where a decoder
-falls back to raw on what it cannot parse.
+record (see [Layers](#layers-raw-and-decoded-live-in-separate-files)). Raw byte
+runs therefore live only in a raw file: a derived (decoded) file holds
+decoder-imposed records, and the regions a decoder *could not* parse are recorded
+not as raw bytes but as **[Undecoded](#undecoded-0x21)** markers that point back
+at the predecessor's bytes (so nothing is silently dropped).
 
 This single shape expresses all the target cases:
 
@@ -102,14 +104,14 @@ Block types:
 | 0x10 | Session Descriptor      | session id, protocol, flow key, metadata        |
 | 0x11 | Participant Descriptor  | participant id within a session, endpoint, TCP ISN |
 | 0x20 | Record                  | a directed payload unit (see fields below)      |
-| 0x21 | Gap                     | an uncovered/undecodable region (see Layers)    |
+| 0x21 | Undecoded               | a region the transform did not decode, referencing the predecessor's bytes (see Layers) |
 | 0x30 | Name/Identity Resolution| optional: map participant ids → human labels    |
 | 0x41 | End                     | optional; if present, the last block — marks the file complete |
 | 0xFF | Custom                  | vendor/experimental, namespaced                 |
 
 A single **Source Descriptor** type covers both a raw capture and a derived input
 (`kind = capture` vs `kind = zpf-input`), so a record references its origin the
-same way whether the file is raw or decoded. The Decoder Descriptor and Gap
+same way whether the file is raw or decoded. The Decoder Descriptor and Undecoded
 blocks appear only in *derived* (decoded) files. See
 [Layers](#layers-raw-and-decoded-live-in-separate-files).
 
@@ -418,9 +420,13 @@ raw.zpf  ──[ http/1.1 decoder ]──▶  decoded.zpf
 ```
 
 The output is one coherent boundary scheme (protocol messages); the input is
-another (byte runs). Each file stands alone for *consumption* — reading
-`decoded.zpf` never requires `raw.zpf` to be present. The link between them is
-**provenance**, used for verification and re-derivation, not for reading.
+another (byte runs). A decoded file stands alone for its **decoded** content —
+reading the decoded records never requires `raw.zpf`. The exception is regions a
+decoder could not parse: a derived file does not copy their bytes, it records an
+**[Undecoded](#undecoded-0x21)** marker referencing them, so recovering those raw
+bytes does mean consulting the predecessor (ultimately the raw file). The link
+between files is otherwise **provenance**, used for verification and
+re-derivation, not for reading.
 
 This generalizes: `raw → tls-records → http → …` is the same mechanism applied
 N times. Nothing special-cases "raw"; each stage just derives from the previous
@@ -449,6 +455,15 @@ session/participant within it, and a half-open `[off_start, off_end)` logical
 range. Usually a single span (one participant, one contiguous range); the list
 covers the rare gapped or cross-direction message. Offset-based references
 survive the raw file being re-chunked or re-written.
+
+**The offset space is contiguous, holes included.** A participant's logical
+offset is its **true position in the stream**, counting any bytes that are
+*missing* (a TCP gap, a truncation) as if they were present — it is **not** a
+running count of delivered bytes. So a 39-byte gap occupies a 39-wide offset
+range that no record's payload covers, and the next delivered byte resumes at the
+offset past it. This is what lets an undecoded or missing region be named by a
+single `[off_start, off_end)` range (see [Undecoded](#undecoded-0x21)); a span
+whose range falls in such a hole resolves to no bytes.
 
 ### Source Descriptor (which input)
 
@@ -511,14 +526,22 @@ An unknown scheme is treated as opaque. This is the named, richer form of the
 `boundary` 2–255 space: the decoder says *what each unit is* without the format
 having to parse it.
 
-### Coverage honesty: Gap blocks
+### Coverage honesty: Undecoded blocks
 
 A decoder can fail partway, or hit a TCP gap (where it can only decode the
 gap-free runs on either side). The decoded file states what it did *not* cover
-with an explicit **Gap block** rather than silently dropping bytes, so a consumer
-can distinguish "no message here" from "a message we could not parse," and a
-re-derivation can target just the gaps. (The `gap` line in the example below
-shows one.)
+with an explicit **[Undecoded block](#undecoded-0x21)** rather than silently
+dropping bytes. An Undecoded block names a `[off_start, off_end)` range of a
+predecessor stream and a `reason`; it carries **no payload**, only a reference, so
+a consumer that wants the bytes follows the span back toward the raw file. This
+gives the **coverage guarantee**: in a derived file, every region of an input
+participant stream is either covered by a decoded record's `spans` *or* marked
+Undecoded — never silently dropped, never both. A consumer can thus distinguish
+"a message we could not parse" (`reason` = `undecodable`, bytes recoverable
+upstream) from "no data here" (`reason` = `tcp-gap`/`truncated`, the offset range
+is a hole with no bytes anywhere), and a re-derivation can target just the
+undecoded ranges. A plain **gap** is simply the no-data case of an Undecoded
+block. (The `undecoded` line in the example below shows one.)
 
 ### A decoded file, end to end
 
@@ -528,7 +551,8 @@ The input `.zpf` is a
 `source` of `kind:"zpf-input"`, each record cites the `spans` it was built from
 (logical stream offsets, not transport offsets) and a `content_type` saying what
 its bytes are (here the http decoder's own `dec:` types), and the undecodable
-tail is stated as an explicit `gap`:
+tail is stated as an explicit `undecoded` block (referencing the input span whose
+bytes it could not parse, not copying them):
 
 ```jsonl
 {"type":"file","format":"zipline-payload/1","time_units":"us",
@@ -548,8 +572,8 @@ tail is stated as an explicit `gap`:
 {"type":"record","session_id":7,"sender_pid":1,"ts":995,"boundary":1,"decoder_id":1,
  "spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],
  "content_type":"dec:response","payload":"…decoded response…"}
-{"type":"gap","session_id":7,"pid":1,"off_start":100,"off_end":139,
- "reason":"undecodable","decoder_id":1}
+{"type":"undecoded","session_id":7,"pid":1,"source_id":1,
+ "off_start":100,"off_end":139,"reason":"undecodable","decoder_id":1}
 ```
 
 ## Binary encoding (normative reference)
@@ -778,21 +802,44 @@ The canonical `timestamp` is always the completion (last-packet) time.
 ordering — are inherently signed. The range given up versus u64 is immaterial at
 the resolutions `tick_hz` is meant for.
 
-### Gap (`0x21`)
+### Undecoded (`0x21`)
 
-Derived files only.
+Derived files only. Marks a region of a **predecessor** input stream that this
+transform did **not** turn into a decoded record — because the decoder could not
+parse it, or because the bytes are missing/truncated. It is a *reference*, not a
+payload: it carries no bytes, only the input span where they do (or would) live.
 
 | Field            | Type | Notes                                              |
 |------------------|------|----------------------------------------------------|
-| `session_id`     | u64  | session the uncovered region belongs to            |
+| `session_id`     | u64  | session the region belongs to (in *this* file)     |
 | `participant_id` | u16  | participant (stream) the region is in              |
-| `_reserved`      | u16  | 0                                                  |
+| `source_id`      | u16  | the input Source (`kind = zpf-input`) whose stream `off_start`/`off_end` index — resolves the G1 ambiguity for multi-input files |
 | `off_start`      | u64  | logical 0-based stream offset, first byte = 0      |
 | `off_end`        | u64  | one past the last byte (half-open `[start, end)`)  |
 
-Offsets are logical 0-based stream offsets, the same convention used by `spans`
-(*not* absolute sequence numbers). Options: `reason` (string, e.g. `undecodable`
-/ `tcp-gap` / `truncated`), `decoder_id` (u16).
+Offsets are logical 0-based stream offsets in the `source_id` input, the same
+convention used by `spans` (*not* absolute sequence numbers), and follow the
+hole-inclusive contiguity rule (see
+[Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
+Options: `reason` (string, e.g. `undecodable` / `tcp-gap` / `truncated`),
+`decoder_id` (u16, which decoder declined the region).
+
+`reason` signals whether the bytes are recoverable: `undecodable` means the bytes
+exist at that span in `source_id` (the decoder simply could not parse them) and a
+consumer MAY follow the reference to fetch them; `tcp-gap` / `truncated` mean the
+range is a **hole** with no bytes anywhere upstream (a plain *gap*). Either way
+the bytes are not in this file. To recover `undecodable` bytes a consumer walks
+the provenance chain one level at a time — if the referenced span is itself
+Undecoded in `source_id`, it recurses — until it reaches the capture-sourced raw
+file that holds the actual bytes; a missing intermediate file stops recovery
+there. An Undecoded block has no `timestamp`; order it among a participant's
+records by its `off_start`.
+
+A **raw** file expresses its own TCP gaps *implicitly*, as a discontinuity
+between consecutive records' sequence numbers — it has no Undecoded blocks (a raw
+file ran no decoder). A decoder writer that needs those raw gaps made explicit
+reconstructs them from the sequence discontinuity via its software support, and
+emits Undecoded blocks in the derived file.
 
 ### Name/Identity Resolution (`0x30`)
 
@@ -881,10 +928,10 @@ the first occurrence and ignore the rest.
 | `0x0071` | seq_end          | u32        | Record (TCP)             | absolute sequence number one past the last payload byte (mod 2³²) |
 | `0x0072` | ack              | u32        | Record (TCP)             | highest absolute peer sequence number the sender had received  |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
-| `0x0080` | spans            | span-list  | Record, Gap              | source ranges these bytes were built from (see below)          |
-| `0x0090` | decoder_id       | u16        | Record, Gap (decoded)    | which Decoder Descriptor produced this record/gap              |
+| `0x0080` | spans            | span-list  | Record                   | source ranges these bytes were built from (see below)          |
+| `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which Decoder Descriptor produced/declined this record/region |
 | `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
-| `0x00A0` | reason           | string     | Gap                      | why the region is uncovered (`undecodable`/`tcp-gap`/…)        |
+| `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded (`undecodable`/`tcp-gap`/`truncated`/…) |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 
@@ -984,21 +1031,28 @@ last block, and its presence marks the file complete. A file MAY omit it — a
 live/streaming or crashed writer does — and readers MUST still accept such a
 file, treating it as not-known-complete.
 
-Raw and decoded are **per-record** properties, not whole-file modes (a file MAY
-mix them — e.g. a decoder that emits decoded records directly while falling back
-to raw on what it cannot parse):
+A **raw** file holds raw records; a **derived** (decoded) file holds
+decoder-imposed records plus Undecoded markers, and contains **no** raw
+(`boundary = 0`) records — regions a decoder could not parse are recorded as
+[Undecoded](#undecoded-0x21) references, not copied back as bytes. One derived
+file MAY still mix *decoders* per-record (HTTP on one session, TLS-then-HTTP on
+another); the raw-vs-decoded split, however, falls on the file's level in the
+`raw → … → decoded` chain.
 
 - A **raw** record has `boundary = 0`, carries no `decoder_id`, and its
-  `source_id`/`spans` reference a `capture` Source. TCP raw records SHOULD carry
-  `seq_start`/`seq_end` (and `ack` where known); TCP participants SHOULD carry
-  `isn` when the handshake was seen; UDP records SHOULD set the datagram-boundary
-  flag.
+  `source_id`/`spans` reference a `capture` Source; it appears only in a raw file.
+  TCP raw records SHOULD carry `seq_start`/`seq_end` (and `ack` where known); TCP
+  participants SHOULD carry `isn` when the handshake was seen; UDP records SHOULD
+  set the datagram-boundary flag.
 - A **decoded** record has `boundary ≥ 1`, MUST carry a `decoder_id`, and its
   `source_id`/`spans` reference a `zpf-input` Source. A file containing any
   decoded record MUST declare every Decoder it references and every `zpf-input`
-  Source, set the File Header `produced_by`/`produced_at`, and state uncovered
-  regions as **Gap** blocks rather than dropping them. Decoder, Gap, and
-  `zpf-input` Sources appear only in files that carry decoded records.
+  Source, set the File Header `produced_by`/`produced_at`, and account for every
+  input region it did not decode with an **Undecoded** block rather than dropping
+  it: within each input participant stream, every offset MUST be covered either by
+  some decoded record's `spans` or by an Undecoded block (the coverage guarantee).
+  Decoder, Undecoded, and `zpf-input` Sources appear only in files that carry
+  decoded records.
 
 **Ordering and sequencing.** A writer **SHOULD** store each participant's records
 in `seq_start` (logical stream) order; this bounds an unsequenced reader's merge
