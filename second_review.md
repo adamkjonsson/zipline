@@ -156,6 +156,9 @@ These are the items I'd file as blocking questions before writing code:
   produces a wrong implementation. One explicit sentence ("the `session_id`/`pid`
   inside a span are interpreted in the referenced source's namespace, never the
   current file's") would prevent it.
+  **→ RESOLVED** — added exactly that sentence at the `span-list` definition,
+  noting the end-to-end example's shared `7` is coincidence (resolve in `raw.zpf`,
+  not the decoded file).
 
 - **G5 — `prim:` byte length not tied to payload length.** A `prim:u64-be`
   record's payload "is" an 8-byte integer, but nothing says the payload MUST be
@@ -278,8 +281,9 @@ interoperability.
    and stated `spans` is single-valued with an internal list. See
    [G3/I2 resolution](#resolution-tlv-repeatability-and-span-order-g3-i2).
 
-5. **Add one sentence on span id-namespaces (G4):** a span's `session_id`/`pid`
-   are in the referenced source's namespace, not the current file's.
+5. ~~**Add one sentence on span id-namespaces (G4).**~~ **DONE** — a span's
+   `session_id`/`pid` are read in the referenced source's namespace, not the
+   current file's; stated at the `span-list` definition.
 
 6. ~~**Decide what `boundary` is (I3 / §7).**~~ **DONE** — removed `boundary`
    outright; a record is decoded iff it carries a `decoder_id` (single source of
@@ -451,8 +455,8 @@ normatively, which the unification relies on), and **raw-file gaps stay implicit
 support and emits explicit Undecoded blocks in the derived file).
 
 This closes the two most serious findings (I1, G1). Remaining open after this and
-the G2, I3, and G3/I2 work below: G4 (span id-namespaces), G5/#8 (`prim:` width),
-and the prose-tightening item.
+the G2, I3, G3/I2, and G4 work below: G5/#8 (`prim:` width) and the
+prose-tightening item.
 
 ### Resolution: JSONL key mapping (G2)
 

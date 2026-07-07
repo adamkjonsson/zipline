@@ -959,6 +959,18 @@ a `capture` source, they are **byte offsets into the capture file** and
 `session_id`/`pid` are unused (write 0). One option id (`spans`) serves both raw
 capture-provenance and decoded derivation-provenance.
 
+**A span's `session_id`/`pid` are in the referenced *source's* id namespace, never
+the current file's.** They name a session/participant *inside* `source_id` (the
+input being cited), which is a different id space from the file that carries the
+span — even when the numbers happen to coincide. In the [end-to-end decoded
+example](#a-decoded-file-end-to-end) the decoded file's own `session_id 7` and the
+span's `session_id 7` are the *same number by coincidence*; resolving the span
+means looking up session 7 in `raw.zpf`, not in the decoded file. (A writer drawing
+`session_id`s from a global sequence — see
+[Identifiers & ordering](#identifiers--ordering) — makes them literally identical,
+which is convenient but does not change that the span is read in the source's
+space.)
+
 ### Enums
 
 `kind` (Source body, u8): `0` = capture (a pcap/interface), `1` = zpf-input
