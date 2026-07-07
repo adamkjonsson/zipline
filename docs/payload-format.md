@@ -1,10 +1,13 @@
-# Zipline Payload Format (design sketch)
+# Zipline Payload Format (v1.0 beta)
 
-> Status: **design proposal**, not yet implemented. This document sketches the
-> **Zipline Payload Format** (`.zpf`), a file format for the *payload* output of
-> a network sessionizer: the bytes that flow between endpoints once packets have
-> been reassembled into sessions, plus the metadata needed to consume them. The
-> format is tool-independent — any program can read or write it.
+> Status: **version 1.0 beta** — the specification is feature-complete and the
+> format is considered stable for implementation, but not yet finalized: details
+> may still change in response to implementation feedback before 1.0 final. This
+> document specifies the **Zipline Payload Format** (`.zpf`), a file format for
+> the *payload* output of a network sessionizer: the bytes that flow between
+> endpoints once packets have been reassembled into sessions, plus the metadata
+> needed to consume them. The format is tool-independent — any program can read or
+> write it.
 
 **Terminology.** The **producer** (a *sessionizer*) writes a `.zpf`; a
 **consumer** (or *reader*) reads one. Two producer stages are named where the
