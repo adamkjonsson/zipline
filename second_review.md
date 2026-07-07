@@ -134,6 +134,7 @@ These are the items I'd file as blocking questions before writing code:
   table exhaustive for every defined field/option, or state a deterministic rule
   (e.g. "every registered option uses its registry name as its JSON key; only
   unregistered/custom options go in `options`").
+  **→ RESOLVED** — see [G2 resolution](#resolution-jsonl-key-mapping-g2).
 
 - **G3 — `endpoint` repeatability vs. the "first occurrence wins" default.** The
   TLV rules say a repeatable option's order is significant and MUST be preserved,
@@ -259,11 +260,10 @@ interoperability.
 2. ~~**Give the Gap block a defined offset space (G1).**~~ **DONE** — the
    Undecoded block carries an explicit `source_id`; `spans` is now Record-only.
 
-3. **Make the JSONL key mapping authoritative and complete (G2).** Either list
-   every field/option's JSON key, or state the rule "registered option name =
-   JSON key; only unregistered options use the `options` array." *Why:* the
-   "easily consumed face" currently has no implementable contract and contradicts
-   its own examples.
+3. ~~**Make the JSONL key mapping authoritative and complete (G2).**~~ **DONE** —
+   adopted the deterministic rule (registered name = JSON key; only unrecognised
+   data uses `options`) plus value-encoding rules; see
+   [G2 resolution](#resolution-jsonl-key-mapping-g2).
 
 **Should-fix (prevents likely-wrong implementations):**
 
@@ -442,6 +442,38 @@ normatively, which the unification relies on), and **raw-file gaps stay implicit
 support and emits explicit Undecoded blocks in the derived file).
 
 This closes the two most serious findings (I1, G1). Remaining open from the
-original review: G2 (JSONL key set), G3/I2 (option repeatability & span field
-order), G4 (span id-namespaces), G5/#8 (`prim:` width), I3/#6 (`boundary` as a
-flag), and the prose-tightening item.
+original review after this and the G2 work below: G3/I2 (option repeatability &
+span field order), G4 (span id-namespaces), G5/#8 (`prim:` width), I3/#6
+(`boundary` as a flag), and the prose-tightening item.
+
+### Resolution: JSONL key mapping (G2)
+
+G2 (the JSONL face had no implementable key contract and contradicted its own
+examples) was resolved by replacing the incomplete mapping table with a
+**deterministic rule plus a short exceptions list** in
+`### JSONL ↔ binary field mapping`:
+
+- **The rule.** A block's JSON keys are the **canonical names** of its binary body
+  fields and registered TLV options (verbatim), except for the brevity aliases.
+  Anything registered MUST use its canonical key and MUST NOT go in `options`;
+  only *unrecognised* data (future option ids, `Custom` contents) uses a generic
+  `options` array. This makes the mapping complete-by-reference to the option
+  registry, so it can't drift as options are added.
+- **Closed alias list** (the only name-differs cases): `format`, `time_units`,
+  `ts`, `pid`, `key`. Corrected the old table's mislabelling of `proto` as an
+  alias (it's identity).
+- **`type` ↔ block-id table** added (was previously implicit).
+- **Value-encoding rules** added — the other half of the gap: 64-bit ints MAY be
+  number or decimal string (string SHOULD be used above 2⁵³, reader accepts both);
+  enums as string labels (`kind`, `tcp_role`), with `boundary` kept numeric as a
+  deliberate, acknowledged asymmetry (likely revised later); flag bitfields by
+  name (file/session single bits as booleans, Record `flags` as an array of
+  set-bit tokens — tokens added to the flags enum); repeatable options as ordered
+  arrays; absent option ⇒ omitted key.
+- **Forward-compat clause** added: converters MUST round-trip unknown `type`
+  strings, unknown keys, and unregistered options (via the `options` array),
+  mirroring the binary skip-by-length rule.
+
+Deferred by decision: the `boundary` string-vs-number asymmetry is accepted for
+now and expected to be revised alongside a future `boundary` rework (ties to
+I3/#6).

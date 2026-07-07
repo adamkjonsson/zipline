@@ -958,20 +958,23 @@ distinctions but are not defined here. (A `boundary ≥ 1` record MUST carry a
 (another `.zpf` this file was derived from).
 
 `tcp_role` (Participant option, u8): `0` = unknown (handshake not observed),
-`1` = initiator (active open, sent the SYN), `2` = responder (passive open).
+`1` = initiator (active open, sent the SYN), `2` = responder (passive open). In
+JSONL it renders as the string `"initiator"`/`"responder"`, and is omitted when
+unknown.
 
-`flags` (Record body, u16):
+`flags` (Record body, u16). The **JSON token** column feeds the JSONL `flags`
+array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 
-| Bit    | Meaning                                                    |
-|--------|------------------------------------------------------------|
-| `0x0001` | TCP PSH seen in this run                                 |
-| `0x0002` | TCP FIN seen                                             |
-| `0x0004` | TCP RST seen                                             |
-| `0x0008` | TCP SYN (handshake record)                              |
-| `0x0010` | TCP URG seen                                             |
-| `0x0040` | retransmission/overlap was resolved inside this record   |
-| `0x0080` | datagram boundary (UDP: record is exactly one datagram)  |
-| `0xFF20` | reserved, MUST be 0                                      |
+| Bit      | JSON token   | Meaning                                                  |
+|----------|--------------|----------------------------------------------------------|
+| `0x0001` | `psh`        | TCP PSH seen in this run                                 |
+| `0x0002` | `fin`        | TCP FIN seen                                             |
+| `0x0004` | `rst`        | TCP RST seen                                             |
+| `0x0008` | `syn`        | TCP SYN (handshake record)                               |
+| `0x0010` | `urg`        | TCP URG seen                                             |
+| `0x0040` | `retransmit` | retransmission/overlap was resolved inside this record   |
+| `0x0080` | `datagram`   | datagram boundary (UDP: record is exactly one datagram)  |
+| `0xFF20` | —            | reserved, MUST be 0                                      |
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
@@ -1097,26 +1100,84 @@ fine for a live stream that is legitimately still open).
 
 ### JSONL ↔ binary field mapping
 
-The JSON-Lines projection (above) is **semantically** lossless for the fields
-below; the `type` string selects the block. Names differ where JSONL favours
-brevity:
+The JSON-Lines projection is **semantically** lossless for every field. It is
+defined by **one rule plus a short list of exceptions**, so it stays complete as
+options are added rather than depending on an enumerated key list.
 
-| JSONL key            | Binary field / option        |
-|----------------------|------------------------------|
-| `format`             | `version_major.version_minor`|
-| `time_units`         | `tick_hz`                    |
-| `single_clock` (bool, on `file`)    | File Header `flags` SINGLE_CLOCK bit (`0x0001`) |
-| `sequenced` (bool, on `session`)    | Session Descriptor `flags` SEQUENCED bit (`0x0001`) |
-| `ts`                 | Record `timestamp`           |
-| `pid`                | Participant `participant_id` |
-| `proto`, `key`       | `proto`, `flow_key` options  |
-| `kind`               | Source `kind` (`capture`/`zpf-input`) |
-| `spans`              | `spans` (entries `{source_id, session_id, pid, off_start, off_end}`) |
-| `payload` (base64)   | `payload` (raw bytes)        |
+**The rule.** For any block, its JSON keys are the **canonical names** of its
+binary body fields and its TLV options — the field names in the block's body
+table and the `Name` column of the
+[option registry](#tlv-option-framing--id-registry) — used verbatim as JSON keys,
+*except* for the brevity aliases below. A field or option a converter does not
+recognise (a future registry id, a `Custom` block's contents) round-trips through
+a generic `options` array (below); anything that **is** registered MUST use its
+canonical key and MUST NOT be placed in `options`. The block is selected by its
+`type` string.
 
-`payload` uses **standard** base64 (RFC 4648 §4, with `=` padding) in JSONL.
-Options not in this table round-trip through a generic `options` array so the
-converter stays lossless.
+**`type` string ↔ block.**
+
+| `type`        | Block                             |
+|---------------|-----------------------------------|
+| `file`        | File Header (`0x01`)              |
+| `source`      | Source Descriptor (`0x02`)        |
+| `decoder`     | Decoder Descriptor (`0x03`)       |
+| `session`     | Session Descriptor (`0x10`)       |
+| `participant` | Participant Descriptor (`0x11`)   |
+| `record`      | Record (`0x20`)                   |
+| `undecoded`   | Undecoded (`0x21`)                |
+| `name`        | Name/Identity Resolution (`0x30`) |
+| `end`         | End (`0x41`)                      |
+| `custom`      | Custom (`0xFF`)                   |
+
+**Brevity aliases** — the *only* keys whose JSON name differs from the binary
+name:
+
+| JSONL key    | Binary field / option                                            |
+|--------------|------------------------------------------------------------------|
+| `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/1"` ⇒ major 1, minor 0) |
+| `time_units` | `tick_hz` (File Header)                                          |
+| `ts`         | `timestamp` (Record)                                            |
+| `pid`        | `participant_id` (block body, and each `spans` entry)            |
+| `key`        | `flow_key` (Session)                                            |
+
+(`proto` is **not** an alias — its JSON key equals its option name.)
+
+**Value encoding.**
+
+- **Integers** → JSON number, with one exception: a **64-bit** field (`session_id`,
+  `ts`/`timestamp`, `time_units`/`tick_hz`, `time_epoch`, `produced_at`,
+  `ts_first`, `off_start`, `off_end`) MAY be written as a JSON number **or** a
+  decimal string, and a writer SHOULD use the string form when the value exceeds
+  2⁵³ (beyond JSON's exact-integer range). A reader MUST accept both. 32-bit and
+  narrower fields are always plain numbers.
+- **Strings** → JSON string; a `digest` keeps its `"<alg>:<hex>"` form.
+- **`payload`** and any raw-byte value → **standard base64** (RFC 4648 §4, with
+  `=` padding).
+- **Enums** render as their defined **string label**: `kind` as
+  `"capture"`/`"zpf-input"`, `tcp_role` as `"initiator"`/`"responder"` (omitted
+  when unknown). **`boundary` is the exception** — it stays a JSON **number**
+  (`0`, or a decoder-scoped value `≥1`).
+- **Flag bitfields** render by name, never as the raw integer: the single-bit
+  file and session flags are booleans (`"single_clock"` on `file`, `"sequenced"`
+  on `session`), and a Record's multi-bit `flags` is an **array of set-bit
+  tokens** (the JSON-token column of the [flags enum](#enums), e.g.
+  `"flags":["psh","fin"]`). A zero/unset bitfield is omitted.
+- **Repeatable options** (`endpoint`) → a JSON **array**, order preserved.
+- **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
+  objects.
+- An **absent** option is an **omitted** key; a reader treats a missing key as
+  "option not present," never as a present option carrying a default.
+- **Framing / on-disk-only fields are not projected**: the block
+  `type`/`reserved`/`length`, the header `bom`, `end_magic`, `payload_len`, and
+  padding have no JSON key — the `type` string, the JSON object structure, and the
+  base64 `payload`'s own length stand in for them.
+
+**Unrecognised data and `Custom` blocks.** A converter MUST round-trip what it
+does not recognise, mirroring the binary skip-by-`length`/`len` rule: an
+unregistered option becomes an entry in the block's `options` array, each
+`{"id":"0x0091","value":"<base64 of the raw option value>"}`; an unknown `type`
+string, or unknown keys on a known block, are preserved unchanged; a `Custom`
+block carries `pen`, `subtype`, and a base64 `payload`.
 
 **Semantic, not byte-exact.** A binary → JSONL → binary round-trip preserves
 every field's *value*, but **not** the exact bytes: padding, the ordering of
