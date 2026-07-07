@@ -896,10 +896,23 @@ is found in the normal block walk. In the JSONL projection it is a final
 `comment` (UTF-8) on any block. Ids are grouped by the block they belong to but
 an id never changes meaning across blocks where it is reused (e.g. `decoder_id`).
 
-An option id appears **at most once** per block unless its registry entry marks
-it repeatable (e.g. `endpoint`). For a repeatable id, **the order of occurrences
-is significant** and readers MUST preserve it; for any other id a reader MAY use
-the first occurrence and ignore the rest.
+**Preservation is universal; repeatability is only about interpretation.** A
+reader MUST retain **every** occurrence of **every** option, in file order,
+whether or not it recognises the id — this is what round-trip and forward
+compatibility require, and it is *not* conditional on any "repeatable" marker. A
+reader never silently drops a repeated option.
+
+Whether an id is *single-valued* or *repeatable* is a **semantic** property in the
+registry, consulted only by a consumer that actually interprets the id:
+
+- A **repeatable** id is an ordered list; its occurrences and their order are
+  significant. **The only repeatable id in v1.0 is `endpoint`** (any future
+  repeatable id MUST be added to this closed list).
+- A **single-valued** id (every other id) SHOULD appear at most once; a consumer
+  that interprets it uses the **first** occurrence. If it nonetheless repeats, a
+  faithful reader still preserves the extra occurrences for round-trip.
+- `spans` is **single-valued**: it appears at most once, and its multiplicity
+  lives *inside* the packed value (a list of entries), not across occurrences.
 
 | Id       | Name             | Value type | Used in                  | Meaning                                                        |
 |----------|------------------|------------|--------------------------|----------------------------------------------------------------|
@@ -936,7 +949,10 @@ the first occurrence and ignore the rest.
 A **span-list** value is `count` packed entries, each 28 bytes:
 `source_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
 (`count = len / 28`). The two u16s lead so the u64 fields stay 4-byte aligned
-within the packed entry. The **interpretation of the offsets is keyed by the
+within the packed entry — this packed order (`source_id, pid, session_id, …`)
+differs from the logical/JSON field order (`source_id, session_id, pid, …`) *only*
+for that alignment; all three faces name the same five fields, and since JSON is
+keyed by name the reorder is immaterial there. The **interpretation of the offsets is keyed by the
 referenced source's `kind`**: for a `zpf-input` source, `off_start`/`off_end` are
 **logical 0-based stream offsets** within `(session_id, pid)` of that input; for
 a `capture` source, they are **byte offsets into the capture file** and
@@ -1291,3 +1307,14 @@ declare-on-first-use contract holding in the byte stream.
   locates a session's *declaration*, not its scattered records. Stays fully
   optional and streaming-compatible: a skippable block, absent on live or
   truncated files, found via a back-pointer from the End block.
+
+- **Self-describing repeatability (a `repeatable` id-bit).** Reserve the high bit
+  of a TLV `id` to mark an option as an ordered list, so a schema-less tool could
+  render an unknown option as scalar-vs-array without consulting the registry.
+  *Not adopted now:* a reader already preserves every occurrence in order (see
+  [TLV framing](#tlv-option-framing--id-registry)), so generic round-trip is
+  lossless without it; the bit would only buy prettier rendering of unknown
+  single-valued options, at the cost of a permanent framing bit, a per-occurrence
+  consistency rule, and duplicating a fact the registry already holds. If ever
+  wanted, the `id` high bit (dropping ids to a 15-bit space) is the place — *not*
+  the `len` bit, which would halve the 64 KB option-value cap.

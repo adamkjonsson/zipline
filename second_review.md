@@ -147,6 +147,7 @@ These are the items I'd file as blocking questions before writing code:
   as a closed list (today: `comment`? `endpoint`. is `spans` "repeatable" or a
   single packed value? — it's a single value containing many entries, which is a
   third case worth stating explicitly).
+  **→ RESOLVED** — see [G3/I2 resolution](#resolution-tlv-repeatability-and-span-order-g3-i2).
 
 - **G4 — Cross-file id spaces in `spans` are subtle and only stated in passing.**
   A span's `session_id`/`pid` live in the *referenced source's* id space, not the
@@ -183,6 +184,7 @@ These are the items I'd file as blocking questions before writing code:
   JSON is by-name, but presenting three orders for the same record invites a
   transcription bug. Pick one presentation order and note the binary reordering
   is purely for alignment.
+  **→ RESOLVED** — see [G3/I2 resolution](#resolution-tlv-repeatability-and-span-order-g3-i2).
 
 - **I3 — `boundary` is described two incompatible ways.** It's simultaneously "a
   boolean-ish raw/decoded discriminator (0 vs ≥1), the number carries no meaning"
@@ -270,9 +272,11 @@ interoperability.
 
 **Should-fix (prevents likely-wrong implementations):**
 
-4. **Publish the closed set of repeatable option ids (G3)** and state how `spans`
-   (single value, many entries) differs from a repeatable option. *Why:* a
-   generic TLV reader otherwise silently drops inner tunnel endpoints.
+4. ~~**Publish the closed set of repeatable option ids (G3)**~~ **DONE** — made
+   order-preserving retention of all occurrences universal (so a generic reader
+   can't drop endpoints), published the closed repeatable set (`endpoint` only),
+   and stated `spans` is single-valued with an internal list. See
+   [G3/I2 resolution](#resolution-tlv-repeatability-and-span-order-g3-i2).
 
 5. **Add one sentence on span id-namespaces (G4):** a span's `session_id`/`pid`
    are in the referenced source's namespace, not the current file's.
@@ -292,8 +296,10 @@ interoperability.
    equal the token's implied width, and what does a reader do otherwise?
 
 9. **Tighten the prose** in the narrative sections — fewer restatements of the
-   same idea — and unify the span field-order presentation (I2). The normative
-   section needs no trimming; the explanatory sections do.
+   same idea. The normative section needs no trimming; the explanatory sections
+   do. *(The span field-order half of this item (I2) is **DONE** — see the
+   [G3/I2 resolution](#resolution-tlv-repeatability-and-span-order-g3-i2); prose
+   tightening remains.)*
 
 10. **Note that `isn` is purely informational** at its definition site so
     implementers know it carries no behaviour, and decide whether it earns its
@@ -444,9 +450,8 @@ normatively, which the unification relies on), and **raw-file gaps stay implicit
 (a sequence-number discontinuity; a decoder writer reconstructs them via software
 support and emits explicit Undecoded blocks in the derived file).
 
-This closes the two most serious findings (I1, G1). Remaining open from the
-original review after this, the G2 work, and the I3 work below: G3/I2 (option
-repeatability & span field order), G4 (span id-namespaces), G5/#8 (`prim:` width),
+This closes the two most serious findings (I1, G1). Remaining open after this and
+the G2, I3, and G3/I2 work below: G4 (span id-namespaces), G5/#8 (`prim:` width),
 and the prose-tightening item.
 
 ### Resolution: JSONL key mapping (G2)
@@ -504,3 +509,31 @@ flag-bit: since `boundary ≥ 1` was already a strict biconditional with "carrie
   `decoder_id`; decoded records carry it.
 
 This also retires the one asymmetry the G2 work had to defer.
+
+### Resolution: TLV repeatability and span order (G3, I2)
+
+**G3** (a generic reader could silently drop repeated `endpoint`s because
+repeatability was signalled only in prose) was fixed by **separating preservation
+from semantics** in the TLV framing — no format change:
+
+- **Preservation is universal:** a reader MUST retain every occurrence of every
+  option, in file order, recognised or not. This is unconditional (round-trip /
+  forward-compat), so a generic reader can no longer drop tunnel endpoints — the
+  permissive "MAY use the first occurrence and ignore the rest" rule is gone.
+- **Repeatability is a registry-level *semantic* fact** consulted only by a
+  consumer that interprets the id: a **closed list** — `endpoint` is the only
+  repeatable id in v1.0 (future ones must be added to it); every other id is
+  single-valued (a consumer uses the first occurrence).
+- **`spans` named explicitly** as single-valued with its list *inside* the packed
+  value — the third case the original review flagged.
+
+Per decision, a self-describing `repeatable` id-bit was **not** adopted (generic
+round-trip is already lossless without it); it's recorded in *Possible future
+extensions* with the rationale and the note that the `id` high bit — not `len` —
+is where it would go.
+
+**I2** (the `spans` entry appeared in three field orders) was fixed with a note at
+the binary `span-list` definition: the packed order (`source_id, pid, session_id,
+…`) differs from the logical/JSON order (`source_id, session_id, pid, …`) *only*
+for u64 alignment, and JSON being name-keyed makes the reorder immaterial. All
+three faces name the same five fields; no renames.
