@@ -58,13 +58,12 @@ decoder). Which one a record is, is told by a single fact: **whether it carries 
 What that unit *means* (HTTP message, TLS record, …) comes from the referenced
 decoder, not from any separate marker on the record.
 
-Raw and decoded records rarely share boundaries, so decoding is modelled as a
-*file → file transform* (`raw.zpf → decoded.zpf`) rather than a layer inside a
-record (see [Layers](#layers-raw-and-decoded-live-in-separate-files)). Raw byte
-runs therefore live only in a raw file: a derived (decoded) file holds
-decoder-imposed records, and the regions a decoder *could not* parse are recorded
-not as raw bytes but as **[Undecoded](#undecoded-0x21)** markers that point back
-at the predecessor's bytes (so nothing is silently dropped).
+Raw and decoded records rarely share boundaries, so decoding is a *file → file
+transform* (`raw.zpf → decoded.zpf`), not a layer inside a record (see
+[Layers](#layers-raw-and-decoded-live-in-separate-files)). Raw byte runs live only
+in a raw file; a derived file holds decoder-imposed records, and regions a decoder
+*could not* parse become **[Undecoded](#undecoded-0x21)** markers pointing back at
+the predecessor's bytes (nothing is silently dropped).
 
 This single shape expresses all the target cases:
 
@@ -330,10 +329,9 @@ the merge is correct despite the timestamp inversion.
 
 ### Sequenced files (precomputed order)
 
-The merge is consumer work, and a given file is typically read far more often
-than it is written. A producer that has already resolved the cross-participant
-order MAY therefore *bake it into the file* and let every downstream reader skip
-the merge. Sequencing is marked **per session**, on the
+The merge is consumer work, and a file is read far more often than written — so a
+producer that has already resolved the cross-participant order MAY *bake it in* and
+let every downstream reader skip the merge. Sequencing is marked **per session**, on the
 [Session Descriptor](#session-descriptor-0x10): a session carrying the
 `SEQUENCED` flag stores its records so that the order of its Record blocks in the
 file is a valid causal linearization — every record appears after all records
@@ -387,8 +385,8 @@ hint-less session `SEQUENCED` unless its records share a single trustworthy cloc
 **File-level `SINGLE_CLOCK`.** That clock precondition has a file-wide form, the
 `SINGLE_CLOCK` flag on the [File Header](#file-header-0x01): it asserts that
 *every record in the file was stamped against one trustworthy clock*, so
-timestamps are globally comparable across all sessions and sources, with no
-inter-source skew. Its value is forward-looking. A raw writer often cannot tell
+timestamps are globally comparable across sessions and sources (no inter-source
+skew). Its value is forward-looking. A raw writer often cannot tell
 that a handful of one-way UDP streams are really one `N`-party session (the `N=5`
 case), so it emits them as separate, unsequenced streams — it can commit no
 cross-stream order. But it *can* honestly assert `SINGLE_CLOCK` if it was a single

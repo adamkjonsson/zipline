@@ -304,11 +304,15 @@ interoperability.
    mismatch the reader treats `content_type` as unknown (opaque bytes), never
    padding/truncating/reinterpreting.
 
-9. **Tighten the prose** in the narrative sections — fewer restatements of the
-   same idea. The normative section needs no trimming; the explanatory sections
-   do. *(The span field-order half of this item (I2) is **DONE** — see the
-   [G3/I2 resolution](#resolution-tlv-repeatability-and-span-order-g3-i2); prose
-   tightening remains.)*
+9. ~~**Tighten the prose** in the narrative sections.~~ **DONE (light pass)** —
+   the span field-order half (I2) was already resolved (see the
+   [G3/I2 resolution](#resolution-tlv-repeatability-and-span-order-g3-i2)); a
+   deliberately conservative copy-edit then trimmed the wordiest of the newer
+   explanatory additions (conceptual-model file→file overview, the Sequenced-files
+   opening, a `SINGLE_CLOCK` redundancy). Kept light on purpose: the original
+   author's narrative is already tight, and the densest sentences the review named
+   (timestamp rule, `session_id` rationale) live in the *normative* section, which
+   the review itself said to leave untrimmed. No meaning changed.
 
 10. **Note that `isn` is purely informational** at its definition site so
     implementers know it carries no behaviour, and decide whether it earns its
@@ -461,9 +465,10 @@ support and emits explicit Undecoded blocks in the derived file).
 
 This closes the two most serious findings (I1, G1). With the G2, I3, G3/I2, G4,
 and G5 work below, **every named gap and inconsistency (G1–G5, I1–I3) is now
-resolved.** What remains are two nice-to-haves: prose-tightening (#9) and the
-optional `isn` trimming judgment (#10 — it is already labelled informational at
-its definition site, so only the "does it earn its place" call is left).
+resolved**, and the prose-tightening nice-to-have (#9) has had a light pass. The
+only item still fully open is the optional `isn` trimming judgment (#10 — it is
+already labelled informational at its definition site, so only the "does it earn
+its place" call is left).
 
 ### Resolution: JSONL key mapping (G2)
 
