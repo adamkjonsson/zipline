@@ -218,7 +218,7 @@ Per **Participant Descriptor** (TCP):
 
 | Option        | Meaning                                                        |
 |---------------|----------------------------------------------------------------|
-| `isn`         | the SYN's sequence number, recorded **for information** when the handshake was seen; *not* used as an offset base |
+| `isn`         | the SYN's sequence number; present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`) for detecting post-handshake loss and anchoring logical offset 0; *not* used for ordering |
 | `endpoint`    | `ip:port`                                                       |
 
 Per **Record** (TCP):
@@ -292,10 +292,13 @@ file runs the algorithm above.
 - SACK/retransmission/overlap are resolved by the *reassembler* before records
   are emitted; the format records the reassembled result and its favor-old
   overlap policy, not raw retransmits.
-- A **mid-stream** capture (handshake never seen) needs no special handling —
-  the writer simply omits `isn` (it is responsible for confirming the SYN is
-  genuinely absent rather than merely delayed before declaring a participant
-  ISN-less).
+- A **mid-stream** capture (handshake never seen) needs no special handling for
+  *ordering* — the writer simply omits `isn` (it is responsible for confirming the
+  SYN is genuinely absent rather than merely delayed before declaring a
+  participant ISN-less). The only consequence is that the stream's absolute origin
+  is then unknown, so logical offset 0 falls back to the first captured byte and a
+  pre-first-byte loss is not representable (see
+  [Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
 
 ### Worked example: a skewed two-file capture
 
@@ -433,13 +436,18 @@ file's spans.
 ### Referencing the source by stream offset
 
 The crux of the "2.5 records" problem: a decoded record points at **byte ranges
-in the reassembled stream** by a **logical 0-based stream offset** (byte 0 is the
-first reassembled payload byte of that participant's stream) — *not* at raw
+in the reassembled stream** by a **logical 0-based stream offset** — *not* at raw
 record ids, and *not* at the absolute TCP sequence numbers used for ordering.
-This logical offset is deliberately TCP-independent, so the same mechanism works
-for a decoded UDP or chat stream that has no sequence numbers. It makes the raw
-side's arbitrary chunking irrelevant; a fractional, multi-record span is just one
-contiguous range. The provenance of a decoded record is a **span set**:
+**Byte 0 is the stream's first application byte.** When the TCP handshake was
+observed (the participant carries an `isn`), that byte is absolute seq `isn + 1`,
+so any bytes lost *between the handshake and the first captured byte* occupy the
+leading offsets and stay representable (see below); with no `isn` — UDP, chat, or
+a mid-stream TCP capture whose true origin is unknowable — byte 0 is instead the
+first reassembled byte. Apart from fixing that origin the offset is deliberately
+TCP-independent, so the same mechanism works for a decoded UDP or chat stream that
+has no sequence numbers. It makes the raw side's arbitrary chunking irrelevant; a
+fractional, multi-record span is just one contiguous range. The provenance of a
+decoded record is a **span set**:
 
 ```
 provenance = {
@@ -461,7 +469,12 @@ running count of delivered bytes. So a 39-byte gap occupies a 39-wide offset
 range that no record's payload covers, and the next delivered byte resumes at the
 offset past it. This is what lets an undecoded or missing region be named by a
 single `[off_start, off_end)` range (see [Undecoded](#undecoded-0x21)); a span
-whose range falls in such a hole resolves to no bytes.
+whose range falls in such a hole resolves to no bytes. A gap at the very *start*
+is no different **when the origin is `isn`-anchored**: bytes lost between the
+handshake and the first captured byte are the leading hole `[0, K)`
+(`K = first seq_start − (isn + 1)`), named like any other. Without an `isn` there
+is no room below the first captured byte, so a pre-first-byte loss simply is not
+representable — one more reason `isn` is mandatory once the handshake is seen.
 
 ### Source Descriptor (which input)
 
@@ -725,14 +738,22 @@ MUST be written 0, and MUST be ignored on read.
 | `_reserved`      | u16  | 0                                       |
 
 Options: `endpoint` (string, **may repeat** — see below), `isn` (u32, the SYN's
-TCP sequence number, **informational only** — recorded when the handshake was
-seen; ordering uses absolute sequence numbers and does not rely on it),
-`tcp_role` (u8, see enums), `identity` (string), `comment`.
+TCP sequence number — see below), `tcp_role` (u8, see enums), `identity`
+(string), `comment`.
 
 `tcp_role` records, **when the handshake was observed**, which side opened the
 connection: the participant that sent the initial SYN is the *initiator* (active
 open), its peer the *responder* (passive open). Omit it when the capture began
 mid-stream and the opener is unknown — absence means "unknown", not "responder".
+
+`isn` **MUST** be present when this participant's SYN was observed, and omitted
+when the capture began mid-stream (the writer must first confirm the SYN is
+genuinely absent, not merely delayed). Its job is to fix the stream's **absolute
+origin**: the first application byte is `isn + 1`, so a consumer can tell whether
+bytes were lost between the handshake and the first captured byte, and logical
+offset 0 is anchored there (see
+[Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
+Ordering does *not* use `isn` — that relies on the absolute `seq`/`ack` numbers.
 
 **Tunnelled endpoints.** When the traffic was carried through one or more
 tunnels (VXLAN, GRE, IP-in-IP, a VPN, …), a participant has an address at each
@@ -930,7 +951,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick; **repeatable**, outermost tunnel layer first → innermost last |
-| `0x0061` | isn              | u32        | Participant              | the SYN's sequence number, informational; not an offset base   |
+| `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
 | `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
 | `0x0070` | seq_start        | u32        | Record (TCP)             | absolute sequence number of the first payload byte             |
@@ -1071,9 +1092,10 @@ split, however, falls on the file's level in the `raw → … → decoded` chain
 
 - A **raw** record carries no `decoder_id`, and its `source_id`/`spans` reference
   a `capture` Source; it appears only in a raw file. TCP raw records SHOULD carry
-  `seq_start`/`seq_end` (and `ack` where known); TCP participants SHOULD carry
-  `isn` when the handshake was seen; UDP records SHOULD set the datagram-boundary
-  flag.
+  `seq_start`/`seq_end` (and `ack` where known); TCP participants **MUST** carry
+  `isn` when the handshake was observed (it fixes the stream's absolute origin —
+  see [Referencing the source by stream offset](#referencing-the-source-by-stream-offset))
+  and omit it otherwise; UDP records SHOULD set the datagram-boundary flag.
 - A **decoded** record MUST carry a `decoder_id`, and its `source_id`/`spans`
   reference a `zpf-input` Source. A file containing any decoded record MUST declare
   every Decoder it references and every `zpf-input` Source, set the File Header
@@ -1264,7 +1286,7 @@ Offsets are hex; each line is annotated.
 006C  3A 35 31 30 30 30        :51000"
 0072  00 00                    value padding
 0074  61 00 04 00              option 0x0061 isn, len = 4
-0078  E8 03 00 00              isn = 1000  (informational)
+0078  E8 03 00 00              isn = 1000  (stream origin; first byte = 1001)
 
 # ── Record (0x20) ───────────────────────────────────────────────────
 007C  20 00                    type   = 0x0020  Record

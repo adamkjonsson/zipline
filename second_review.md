@@ -314,9 +314,12 @@ interoperability.
    (timestamp rule, `session_id` rationale) live in the *normative* section, which
    the review itself said to leave untrimmed. No meaning changed.
 
-10. **Note that `isn` is purely informational** at its definition site so
-    implementers know it carries no behaviour, and decide whether it earns its
-    place in a minimal v1.0.
+10. ~~**Note that `isn` is purely informational** … decide whether it earns its
+    place.~~ **DONE** — resolved by *giving it a real job* rather than trimming:
+    `isn` now fixes the stream's absolute origin (first byte = `isn+1`), is
+    **MUST** when the handshake was observed, and lets a decoder detect/represent
+    bytes lost between the handshake and the first captured byte. See
+    [isn resolution](#resolution-isn-given-a-real-job-10).
 
 ## Follow up questions
 
@@ -464,11 +467,9 @@ normatively, which the unification relies on), and **raw-file gaps stay implicit
 support and emits explicit Undecoded blocks in the derived file).
 
 This closes the two most serious findings (I1, G1). With the G2, I3, G3/I2, G4,
-and G5 work below, **every named gap and inconsistency (G1–G5, I1–I3) is now
-resolved**, and the prose-tightening nice-to-have (#9) has had a light pass. The
-only item still fully open is the optional `isn` trimming judgment (#10 — it is
-already labelled informational at its definition site, so only the "does it earn
-its place" call is left).
+G5, and `isn`/#10 work below, **every named gap and inconsistency (G1–G5, I1–I3)
+is resolved**, and both nice-to-haves are addressed: prose-tightening (#9, light
+pass) and the `isn` question (#10). Nothing from the original review remains open.
 
 ### Resolution: JSONL key mapping (G2)
 
@@ -553,3 +554,28 @@ the binary `span-list` definition: the packed order (`source_id, pid, session_id
 …`) differs from the logical/JSON order (`source_id, session_id, pid, …`) *only*
 for u64 alignment, and JSON being name-keyed makes the reorder immaterial. All
 three faces name the same five fields; no renames.
+
+### Resolution: `isn` given a real job (#10)
+
+The review flagged `isn` as near-vestigial — explicitly "informational," excluded
+from ordering, and its "handshake seen" signal redundant with `tcp_role`. Rather
+than trim it, we gave it a genuine, load-bearing role (discussed and chosen as
+"Option 2"):
+
+- **`isn` fixes the stream's absolute origin.** The first application byte is
+  `isn + 1`, so **logical offset 0 is anchored at `isn + 1`** whenever the
+  handshake was observed. With no `isn` (UDP, chat, mid-stream TCP), offset 0 falls
+  back to the first reassembled byte, as before.
+- **It makes post-handshake loss detectable *and* representable.** If the first
+  record's `seq_start > isn + 1`, the leading `K = seq_start − (isn+1)` bytes are a
+  hole `[0, K)` a decoder can emit as a leading `Undecoded(tcp-gap)` — previously
+  there was no offset room below the first captured byte, so the loss couldn't be
+  expressed at all.
+- **Mandatory when the handshake was seen.** Upgraded `SHOULD` → **`MUST`** in
+  Conformance (and stated the purpose at the Participant Descriptor, the seq/ack
+  "Fields used" table, and the registry — replacing the old, now-incorrect "not an
+  offset base" wording). Omitted when mid-stream, exactly as before.
+
+Checked against the worked examples: all have `seq_start = isn + 1`, so
+`isn + 1 = offset 0` and no example changed. This resolves #10 by making `isn`
+clearly earn its place.
