@@ -189,6 +189,7 @@ These are the items I'd file as blocking questions before writing code:
   *and* "values 2–255 reserved for future distinctions." If the number is
   meaningless and resolved via `decoder_id`, reserving a numeric range implies it
   *will* carry meaning later — pick one story. (See also #7.)
+  **→ RESOLVED** — see [I3 resolution](#resolution-boundary-removed-i3-7).
 
 ### 7. Features that add more complexity than value
 
@@ -199,6 +200,8 @@ These are the items I'd file as blocking questions before writing code:
   opportunity. (If a future need for distinct numeric boundary classes is real,
   keep the byte but *define* at least a second value so the range isn't purely
   speculative.)
+  **→ RESOLVED** — went further than a flag bit: `boundary` was removed entirely.
+  See [I3 resolution](#resolution-boundary-removed-i3-7).
 
 - **`isn` is explicitly informational and explicitly unused by ordering.** It's
   harmless, but it's a field whose own description says it does nothing. Keeping
@@ -274,10 +277,10 @@ interoperability.
 5. **Add one sentence on span id-namespaces (G4):** a span's `session_id`/`pid`
    are in the referenced source's namespace, not the current file's.
 
-6. **Decide what `boundary` is (I3 / §7).** Recommend collapsing it to a single
-   `flags` bit and deleting the "2–255 reserved" range, *or* defining at least
-   one more numeric value so the range isn't speculative. *Why:* removes a field
-   ambiguity and a small amount of dead complexity.
+6. ~~**Decide what `boundary` is (I3 / §7).**~~ **DONE** — removed `boundary`
+   outright; a record is decoded iff it carries a `decoder_id` (single source of
+   truth, zero redundancy). See
+   [I3 resolution](#resolution-boundary-removed-i3-7).
 
 **Nice-to-have (clarity / robustness):**
 
@@ -442,9 +445,9 @@ normatively, which the unification relies on), and **raw-file gaps stay implicit
 support and emits explicit Undecoded blocks in the derived file).
 
 This closes the two most serious findings (I1, G1). Remaining open from the
-original review after this and the G2 work below: G3/I2 (option repeatability &
-span field order), G4 (span id-namespaces), G5/#8 (`prim:` width), I3/#6
-(`boundary` as a flag), and the prose-tightening item.
+original review after this, the G2 work, and the I3 work below: G3/I2 (option
+repeatability & span field order), G4 (span id-namespaces), G5/#8 (`prim:` width),
+and the prose-tightening item.
 
 ### Resolution: JSONL key mapping (G2)
 
@@ -474,6 +477,30 @@ examples) was resolved by replacing the incomplete mapping table with a
   strings, unknown keys, and unregistered options (via the `options` array),
   mirroring the binary skip-by-length rule.
 
-Deferred by decision: the `boundary` string-vs-number asymmetry is accepted for
-now and expected to be revised alongside a future `boundary` rework (ties to
-I3/#6).
+Deferred at the time: the `boundary` string-vs-number asymmetry — since resolved
+by removing `boundary` entirely (see below), so the JSONL projection no longer has
+a `boundary` key at all.
+
+### Resolution: `boundary` removed (I3, #7)
+
+I3 (the `boundary` field was described two incompatible ways — a meaningless
+discriminator *and* a reserved 2–255 range) and slimming item #6/§7 were resolved
+by **removing the `boundary` field outright** rather than the recommended
+flag-bit: since `boundary ≥ 1` was already a strict biconditional with "carries a
+`decoder_id`," the field was pure redundancy.
+
+- **New rule:** a record is *decoded* iff it carries a `decoder_id` — one source
+  of truth, zero redundancy, no consistency invariant to violate (a flag bit would
+  have re-introduced a milder version of the same smell).
+- **Binary:** the Record body's `boundary:u8` + `_reserved:u8` become a single
+  `_reserved:u16`; every offset and the 28-byte body size are unchanged, so the
+  worked hex example and its 204-byte total still hold (only the annotation
+  changed).
+- **Removed** the `boundary` enum and the speculative 2–255 range; rewrote the
+  conceptual model, Decoder/typing sections, and conformance to key on
+  `decoder_id` presence.
+- **JSONL:** the `boundary` key is gone from the mapping and every example; the
+  G2 "boundary stays numeric" exception was deleted. Raw records simply omit
+  `decoder_id`; decoded records carry it.
+
+This also retires the one asymmetry the G2 work had to defer.

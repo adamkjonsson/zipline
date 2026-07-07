@@ -53,10 +53,10 @@ participant in its session**: the single peer when `N = 2`, the whole room when
 the record has a sender and a direction, not a specific addressee.) A
 record may be either a *raw byte run* (transport-truthful; boundaries fall where
 reassembly produced them) or a *decoder-imposed unit* (boundaries set by an app
-decoder). A `boundary` field says which — `0` for a raw byte run, non-zero for a
-decoder-imposed unit — so a generic consumer can fall back to byte runs when no
-decoder ran. What a non-zero boundary *means* (HTTP message, TLS record, …) comes
-from the record's `decoder_id`, not from the number itself.
+decoder). Which one a record is, is told by a single fact: **whether it carries a
+`decoder_id`**. A raw byte run carries none; a decoder-imposed unit always does.
+What that unit *means* (HTTP message, TLS record, …) comes from the referenced
+decoder, not from any separate marker on the record.
 
 Raw and decoded records rarely share boundaries, so decoding is modelled as a
 *file → file transform* (`raw.zpf → decoded.zpf`) rather than a layer inside a
@@ -167,15 +167,15 @@ mid-stream and is declared only at that point.
 {"type":"participant","session_id":8,"pid":2,"endpoint":"carol"}
 
 {"type":"record","session_id":8,"sender_pid":0,"source_id":1,"ts":2000,
- "boundary":0,"payload":"aGksIGFsbCE="}
+ "payload":"aGksIGFsbCE="}
 {"type":"record","session_id":8,"sender_pid":2,"source_id":1,"ts":2100,
- "boundary":0,"payload":"aGV5IGFsaWNl"}
+ "payload":"aGV5IGFsaWNl"}
 {"type":"record","session_id":8,"sender_pid":1,"source_id":1,"ts":2150,
- "boundary":0,"payload":"bW9ybmluZw=="}
+ "payload":"bW9ybmluZw=="}
 
 {"type":"participant","session_id":8,"pid":3,"endpoint":"dave"}
 {"type":"record","session_id":8,"sender_pid":3,"source_id":1,"ts":2300,
- "boundary":0,"payload":"YW0gSSBsYXRlPw=="}
+ "payload":"YW0gSSBsYXRlPw=="}
 ```
 
 ## Causal ordering from TCP seq/ack
@@ -314,14 +314,14 @@ The canonical case for seq/ack ordering — the two directions captured to
 {"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80","isn":5000}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
- "boundary":0,"seq_start":1001,"seq_end":1019,"ack":5001,
+ "seq_start":1001,"seq_end":1019,"ack":5001,
  "payload":"R0VUIC8gSFRUUC8xLjENCg0K"}
 {"type":"record","session_id":7,"sender_pid":1,"source_id":2,"ts":995,
- "boundary":0,"seq_start":5001,"seq_end":5101,"ack":1019,
+ "seq_start":5001,"seq_end":5101,"ack":1019,
  "payload":"SFRUUC8xLjEgMjAwIE9LDQouLi4="}
 ```
 
-These are raw records (`boundary:0`). The sequence numbers are absolute (client
+These are raw records (no `decoder_id`). The sequence numbers are absolute (client
 ISN 1000 → first data byte 1001; server ISN 5000 → first data byte 5001). Note
 the server record's `ts` (995) is *earlier* than the client request it answers
 (1000) — the two capture clocks are skewed. The server's `ack:1019` nonetheless
@@ -490,13 +490,12 @@ The decoder is a first-class, referenceable entity: a `decoder_id` (referenced
 per-record), a `name` (e.g. `http/1.1`), a `version`, and a `params_digest` (hash
 of the decoder config, so the decode is reproducible).
 
-Every decoder-imposed record (`boundary ≥ 1`) carries an **explicit**
-`decoder_id` — there is no implicit "primary" default. The reference is
-per-record, not per-file, because one decoded file legitimately mixes decoders:
-HTTP on one session, TLS-then-HTTP on another, a raw fallback on a session that
-did not parse. A record's `decoder_id` is exactly what gives its non-zero
-`boundary` meaning. **Reproducibility contract:** same input `digest` + same
-decoder `version`/`params_digest` ⇒ identical output.
+Every decoded record carries an **explicit** `decoder_id` — its presence is what
+*makes* the record decoded, and there is no implicit "primary" default. The
+reference is per-record, not per-file, because one decoded file legitimately mixes
+decoders: HTTP on one session, TLS-then-HTTP on another. A record's `decoder_id`
+is exactly what gives the record its meaning. **Reproducibility contract:** same
+input `digest` + same decoder `version`/`params_digest` ⇒ identical output.
 
 ### Typing a decoded record
 
@@ -516,15 +515,14 @@ truth — the label never replaces them.
   full list in [Enums](#enums)), for values media types describe poorly.
 - `dec:<token>` — a type **private to the record's decoder**, meaning whatever
   that decoder documents. Its namespace is the decoder's `name` — the same
-  `decoder_id` → Decoder `name` resolution that already gives a non-zero
-  `boundary` its meaning — and is **name-scoped**, not versioned: an incompatible
-  type change means a new decoder `name`. Two decoders may reuse a token without
-  colliding, since each is read in its own namespace; a decoder wanting a
-  globally-unique type simply gives itself a globally-unique `name`.
+  `decoder_id` → Decoder `name` resolution that already gives a decoded record its
+  meaning — and is **name-scoped**, not versioned: an incompatible type change
+  means a new decoder `name`. Two decoders may reuse a token without colliding,
+  since each is read in its own namespace; a decoder wanting a globally-unique
+  type simply gives itself a globally-unique `name`.
 
-An unknown scheme is treated as opaque. This is the named, richer form of the
-`boundary` 2–255 space: the decoder says *what each unit is* without the format
-having to parse it.
+An unknown scheme is treated as opaque. This lets the decoder say *what each unit
+is* without the format having to parse it.
 
 ### Coverage honesty: Undecoded blocks
 
@@ -566,10 +564,10 @@ bytes it could not parse, not copying them):
 {"type":"participant","session_id":7,"pid":0,"endpoint":"10.0.0.1:51000"}
 {"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80"}
 
-{"type":"record","session_id":7,"sender_pid":0,"ts":1000,"boundary":1,"decoder_id":1,
+{"type":"record","session_id":7,"sender_pid":0,"ts":1000,"decoder_id":1,
  "spans":[{"source_id":1,"session_id":7,"pid":0,"off_start":0,"off_end":18}],
  "content_type":"dec:request","payload":"…decoded request…"}
-{"type":"record","session_id":7,"sender_pid":1,"ts":995,"boundary":1,"decoder_id":1,
+{"type":"record","session_id":7,"sender_pid":1,"ts":995,"decoder_id":1,
  "spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],
  "content_type":"dec:response","payload":"…decoded response…"}
 {"type":"undecoded","session_id":7,"pid":1,"source_id":1,
@@ -757,16 +755,16 @@ Body (fixed part):
 | `sender_pid`  | u16   | sender participant; recipients are implicit (all other participants — see [Conceptual model](#conceptual-model)) |
 | `source_id`   | u16   | refers to a Source Descriptor — a `capture` for a raw record, a `zpf-input` for a decoded one |
 | `timestamp`   | i64   | packet time, in `tick_hz` ticks (see timestamp rule)|
-| `boundary`    | u8    | see enum (`0` raw, `≥1` decoder-imposed)            |
-| `_reserved`   | u8    | 0                                                  |
+| `_reserved`   | u16   | 0                                                  |
 | `flags`       | u16   | see bit table                                      |
 | `payload_len` | u32   | length of `payload`                                |
 | `payload`     | bytes | `payload_len` raw bytes (source of truth)          |
 
 `payload` is zero-padded to a multiple of 4 bytes; options then follow (TCP
 hints, provenance — see registry). `payload_len` gives the unpadded length and
-MAY be 0 (e.g. a pure-ACK record carrying only an `ack` hint). A record with
-`boundary ≥ 1` MUST carry a `decoder_id`; a record with `boundary = 0` MUST NOT.
+MAY be 0 (e.g. a pure-ACK record carrying only an `ack` hint). **A record is
+*decoded* iff it carries a `decoder_id`** — that presence is the sole raw/decoded
+discriminator: a decoded record MUST carry a `decoder_id`, a raw record MUST NOT.
 A decoded record MAY also carry a `content_type` labelling what its `payload` is
 (see [Typing a decoded record](#typing-a-decoded-record)).
 Because the frame `length` (u32) bounds the whole block, `payload_len` is in
@@ -947,13 +945,6 @@ capture-provenance and decoded derivation-provenance.
 
 ### Enums
 
-`boundary` (Record body, u8): `0` = raw byte run (transport-truthful, no
-decoder). Any value `≥ 1` = a decoder-imposed unit; the value itself carries no
-standardised meaning — *which* boundary scheme it is comes from the record's
-`decoder_id` → Decoder `name`. Values `2`–`255` are reserved for future
-distinctions but are not defined here. (A `boundary ≥ 1` record MUST carry a
-`decoder_id`, a `boundary = 0` record MUST NOT — see [Record](#record-0x20).)
-
 `kind` (Source body, u8): `0` = capture (a pcap/interface), `1` = zpf-input
 (another `.zpf` this file was derived from).
 
@@ -1034,28 +1025,27 @@ last block, and its presence marks the file complete. A file MAY omit it — a
 live/streaming or crashed writer does — and readers MUST still accept such a
 file, treating it as not-known-complete.
 
-A **raw** file holds raw records; a **derived** (decoded) file holds
-decoder-imposed records plus Undecoded markers, and contains **no** raw
-(`boundary = 0`) records — regions a decoder could not parse are recorded as
-[Undecoded](#undecoded-0x21) references, not copied back as bytes. One derived
-file MAY still mix *decoders* per-record (HTTP on one session, TLS-then-HTTP on
-another); the raw-vs-decoded split, however, falls on the file's level in the
-`raw → … → decoded` chain.
+A **raw** file holds raw records; a **derived** (decoded) file holds decoded
+records plus Undecoded markers, and contains **no** raw records — regions a
+decoder could not parse are recorded as [Undecoded](#undecoded-0x21) references,
+not copied back as bytes. **Whether a record is raw or decoded is told solely by
+whether it carries a `decoder_id`.** One derived file MAY still mix *decoders*
+per-record (HTTP on one session, TLS-then-HTTP on another); the raw-vs-decoded
+split, however, falls on the file's level in the `raw → … → decoded` chain.
 
-- A **raw** record has `boundary = 0`, carries no `decoder_id`, and its
-  `source_id`/`spans` reference a `capture` Source; it appears only in a raw file.
-  TCP raw records SHOULD carry `seq_start`/`seq_end` (and `ack` where known); TCP
-  participants SHOULD carry `isn` when the handshake was seen; UDP records SHOULD
-  set the datagram-boundary flag.
-- A **decoded** record has `boundary ≥ 1`, MUST carry a `decoder_id`, and its
-  `source_id`/`spans` reference a `zpf-input` Source. A file containing any
-  decoded record MUST declare every Decoder it references and every `zpf-input`
-  Source, set the File Header `produced_by`/`produced_at`, and account for every
-  input region it did not decode with an **Undecoded** block rather than dropping
-  it: within each input participant stream, every offset MUST be covered either by
-  some decoded record's `spans` or by an Undecoded block (the coverage guarantee).
-  Decoder, Undecoded, and `zpf-input` Sources appear only in files that carry
-  decoded records.
+- A **raw** record carries no `decoder_id`, and its `source_id`/`spans` reference
+  a `capture` Source; it appears only in a raw file. TCP raw records SHOULD carry
+  `seq_start`/`seq_end` (and `ack` where known); TCP participants SHOULD carry
+  `isn` when the handshake was seen; UDP records SHOULD set the datagram-boundary
+  flag.
+- A **decoded** record MUST carry a `decoder_id`, and its `source_id`/`spans`
+  reference a `zpf-input` Source. A file containing any decoded record MUST declare
+  every Decoder it references and every `zpf-input` Source, set the File Header
+  `produced_by`/`produced_at`, and account for every input region it did not decode
+  with an **Undecoded** block rather than dropping it: within each input
+  participant stream, every offset MUST be covered either by some decoded record's
+  `spans` or by an Undecoded block (the coverage guarantee). Decoder, Undecoded,
+  and `zpf-input` Sources appear only in files that carry decoded records.
 
 **Ordering and sequencing.** A writer **SHOULD** store each participant's records
 in `seq_start` (logical stream) order; this bounds an unsequenced reader's merge
@@ -1155,8 +1145,7 @@ name:
   `=` padding).
 - **Enums** render as their defined **string label**: `kind` as
   `"capture"`/`"zpf-input"`, `tcp_role` as `"initiator"`/`"responder"` (omitted
-  when unknown). **`boundary` is the exception** — it stays a JSON **number**
-  (`0`, or a decoder-scoped value `≥1`).
+  when unknown).
 - **Flag bitfields** render by name, never as the raw integer: the single-bit
   file and session flags are booleans (`"single_clock"` on `file`, `"sequenced"`
   on `session`), and a Record's multi-bit `flags` is an **array of set-bit
@@ -1249,8 +1238,7 @@ Offsets are hex; each line is annotated.
 008C  00 00                    sender_pid = 0
 008E  01 00                    source_id  = 1
 0090  E8 03 00 00 00 00 00 00  timestamp  = 1000
-0098  00                       boundary   = 0  (raw byte run)
-0099  00                       _reserved
+0098  00 00                    _reserved  (u16 = 0)
 009A  01 00                    flags      = 0x0001  (PSH seen)
 009C  12 00 00 00              payload_len = 18
 00A0  47 45 54 20 2F 20 48 54  "GET / HT
