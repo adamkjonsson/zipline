@@ -1010,6 +1010,16 @@ No other `prim:` token is legal — `mime:` and `dec:` carry everything else.
 
 Plus `prim:bytes`.
 
+**`prim:` width binds `payload_len`.** For a fixed-width `prim:` token, the
+record's `payload_len` (the *unpadded* length, not the 4-byte-padded frame size)
+MUST equal the token's width: `1` for `prim:u8`/`prim:i8`, `2` for `prim:u16-*`,
+`4` for `prim:u32-*`, `8` for `prim:u64-*`. `prim:bytes` places no length
+constraint (any `payload_len`, including 0). A writer MUST NOT emit a fixed-width
+`prim:` label whose width disagrees with `payload_len`; a reader that finds a
+mismatch MUST treat the `content_type` as unknown (opaque payload, falling back to
+the decoder `name`), exactly as for an unknown scheme, and MUST NOT pad, truncate,
+or reinterpret — the bytes remain the source of truth.
+
 ### Identifiers & ordering
 
 - `session_id`, `source_id`, and `decoder_id` are unique within a file.

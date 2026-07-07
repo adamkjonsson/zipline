@@ -164,6 +164,9 @@ These are the items I'd file as blocking questions before writing code:
   record's payload "is" an 8-byte integer, but nothing says the payload MUST be
   exactly the width implied by the token (8 bytes), nor what a consumer does if
   it isn't. Minor, but an implementer will ask.
+  **→ RESOLVED** — a fixed-width `prim:` token now requires `payload_len` to equal
+  its width (1/2/4/8); on mismatch a reader treats the `content_type` as unknown
+  (opaque bytes), reusing the existing "unknown scheme ⇒ opaque" path.
 
 ### 6. Inconsistencies
 
@@ -296,8 +299,10 @@ interoperability.
    that the known-skew tie-break is permitted-divergent across conformant
    readers.
 
-8. **Specify `prim:` width-vs-payload-length** behaviour (G5): MUST the payload
-   equal the token's implied width, and what does a reader do otherwise?
+8. ~~**Specify `prim:` width-vs-payload-length** behaviour (G5).~~ **DONE** — a
+   fixed-width `prim:` token requires `payload_len` to equal its width; on
+   mismatch the reader treats `content_type` as unknown (opaque bytes), never
+   padding/truncating/reinterpreting.
 
 9. **Tighten the prose** in the narrative sections — fewer restatements of the
    same idea. The normative section needs no trimming; the explanatory sections
@@ -454,9 +459,11 @@ normatively, which the unification relies on), and **raw-file gaps stay implicit
 (a sequence-number discontinuity; a decoder writer reconstructs them via software
 support and emits explicit Undecoded blocks in the derived file).
 
-This closes the two most serious findings (I1, G1). Remaining open after this and
-the G2, I3, G3/I2, and G4 work below: G5/#8 (`prim:` width) and the
-prose-tightening item.
+This closes the two most serious findings (I1, G1). With the G2, I3, G3/I2, G4,
+and G5 work below, **every named gap and inconsistency (G1–G5, I1–I3) is now
+resolved.** What remains are two nice-to-haves: prose-tightening (#9) and the
+optional `isn` trimming judgment (#10 — it is already labelled informational at
+its definition site, so only the "does it earn its place" call is left).
 
 ### Resolution: JSONL key mapping (G2)
 
