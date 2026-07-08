@@ -106,7 +106,7 @@ Block types:
 
 | Type | Name                    | Purpose                                        |
 |------|-------------------------|------------------------------------------------|
-| 0x01 | File Header             | magic, format version, byte order, time units, build provenance |
+| 0x01 | File Header             | magic, format version, time units, build provenance |
 | 0x02 | Source Descriptor       | one input these bytes came from — a *capture* (file/interface) or another *`.zpf`* this file was derived from; has an id and a `kind` |
 | 0x03 | Decoder Descriptor      | a decoder's id, name, version, params digest    |
 | 0x10 | Session Descriptor      | session id, protocol, flow key, metadata        |
@@ -572,7 +572,7 @@ truth — the label never replaces them.
 - `mime:<media-type>` — an IANA media type: `mime:image/png`,
   `mime:application/json`, `mime:text/plain;charset=utf-8`.
 - `prim:<primitive>` — a fixed-width integer or raw byte string from a small,
-  closed spec-defined vocabulary (`prim:u64-be`, `prim:i32-le`, `prim:bytes`;
+  closed spec-defined vocabulary (`prim:u64`, `prim:i32`, `prim:bytes`;
   full list in [Enums](#enums)), for values media types describe poorly.
 - `dec:<token>` — a type **private to the record's decoder**, meaning whatever
   that decoder documents. Its namespace is the decoder's `name` — the same
@@ -647,9 +647,10 @@ this one, this one wins.
 
 ### Primitives
 
-- **Integers** are fixed-width two's-complement. Byte order is fixed for the
-  whole file by the File Header (below); every multi-byte integer in the file
-  uses it. There is no per-block byte order.
+- **Integers** are fixed-width two's-complement. Every multi-byte integer in
+  the container is **little-endian**, without exception — there is no per-file
+  or per-block byte order, and nothing in a file changes it. (A writer on
+  big-endian hardware byte-swaps; readers never do.)
 - **Strings** are UTF-8, **not** NUL-terminated. A string carried in a TLV
   option occupies exactly the option's `len` bytes. A string in a fixed body
   field is `len: u16` followed by that many bytes.
@@ -695,19 +696,18 @@ MUST be the first block in the file. Body:
 
 | Field           | Type | Value                                                        |
 |-----------------|------|--------------------------------------------------------------|
-| `bom`           | u32  | byte-order magic `0x5A495046` (`"ZIPF"`), written in the file's order |
+| `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `1` for this document                                        |
 | `version_minor` | u16  | `0`                                                          |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
-**Endianness bootstrap.** Byte order is not yet known when the reader reaches
-the file, so it MUST be fixed *before* any multi-byte integer is interpreted —
-including the header's own `type`/`reserved`/`length`. The reader reads the four
-bytes of `bom` at their **fixed file offset 8** (the frame is a constant 8 bytes)
-both ways; the interpretation that yields `0x5A495046` fixes the byte order for
-the whole file, and only then are all integers (the header frame included) read
-back in that order. Tools may sniff a ZPF file by the BOM at offset 8 —
-`5A 49 50 46` (`"ZIPF"`, big-endian file) or `46 50 49 5A` (little-endian file).
+**File signature.** `magic` sits at **fixed file offset 8** (the frame is a
+constant 8 bytes). A reader MUST check that those four bytes are exactly
+`46 50 49 5A` and reject the file otherwise — this is a sanity check, not a
+byte-order probe: the container is little-endian by definition and nothing in a
+file can change that. Tools sniff a ZPF file by the same four bytes. (The
+byte-swapped pattern `5A 49 50 46` marks a byte-swapped — invalid — file, and
+recognising it makes for a useful diagnostic message.)
 Suggested file extension `.zpf`. A **minor** version bump only adds
 blocks/options (old readers keep working); a **major** bump may break frame/body
 layout.
@@ -977,7 +977,7 @@ it. Body:
 
 | Field       | Type | Value                                             |
 |-------------|------|---------------------------------------------------|
-| `end_magic` | u32  | `0x5A454E44` (`"ZEND"`), in the file's byte order  |
+| `end_magic` | u32  | `0x5A454E44` (`"ZEND"`); on disk the little-endian bytes `44 4E 45 5A` |
 
 Options: `comment`. Bytes after this block are invalid — a `.zpf` is never
 concatenated (see [Conformance](#conformance)).
@@ -1101,23 +1101,26 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
-uninterpreted byte string). `u`/`i` selects unsigned / signed two's-complement;
-the `-be`/`-le` suffix is byte order, omitted for 8-bit (a single byte has none).
-No other `prim:` token is legal — `mime:` and `dec:` carry everything else.
+uninterpreted byte string). `u`/`i` selects unsigned / signed two's-complement.
+A fixed-width `prim:` payload is stored **little-endian** — the container's
+byte order — and the emitting decoder normalizes it on write (a big-endian wire
+value is byte-swapped by the decoder, never by the reader). No other `prim:`
+token is legal — `mime:` and `dec:` carry everything else.
 
-| Width   | Unsigned                     | Signed                       |
-|---------|------------------------------|------------------------------|
-| 8-bit   | `prim:u8`                    | `prim:i8`                    |
-| 16-bit  | `prim:u16-be`, `prim:u16-le` | `prim:i16-be`, `prim:i16-le` |
-| 32-bit  | `prim:u32-be`, `prim:u32-le` | `prim:i32-be`, `prim:i32-le` |
-| 64-bit  | `prim:u64-be`, `prim:u64-le` | `prim:i64-be`, `prim:i64-le` |
+| Width   | Unsigned   | Signed     |
+|---------|------------|------------|
+| 8-bit   | `prim:u8`  | `prim:i8`  |
+| 16-bit  | `prim:u16` | `prim:i16` |
+| 32-bit  | `prim:u32` | `prim:i32` |
+| 64-bit  | `prim:u64` | `prim:i64` |
 
 Plus `prim:bytes`.
 
 **`prim:` width binds `payload_len`.** For a fixed-width `prim:` token, the
 record's `payload_len` (the *unpadded* length, not the 4-byte-padded frame size)
-MUST equal the token's width: `1` for `prim:u8`/`prim:i8`, `2` for `prim:u16-*`,
-`4` for `prim:u32-*`, `8` for `prim:u64-*`. `prim:bytes` places no length
+MUST equal the token's width: `1` for `prim:u8`/`prim:i8`, `2` for
+`prim:u16`/`prim:i16`, `4` for `prim:u32`/`prim:i32`, `8` for
+`prim:u64`/`prim:i64`. `prim:bytes` places no length
 constraint (any `payload_len`, including 0). A writer MUST NOT emit a fixed-width
 `prim:` label whose width disagrees with `payload_len`; a reader that finds a
 mismatch MUST treat the `content_type` as unknown (opaque payload, falling back to
@@ -1320,7 +1323,7 @@ name:
 - An **absent** option is an **omitted** key; a reader treats a missing key as
   "option not present," never as a present option carrying a default.
 - **Framing / on-disk-only fields are not projected**: the block
-  `type`/`reserved`/`length`, the header `bom`, `end_magic`, `payload_len`, and
+  `type`/`reserved`/`length`, the header `magic`, `end_magic`, `payload_len`, and
   padding have no JSON key — the `type` string, the JSON object structure, and the
   base64 `payload`'s own length stand in for them.
 
@@ -1341,7 +1344,7 @@ passed through the JSONL face.
 
 ### Worked example: a minimal raw file
 
-A complete, conformant **raw** `.zpf` file (204 bytes, **little-endian**) holding
+A complete, conformant **raw** `.zpf` file (204 bytes) holding
 one TCP session with one declared participant and one record — the client's
 `GET / HTTP/1.1\r\n\r\n` from the
 [skewed two-file worked example](#worked-example-a-skewed-two-file-capture)
@@ -1353,7 +1356,7 @@ Offsets are hex; each line is annotated.
 0000  01 00                    type   = 0x0001  File Header
 0002  00 00                    reserved
 0004  10 00 00 00              length = 16
-0008  46 50 49 5A              bom    = 0x5A495046  ("ZIPF", LE on disk)
+0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  01 00                    version_major = 1
 000E  00 00                    version_minor = 0
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
@@ -1417,7 +1420,7 @@ Offsets are hex; each line is annotated.
 00CC                           (end of file, 204 bytes)
 ```
 
-Things to read off it: the BOM at fixed offset 8 resolves endianness; the 8-byte
+Things to read off it: the magic at fixed offset 8 identifies the file; the 8-byte
 frame keeps every block 4-byte aligned, and `length` jumps a reader from each
 block to the next (`0x18 = 0x00 + 8 + 16`, `0x34 = 0x18 + 8 + 20`, …); the `GET`
 payload is 18 bytes but is padded to 20 so the option stream resumes on a 4-byte

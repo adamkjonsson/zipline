@@ -118,6 +118,11 @@ Three places still put work on readers that writers could absorb:
   **Mandate little-endian**, keep the BOM at offset 8 purely as magic/sanity
   check. Writers on BE hardware (rare) swap; every reader gets simpler. This
   is a breaking change, which is why it should happen now.
+  **→ RESOLVED** — little-endian is mandated without exception; `bom` is
+  renamed `magic` (a plain file signature at offset 8) and the endianness
+  bootstrap is deleted. The `prim:` `-be`/`-le` suffixes were dropped in the
+  same change: fixed-width `prim:` payloads are stored little-endian,
+  normalized by the emitting decoder.
 - **Per-participant ordering is only SHOULD.** A conformant reader must
   therefore implement the sort fallback for out-of-order per-participant
   records — code that in practice never runs. The spec itself argues the
@@ -323,9 +328,11 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
    are now in the source's namespace, the body layout is span-entry-identical,
    and the coverage guarantee is restated in those terms. See the I‑2
    resolution note above.
-3. **Mandate little-endian.** Deletes the dual-decode burden from every reader
-   forever, in line with the readers-first goal; the BOM stays as magic. Last
-   cheap moment for this change is now.
+3. ~~**Mandate little-endian.**~~ **DONE** — the container is little-endian
+   without exception, `bom` is now the `magic` file signature, the bootstrap
+   is gone, and the `prim:` `-be`/`-le` suffixes were dropped (fixed-width
+   `prim:` payloads are little-endian, decoder-normalized). See the resolution
+   note under question 5.
 4. **Correct the `ack` definition (I‑3)** to "one past the highest contiguous
    peer byte received (the wire acknowledgement number)."
 5. **Drop `seq_end`** (I‑4), or make it optional with specified mismatch
