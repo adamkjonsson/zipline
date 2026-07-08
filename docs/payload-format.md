@@ -15,9 +15,12 @@ distinction matters. The **reassembler** turns each direction's raw TCP segment
 stream — out-of-order, retransmitted, overlapping — into one clean, in-order byte
 stream; the **writer** emits that result as blocks. Reassembly always completes
 *before* a record is written, so a `.zpf` holds the reassembled bytes, never raw
-retransmits (see [Caveats](#caveats)). A **decoder** is a separate, later stage
-that derives a decoded `.zpf` from a raw one (see
-[Layers](#layers-raw-and-decoded-live-in-separate-files)).
+retransmits (see [Caveats](#caveats)). A **transform** is a separate, later stage
+that derives a new `.zpf` from one or more existing ones. This spec defines two:
+the **decoder**, which derives a decoded `.zpf` from a raw one (see
+[Layers](#layers-raw-and-decoded-live-in-separate-files)), and the **merge**,
+which combines separately-captured directions into one sequenced `.zpf` (see
+[Sequenced files](#sequenced-files-precomputed-order)).
 
 ## Goals
 
@@ -54,17 +57,20 @@ names no recipient — a record is implicitly addressed to **every other
 participant in its session**: the single peer when `N = 2`, the whole room when
 `N > 2`, and no modelled party for a one-way `N = 1` feed. ("Directed" here means
 the record has a sender and a direction, not a specific addressee.) A
-record may be either a *raw byte run* (transport-truthful; boundaries fall where
+record may be either a *byte run* (transport-truthful; boundaries fall where
 reassembly produced them) or a *decoder-imposed unit* (boundaries set by an app
 decoder). Which one a record is, is told by a single fact: **whether it carries a
-`decoder_id`**. A raw byte run carries none; a decoder-imposed unit always does.
+`decoder_id`**. A byte run carries none; a decoder-imposed unit always does.
 What that unit *means* (HTTP message, TLS record, …) comes from the referenced
-decoder, not from any separate marker on the record.
+decoder, not from any separate marker on the record. A byte run in a **raw**
+(capture-sourced) file is a *raw record*; a byte-preserving transform (a
+[merge](#sequenced-files-precomputed-order)) re-emits byte runs into its output,
+where they are *pass-through records* (see [Conformance](#conformance)).
 
 Raw and decoded records rarely share boundaries, so decoding is a *file → file
 transform* (`raw.zpf → decoded.zpf`), not a layer inside a record (see
-[Layers](#layers-raw-and-decoded-live-in-separate-files)). Raw byte runs live only
-in a raw file; a derived file holds decoder-imposed records, and regions a decoder
+[Layers](#layers-raw-and-decoded-live-in-separate-files)). Byte runs *originate*
+in a raw file; a decode stage holds decoder-imposed records, and regions a decoder
 *could not* parse become **[Undecoded](#undecoded-0x21)** markers pointing back at
 the predecessor's bytes (nothing is silently dropped).
 
@@ -113,8 +119,8 @@ Block types:
 
 A single **Source Descriptor** type covers both a raw capture and a derived input
 (`kind = capture` vs `kind = zpf-input`), so a record references its origin the
-same way whether the file is raw or decoded. The Decoder Descriptor and Undecoded
-blocks appear only in *derived* (decoded) files. See
+same way whether the file is raw or derived. The Decoder Descriptor and Undecoded
+blocks appear only in *decode-stage* files (see [Conformance](#conformance)). See
 [Layers](#layers-raw-and-decoded-live-in-separate-files).
 
 TLV options are `id: u16, len: u16, value: bytes`, repeated until the block
@@ -364,11 +370,44 @@ Who sets the flag depends on the capture:
   each record — this keeps the flush-and-forget, bounded-memory contract intact.
 - **Two separately-captured directions** cannot be sequenced by either
   per-direction writer alone (neither sees the peer's acks). They are combined by
-  a **merge transform** — `sideA.zpf + sideB.zpf → merged.zpf` — that reuses the
-  existing derived-file machinery (a [Source](#source-descriptor-which-input) of
-  `kind = zpf-input`, its `digest`, and provenance, exactly as a decoder does):
-  it runs the streaming merge once and writes sequenced sessions. The expensive
-  logic thus exists in exactly one tool, never in every reader.
+  a **merge transform** — `sideA.zpf + sideB.zpf → merged.zpf` — that runs the
+  streaming merge once and writes sequenced sessions. The expensive logic thus
+  exists in exactly one tool, never in every reader. Its output is a
+  **pass-through** derived file (see [Conformance](#conformance)): it declares
+  each input as a [Source](#source-descriptor-which-input) of `kind = zpf-input`
+  (with `digest` and provenance, exactly as a decoder does), mints its own
+  session/participant ids and maps each participant back to its input stream
+  with an [`origin`](#participant-descriptor-0x11) option, and re-emits the
+  inputs' records as **pass-through records** — byte runs with no `decoder_id`,
+  their payload bytes, logical offsets, and TCP ordering hints preserved. Gaps
+  stay implicit (sequence discontinuities), exactly as in the inputs.
+
+Concretely, merging the
+[skewed two-file capture](#worked-example-a-skewed-two-file-capture) (here as two
+single-direction raw files: `sideA.zpf` holds the client as its session 7 /
+pid 0, `sideB.zpf` the server as its session 3 / pid 0) yields the pass-through
+file below. The merge mints its own ids — which is exactly why each
+participant's `origin` mapping is required — and stores the two records in
+causal order despite the inverted timestamps:
+
+```jsonl
+{"type":"file","format":"zipline-payload/1","time_units":"us",
+ "produced_by":"zpf-merge 1.2","produced_at":1719510000}
+{"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
+{"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
+
+{"type":"session","session_id":1,"proto":"tcp",
+ "key":"10.0.0.1:51000 <-> 93.184.216.34:80","sequenced":true}
+{"type":"participant","session_id":1,"pid":0,"endpoint":"10.0.0.1:51000","isn":1000,
+ "origin":{"source_id":1,"session_id":7,"pid":0}}
+{"type":"participant","session_id":1,"pid":1,"endpoint":"93.184.216.34:80","isn":5000,
+ "origin":{"source_id":2,"session_id":3,"pid":0}}
+
+{"type":"record","session_id":1,"sender_pid":0,"source_id":1,"ts":1000,
+ "seq_start":1001,"seq_end":1019,"ack":5001,"payload":"R0VUIC8gSFRUUC8xLjENCg0K"}
+{"type":"record","session_id":1,"sender_pid":1,"source_id":2,"ts":995,
+ "seq_start":5001,"seq_end":5101,"ack":1019,"payload":"SFRUUC8xLjEgMjAwIE9LDQouLi4="}
+```
 
 Sequencing is **optional** and orthogonal to raw-vs-decoded. A reader MUST still
 accept unsequenced sessions (and run the merge itself if it wants their
@@ -426,7 +465,7 @@ raw.zpf  ──[ http/1.1 decoder ]──▶  decoded.zpf
 The output is one coherent boundary scheme (protocol messages); the input is
 another (byte runs). A decoded file stands alone for its **decoded** content —
 reading the decoded records never requires `raw.zpf`. The exception is regions a
-decoder could not parse: a derived file does not copy their bytes, it records an
+decoder could not parse: a decode stage does not copy their bytes, it records an
 **[Undecoded](#undecoded-0x21)** marker referencing them, so recovering those raw
 bytes does mean consulting the predecessor (ultimately the raw file). The link
 between files is otherwise **provenance**, used for verification and
@@ -435,6 +474,14 @@ re-derivation, not for reading.
 This generalizes: `raw → tls-records → http → …` is the same mechanism applied
 N times. Nothing special-cases "raw"; each stage just derives from the previous
 file's spans.
+
+Decoding is also not the *only* file → file stage: **all derivation is
+file → file**. The [merge](#sequenced-files-precomputed-order) is a
+*byte-preserving* transform — it re-emits its inputs' byte runs as
+**pass-through records** rather than imposing new units — and it uses the same
+`zpf-input` Source / `digest` / provenance machinery. A derived file is
+therefore exactly one of a *decode stage* or a *pass-through transform*, never a
+mix (see [Conformance](#conformance)).
 
 ### Referencing the source by stream offset
 
@@ -546,7 +593,7 @@ with an explicit **[Undecoded block](#undecoded-0x21)** rather than silently
 dropping bytes. An Undecoded block names a `[off_start, off_end)` range of a
 predecessor stream and a `reason`; it carries **no payload**, only a reference, so
 a consumer that wants the bytes follows the span back toward the raw file. This
-gives the **coverage guarantee**: in a derived file, every region of an input
+gives the **coverage guarantee**: in a decode stage's output, every region of an input
 participant stream is either covered by a decoded record's `spans` *or* marked
 Undecoded — never silently dropped, never both. A consumer can thus distinguish
 "a message we could not parse" (`reason` = `undecodable`, bytes recoverable
@@ -707,7 +754,7 @@ typically carries `uri`/`digest`/`link_type`; a `zpf-input` source carries
 `uri`/`digest`. The transform's own build provenance (`produced_by`/
 `produced_at`) is on the File Header, not here.
 
-**Decoder Descriptor (`0x03`)** — derived files only
+**Decoder Descriptor (`0x03`)** — decode-stage files only
 
 | Field        | Type | Notes                       |
 |--------------|------|-----------------------------|
@@ -742,7 +789,7 @@ MUST be written 0, and MUST be ignored on read.
 
 Options: `endpoint` (string, **may repeat** — see below), `isn` (u32, the SYN's
 TCP sequence number — see below), `tcp_role` (u8, see enums), `identity`
-(string), `comment`.
+(string), `origin` (packed, pass-through files only — see below), `comment`.
 
 `tcp_role` records, **when the handshake was observed**, which side opened the
 connection: the participant that sent the initial SYN is the *initiator* (active
@@ -767,6 +814,17 @@ address at which the participant actually speaks the session protocol. A reader
 that wants "the" address uses the last `endpoint`; the earlier ones describe the
 delivery path. A single un-tunnelled participant has exactly one `endpoint`.
 
+**`origin` (pass-through files).** In a pass-through derived file (see
+[Conformance](#conformance)), every participant MUST carry exactly one `origin`
+option naming the input stream it re-emits: a packed
+`source_id: u16, pid: u16, session_id: u64` (12 bytes; the u16s lead so
+`session_id` stays 4-byte aligned, exactly as in a `spans` entry). `source_id`
+references a `zpf-input` Source declared in *this* file; `session_id`/`pid` are
+read in **that source's id namespace**, exactly as a span's are. Because a
+pass-through transform preserves each stream's bytes and logical offsets,
+`origin` is the entire stream-level provenance — pass-through records carry no
+`spans`. `origin` MUST NOT appear in raw files.
+
 ### Record (`0x20`)
 
 Body (fixed part):
@@ -775,7 +833,7 @@ Body (fixed part):
 |---------------|-------|----------------------------------------------------|
 | `session_id`  | u64   | refers to a Session Descriptor                     |
 | `sender_pid`  | u16   | sender participant; recipients are implicit (all other participants — see [Conceptual model](#conceptual-model)) |
-| `source_id`   | u16   | refers to a Source Descriptor — a `capture` for a raw record, a `zpf-input` for a decoded one |
+| `source_id`   | u16   | refers to a Source Descriptor — a `capture` for a raw record, a `zpf-input` for a decoded or pass-through one |
 | `timestamp`   | i64   | packet time, in `tick_hz` ticks (see timestamp rule)|
 | `_reserved`   | u16   | 0                                                  |
 | `flags`       | u16   | see bit table                                      |
@@ -785,8 +843,10 @@ Body (fixed part):
 `payload` is zero-padded to a multiple of 4 bytes; options then follow (TCP
 hints, provenance — see registry). `payload_len` gives the unpadded length and
 MAY be 0 (e.g. a pure-ACK record carrying only an `ack` hint). **A record is
-*decoded* iff it carries a `decoder_id`** — that presence is the sole raw/decoded
-discriminator: a decoded record MUST carry a `decoder_id`, a raw record MUST NOT.
+*decoded* iff it carries a `decoder_id`** — that presence is the sole
+decoded-vs-byte-run discriminator: a decoded record MUST carry a `decoder_id`; a
+byte-run record (raw or pass-through — told apart by the referenced source's
+`kind`) MUST NOT.
 A decoded record MAY also carry a `content_type` labelling what its `payload` is
 (see [Typing a decoded record](#typing-a-decoded-record)).
 Because the frame `length` (u32) bounds the whole block, `payload_len` is in
@@ -824,7 +884,8 @@ the resolutions `tick_hz` is meant for.
 
 ### Undecoded (`0x21`)
 
-Derived files only. Marks a region of a **predecessor** input stream that this
+Decode-stage files only (see [Conformance](#conformance)). Marks a region of a
+**predecessor** input stream that this
 transform did **not** turn into a decoded record — because the decoder could not
 parse it, or because the bytes are missing/truncated. It is a *reference*, not a
 payload: it carries no bytes, only the input span where they do (or would) live.
@@ -852,14 +913,19 @@ the bytes are not in this file. To recover `undecodable` bytes a consumer walks
 the provenance chain one level at a time — if the referenced span is itself
 Undecoded in `source_id`, it recurses — until it reaches the capture-sourced raw
 file that holds the actual bytes; a missing intermediate file stops recovery
-there. An Undecoded block has no `timestamp`; order it among a participant's
+there. Crossing a **pass-through** file costs nothing extra: its participants'
+[`origin`](#participant-descriptor-0x11) options map each stream to the
+corresponding input stream, and offsets are preserved, so the same
+`[off_start, off_end)` range resolves unchanged one level further down. An
+Undecoded block has no `timestamp`; order it among a participant's
 records by its `off_start`.
 
-A **raw** file expresses its own TCP gaps *implicitly*, as a discontinuity
-between consecutive records' sequence numbers — it has no Undecoded blocks (a raw
-file ran no decoder). A decoder writer that needs those raw gaps made explicit
+A **raw** or **pass-through** file expresses its TCP gaps *implicitly*, as a
+discontinuity between consecutive records' sequence numbers — neither has
+Undecoded blocks (no decoder ran; a pass-through transform re-emits its inputs'
+records, gaps included). A decoder writer that needs those gaps made explicit
 reconstructs them from the sequence discontinuity via its software support, and
-emits Undecoded blocks in the derived file.
+emits Undecoded blocks in the decode stage's output file.
 
 ### Name/Identity Resolution (`0x30`)
 
@@ -957,6 +1023,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
 | `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
+| `0x0064` | origin           | packed     | Participant (pass-through) | input stream this participant re-emits: `source_id: u16, pid: u16, session_id: u64` — ids in the source's namespace (see [Participant Descriptor](#participant-descriptor-0x11)) |
 | `0x0070` | seq_start        | u32        | Record (TCP)             | absolute sequence number of the first payload byte             |
 | `0x0071` | seq_end          | u32        | Record (TCP)             | absolute sequence number one past the last payload byte (mod 2³²) |
 | `0x0072` | ack              | u32        | Record (TCP)             | highest absolute peer sequence number the sender had received  |
@@ -1085,13 +1152,20 @@ last block, and its presence marks the file complete. A file MAY omit it — a
 live/streaming or crashed writer does — and readers MUST still accept such a
 file, treating it as not-known-complete.
 
-A **raw** file holds raw records; a **derived** (decoded) file holds decoded
-records plus Undecoded markers, and contains **no** raw records — regions a
-decoder could not parse are recorded as [Undecoded](#undecoded-0x21) references,
-not copied back as bytes. **Whether a record is raw or decoded is told solely by
-whether it carries a `decoder_id`.** One derived file MAY still mix *decoders*
-per-record (HTTP on one session, TLS-then-HTTP on another); the raw-vs-decoded
-split, however, falls on the file's level in the `raw → … → decoded` chain.
+Files come in two kinds, told by their Sources: a **raw** file is
+capture-sourced (all its records reference `capture` Sources); a **derived**
+file is the output of a file → file transform (all its records reference
+`zpf-input` Sources). A derived file is exactly **one** of two things — a
+**decode stage** (decoded records plus Undecoded markers) or a **pass-through
+transform** (pass-through records only) — never a mix; a decoder accounts for
+regions it could not parse with [Undecoded](#undecoded-0x21) references, never
+by copying bytes forward. **Whether a record is decoded is told solely by
+whether it carries a `decoder_id`**; whether a decoder-less byte run is raw or
+pass-through is told by the `kind` of the Source it references. One decode
+stage MAY still mix *decoders* per-record (HTTP on one session, TLS-then-HTTP
+on another). Every **derived** file (either kind) MUST declare each of its
+input `.zpf`s as a `zpf-input` Source and set the File Header
+`produced_by`/`produced_at`.
 
 - A **raw** record carries no `decoder_id`, and its `source_id`/`spans` reference
   a `capture` Source; it appears only in a raw file. TCP raw records SHOULD carry
@@ -1100,13 +1174,24 @@ split, however, falls on the file's level in the `raw → … → decoded` chain
   see [Referencing the source by stream offset](#referencing-the-source-by-stream-offset))
   and omit it otherwise; UDP records SHOULD set the datagram-boundary flag.
 - A **decoded** record MUST carry a `decoder_id`, and its `source_id`/`spans`
-  reference a `zpf-input` Source. A file containing any decoded record MUST declare
-  every Decoder it references and every `zpf-input` Source, set the File Header
-  `produced_by`/`produced_at`, and account for every input region it did not decode
-  with an **Undecoded** block rather than dropping it: within each input
-  participant stream, every offset MUST be covered either by some decoded record's
-  `spans` or by an Undecoded block (the coverage guarantee). Decoder, Undecoded,
-  and `zpf-input` Sources appear only in files that carry decoded records.
+  reference a `zpf-input` Source; it appears only in a decode stage's output.
+  Such a file MUST declare every Decoder it references and account for every
+  input region it did not decode with an **Undecoded** block rather than
+  dropping it: within each input participant stream, every offset MUST be
+  covered either by some decoded record's `spans` or by an Undecoded block (the
+  coverage guarantee). Decoder Descriptors and Undecoded blocks appear only in
+  decode-stage files.
+- A **pass-through** record carries no `decoder_id`, and its `source_id`
+  references a `zpf-input` Source; it appears only in a pass-through file. A
+  pass-through transform (e.g. the [merge](#sequenced-files-precomputed-order))
+  MUST preserve each participant stream it re-emits — payload bytes and logical
+  offsets unchanged, gaps included (they stay implicit, as in a raw file) — and
+  MUST put exactly one [`origin`](#participant-descriptor-0x11) option on every
+  participant, mapping it to its input stream. TCP ordering hints
+  (`seq_start`/`seq_end`/`ack`) MUST be carried forward (recomputed if records
+  are re-chunked) so gap visibility and `SEQUENCED` verification survive the
+  transform. Pass-through records carry no `spans`: `origin` plus offset
+  preservation is their provenance.
 
 **Ordering and sequencing.** A writer **SHOULD** store each participant's records
 in `seq_start` (logical stream) order; this bounds an unsequenced reader's merge
@@ -1215,6 +1300,8 @@ name:
 - **Repeatable options** (`endpoint`) → a JSON **array**, order preserved.
 - **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
   objects.
+- **`origin`** → a JSON object `{source_id, session_id, pid}` (a `spans` entry
+  without offsets; ids in the referenced source's namespace).
 - An **absent** option is an **omitted** key; a reader treats a missing key as
   "option not present," never as a present option carrying a default.
 - **Framing / on-disk-only fields are not projected**: the block

@@ -176,6 +176,14 @@ Beyond I‑1/I‑2 (filed under inconsistencies), the gaps are small:
   how such a file expresses gaps — implicitly like a raw file, or via
   Undecoded); or (b) model the merger as a degenerate identity "decoder" (this
   strains the decoder concept and forces 1:1 spans, so (a) is better).
+  **→ RESOLVED** — option (a) adopted. A derived file is now the output of any
+  file→file transform and is exactly one of a *decode stage* or a *pass-through
+  transform*; the merge writes **pass-through records** (decoder-less byte runs
+  referencing `zpf-input` Sources) with gaps kept implicit, stream bytes and
+  logical offsets preserved, and each participant carrying a new `origin`
+  option (`0x0064`) that maps it to its input stream in the source's id
+  namespace. See the reworked Conformance section and the merged-file example
+  under "Sequenced files".
 - **I‑2: the Undecoded block straddles two id namespaces.** Its body declares
   `session_id` as "in *this* file" and `participant_id` likewise, yet
   `off_start`/`off_end` are offsets in the **input** (`source_id`) stream —
@@ -299,10 +307,11 @@ makes SCTP a pure minor-version addition later.
 
 Prioritized; 1–4 are the ones I would not ship 1.0 without.
 
-1. **Resolve the merge-transform contradiction (I‑1).** Define what
-   `merged.zpf` conformantly is — recommended: generalize the derived-file
-   rules to any file→file transform, permitting decoder-less records that
-   reference `zpf-input` Sources, and state how such files express gaps.
+1. ~~**Resolve the merge-transform contradiction (I‑1).**~~ **DONE** — derived
+   files generalized to any file→file transform; a merge now writes a
+   *pass-through* file (decoder-less byte runs referencing `zpf-input` Sources,
+   per-participant `origin` provenance, offsets preserved, gaps implicit). See
+   the I‑1 resolution note above.
 2. **Fix the Undecoded namespace (I‑2).** Its `session_id`/`pid` should name
    the input stream in the *source's* namespace, exactly as `spans` entries
    do; restate the coverage guarantee in those terms.
