@@ -260,10 +260,10 @@ zero-length pure-ACK record's end is simply its `seq_start`.
 INPUT:  records of a session, grouped by sender participant
 OUTPUT: one interleaved, causally-consistent sequence
 
-1. Within each participant, order records by seq_start (a total order;
-   the participant's own byte stream is monotonic). All seq comparisons
-   here and below are serial-number (RFC 1982) comparisons, since the
-   sequence space wraps.
+1. Take each participant's records in file order — the writer MUST have
+   stored them in seq_start order (see Identifiers & ordering), so no
+   sorting is ever needed. All seq comparisons below are serial-number
+   (RFC 1982) comparisons, since the sequence space wraps.
 
 2. Build edges between participants from acks:
      for each record R from participant P with ack value a:
@@ -285,15 +285,15 @@ together on causality rather than the skew-prone clock.
 O(N·M) per session — every record weighed against every peer record — plus the
 topological sort. Two things tame it, and a reader should rely on both:
 
-- **Sorted inputs (always available).** Because a writer **SHOULD** store each
+- **Sorted inputs (guaranteed).** Because a writer **MUST** store each
   participant's records in `seq_start` order (see
   [Identifiers & ordering](#identifiers--ordering)), the per-participant streams
-  are already totally ordered. Step 1 is then a no-op and the merge becomes a
+  are always totally ordered. Step 1 is always a no-op and the merge *is* a
   **streaming k-way merge**: hold one frontier per participant and release a
   stream's next record once every peer record it acks (end ≤ `ack`) has been
   emitted — a single-watermark, O(1)-amortised check. Total work is ~O(N) and
-  memory is bounded by the in-flight window, not the session. No reader needs the
-  quadratic form.
+  memory is bounded by the in-flight window, not the session. No reader ever
+  implements the quadratic form — or a sort.
 - **A sequenced session (no merge at all).** A producer MAY commit the resolved
   order to disk and mark the session *sequenced* (see
   [Sequenced files](#sequenced-files-precomputed-order)); a reader then consumes
@@ -1193,17 +1193,21 @@ or reinterpret — the bytes remain the source of truth.
   other ids count small, *bounded*, per-file sets — participants, sources,
   decoders — none near the u16 limit, so a wider field would only waste space.
 - On-disk block order is unconstrained beyond declare-on-first-use, with one
-  ordering **SHOULD** that keeps reading cheap: within a given
-  `(session_id, participant_id)`, a writer **SHOULD** emit that participant's
+  ordering **MUST** that keeps reading cheap: within a given
+  `(session_id, participant_id)`, a writer **MUST** emit that participant's
   records in `seq_start` order (logical stream order for non-TCP streams that
-  have no sequence numbers) — the order in which it already produced them. A
-  reader MAY still meet out-of-order records and fall back to sorting, but when
-  the SHOULD holds the cross-participant [merge](#merge-algorithm) collapses from
-  an all-pairs comparison into a **streaming k-way merge** over already-sorted
-  per-participant streams (see [merge cost](#merge-algorithm)). This costs the
-  writer nothing — each participant's byte stream is monotonic by construction —
-  and bounds a reader's working set to the in-flight window rather than the whole
-  session. *Across* participants, records MAY be interleaved in any order (capture
+  have no sequence numbers) — the order in which it already produced them. This
+  costs the writer nothing — each participant's byte stream is monotonic by
+  construction — and is what lets the cross-participant
+  [merge](#merge-algorithm) be a **streaming k-way merge** over already-sorted
+  per-participant streams, bounding a reader's working set to the in-flight
+  window rather than the whole session (see [merge cost](#merge-algorithm)). The
+  one corner a writer must mind: having *committed* a gap (emitted a record past
+  missing bytes), it MUST NOT emit the missing bytes if they later turn up —
+  they are dropped; a writer that wants them must have buffered longer. A reader
+  that meets an out-of-order record MAY reject the file or discard the offending
+  session — it is **never required to reorder**, so no reader carries a sort
+  path. *Across* participants, records MAY be interleaved in any order (capture
   order is the natural choice and keeps the timestamp tie-breaker meaningful);
   only the *per-participant* subsequence is constrained.
 
@@ -1257,9 +1261,12 @@ input `.zpf`s as a `zpf-input` Source and set the File Header
   transform. Pass-through records carry no `spans`: `origin` plus offset
   preservation is their provenance.
 
-**Ordering and sequencing.** A writer **SHOULD** store each participant's records
-in `seq_start` (logical stream) order; this bounds an unsequenced reader's merge
-to a streaming pass (see [Identifiers & ordering](#identifiers--ordering)).
+**Ordering and sequencing.** A writer **MUST** store each participant's records
+in `seq_start` (logical stream) order; this is what guarantees an unsequenced
+reader's merge is a streaming pass (see
+[Identifiers & ordering](#identifiers--ordering)). A reader that detects a
+violation MAY reject the file or discard the offending session; it is never
+required to reorder records.
 Separately, a session MAY set the Session Descriptor `flags` **SEQUENCED** bit; if
 it does, the producer MUST store that session's records so their Record-block file
 order is a valid causal linearization (concurrent records ordered by the

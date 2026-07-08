@@ -130,6 +130,11 @@ Three places still put work on readers that writers could absorb:
   monotonic by construction." If it costs the writer nothing, make it a
   **MUST** and let readers reject or best-effort a violating file instead of
   carrying a dead sort path.
+  **→ RESOLVED** — upgraded to MUST at all four sites (merge algorithm, merge
+  cost, Identifiers & ordering, Conformance). A reader meeting an out-of-order
+  record MAY reject the file or discard the session and is never required to
+  reorder; the committed-gap corner is pinned down (late-arriving bytes for an
+  already-committed gap are dropped, never emitted out of order).
 - **No session-end marker** (see question 9): writers are flush-and-forget,
   but a streaming reader can never free a session's state, so on unbounded
   input the reader's session table grows without bound. The bounded-memory
@@ -356,9 +361,10 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
 6. ~~**Add an optional Session End block**~~ **DONE** — block `0x12` with
    SHOULD-on-flush, hard barrier, and optional `reason`. See the resolution
    note under question 9.
-7. **Upgrade per-participant `seq_start` order from SHOULD to MUST**, with
-   specified reader behavior on violation, so readers can drop the sort
-   fallback.
+7. ~~**Upgrade per-participant `seq_start` order from SHOULD to MUST**~~
+   **DONE** — MUST at all four sites, with the violation rule (reader MAY
+   reject file or session, never required to reorder). See the resolution
+   note under question 5.
 8. **Add a reader error-handling paragraph** to Conformance: one general rule
    for undeclared ids, duplicate ids, misplaced blocks, and trailing bytes
    after End.
