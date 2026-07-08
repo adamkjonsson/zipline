@@ -207,16 +207,18 @@ capture clock**. Symmetrically for A's acks of B. The result is a partial order
 (a DAG); timestamps are used only to break ties *within* what the partial order
 leaves free (genuinely concurrent records).
 
-We store `seq_start`/`seq_end`/`ack` as the **absolute TCP sequence numbers from
+We store `seq_start`/`ack` as the **absolute TCP sequence numbers from
 the wire** — exactly the values in the packets. This is the key to ordering two
 *separately-captured* directions: the absolute numbers are consistent across
 captures *by construction* (they are the same bytes on the wire), so no shared
 base or agreed origin is needed, and a mid-stream capture that never saw the SYN
 works the same as one that did. An `ack` is natively an absolute number in the
-peer's sequence space, so it compares directly against the peer's `seq_end`.
+peer's sequence space, so it compares directly against the peer record's
+computed end (`seq_start + payload_len`).
 
 Because absolute TCP sequence numbers are 32-bit and **wrap**, all comparisons of
-`seq_start`/`seq_end`/`ack` use **serial-number arithmetic** ([RFC 1982](https://www.rfc-editor.org/rfc/rfc1982)):
+`seq_start`/`ack` — and of the derived record end — use **serial-number
+arithmetic** ([RFC 1982](https://www.rfc-editor.org/rfc/rfc1982)):
 `a < b` iff `((a - b) mod 2³²)` has its high bit set. This is well-defined for
 any two values within 2³¹ of each other — vastly more than any in-flight window —
 so it never misorders real traffic.
@@ -235,8 +237,11 @@ Per **Record** (TCP):
 | Option       | Meaning                                                        |
 |--------------|----------------------------------------------------------------|
 | `seq_start`  | absolute sequence number of the sender's first payload byte    |
-| `seq_end`    | `seq_start + payload_len` (mod 2³²; one past the last byte)     |
 | `ack`        | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
+
+A record's **end** — one past its last byte, the value an `ack` is compared
+against — is not stored: it is always `seq_start + payload_len` (mod 2³²). A
+zero-length pure-ACK record's end is simply its `seq_start`.
 
 ### Merge algorithm
 
@@ -252,7 +257,7 @@ OUTPUT: one interleaved, causally-consistent sequence
 2. Build edges between participants from acks:
      for each record R from participant P with ack value a:
          add edge  Q_record -> R   for every record Q_record from the
-         *peer* whose seq_end <= a
+         *peer* whose end (seq_start + payload_len, mod 2^32) <= a
      (R's sender had already received those peer bytes, so they precede R.)
 
 3. Topologically sort the resulting DAG.
@@ -274,7 +279,7 @@ topological sort. Two things tame it, and a reader should rely on both:
   [Identifiers & ordering](#identifiers--ordering)), the per-participant streams
   are already totally ordered. Step 1 is then a no-op and the merge becomes a
   **streaming k-way merge**: hold one frontier per participant and release a
-  stream's next record once every peer record it acks (`seq_end ≤ ack`) has been
+  stream's next record once every peer record it acks (end ≤ `ack`) has been
   emitted — a single-watermark, O(1)-amortised check. Total work is ~O(N) and
   memory is bounded by the in-flight window, not the session. No reader needs the
   quadratic form.
@@ -325,10 +330,10 @@ The canonical case for seq/ack ordering — the two directions captured to
 {"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80","isn":5000}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
- "seq_start":1001,"seq_end":1019,"ack":5001,
+ "seq_start":1001,"ack":5001,
  "payload":"R0VUIC8gSFRUUC8xLjENCg0K"}
 {"type":"record","session_id":7,"sender_pid":1,"source_id":2,"ts":995,
- "seq_start":5001,"seq_end":5101,"ack":1019,
+ "seq_start":5001,"ack":1019,
  "payload":"SFRUUC8xLjEgMjAwIE9LDQouLi4="}
 ```
 
@@ -358,7 +363,7 @@ filtering. In the JSONL projection the flag is a boolean `"sequenced":true` on t
 
 A reader consumes a sequenced session's records in stored order and does **no
 ordering work at all** for it — the [merge algorithm](#merge-algorithm) lives
-only in the producer. The `seq_start`/`seq_end`/`ack` hints stay present, so a
+only in the producer. The `seq_start`/`ack` hints stay present, so a
 reader MAY still verify the order, or recover the true partial order (which
 records were genuinely concurrent); the flag only asserts that *stored order is
 one correct answer*, not that it is the only one.
@@ -404,9 +409,9 @@ causal order despite the inverted timestamps:
  "origin":{"source_id":2,"session_id":3,"pid":0}}
 
 {"type":"record","session_id":1,"sender_pid":0,"source_id":1,"ts":1000,
- "seq_start":1001,"seq_end":1019,"ack":5001,"payload":"R0VUIC8gSFRUUC8xLjENCg0K"}
+ "seq_start":1001,"ack":5001,"payload":"R0VUIC8gSFRUUC8xLjENCg0K"}
 {"type":"record","session_id":1,"sender_pid":1,"source_id":2,"ts":995,
- "seq_start":5001,"seq_end":5101,"ack":1019,"payload":"SFRUUC8xLjEgMjAwIE9LDQouLi4="}
+ "seq_start":5001,"ack":1019,"payload":"SFRUUC8xLjEgMjAwIE9LDQouLi4="}
 ```
 
 Sequencing is **optional** and orthogonal to raw-vs-decoded. A reader MUST still
@@ -1038,7 +1043,6 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
 | `0x0064` | origin           | packed     | Participant (pass-through) | input stream this participant re-emits: `source_id: u16, pid: u16, session_id: u64` — ids in the source's namespace (see [Participant Descriptor](#participant-descriptor-0x11)) |
 | `0x0070` | seq_start        | u32        | Record (TCP)             | absolute sequence number of the first payload byte             |
-| `0x0071` | seq_end          | u32        | Record (TCP)             | absolute sequence number one past the last payload byte (mod 2³²) |
 | `0x0072` | ack              | u32        | Record (TCP)             | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes were built from (see below)          |
@@ -1187,7 +1191,7 @@ input `.zpf`s as a `zpf-input` Source and set the File Header
 
 - A **raw** record carries no `decoder_id`, and its `source_id`/`spans` reference
   a `capture` Source; it appears only in a raw file. TCP raw records SHOULD carry
-  `seq_start`/`seq_end` (and `ack` where known); TCP participants **MUST** carry
+  `seq_start` (and `ack` where known); TCP participants **MUST** carry
   `isn` when the handshake was observed (it fixes the stream's absolute origin —
   see [Referencing the source by stream offset](#referencing-the-source-by-stream-offset))
   and omit it otherwise; UDP records SHOULD set the datagram-boundary flag.
@@ -1206,7 +1210,7 @@ input `.zpf`s as a `zpf-input` Source and set the File Header
   offsets unchanged, gaps included (they stay implicit, as in a raw file) — and
   MUST put exactly one [`origin`](#participant-descriptor-0x11) option on every
   participant, mapping it to its input stream. TCP ordering hints
-  (`seq_start`/`seq_end`/`ack`) MUST be carried forward (recomputed if records
+  (`seq_start`/`ack`) MUST be carried forward (recomputed if records
   are re-chunked) so gap visibility and `SEQUENCED` verification survive the
   transform. Pass-through records carry no `spans`: `origin` plus offset
   preservation is their provenance.
@@ -1344,7 +1348,7 @@ passed through the JSONL face.
 
 ### Worked example: a minimal raw file
 
-A complete, conformant **raw** `.zpf` file (204 bytes) holding
+A complete, conformant **raw** `.zpf` file (196 bytes) holding
 one TCP session with one declared participant and one record — the client's
 `GET / HTTP/1.1\r\n\r\n` from the
 [skewed two-file worked example](#worked-example-a-skewed-two-file-capture)
@@ -1399,7 +1403,7 @@ Offsets are hex; each line is annotated.
 # ── Record (0x20) ───────────────────────────────────────────────────
 007C  20 00                    type   = 0x0020  Record
 007E  00 00                    reserved
-0080  48 00 00 00              length = 72
+0080  40 00 00 00              length = 64
 0084  07 00 00 00 00 00 00 00  session_id = 7  (u64)
 008C  00 00                    sender_pid = 0
 008E  01 00                    source_id  = 1
@@ -1413,11 +1417,9 @@ Offsets are hex; each line is annotated.
 00B2  00 00                    payload padding → 4-byte boundary
 00B4  70 00 04 00              option 0x0070 seq_start, len = 4
 00B8  E9 03 00 00              seq_start = 1001  (absolute)
-00BC  71 00 04 00              option 0x0071 seq_end, len = 4
-00C0  FB 03 00 00              seq_end = 1019
-00C4  72 00 04 00              option 0x0072 ack, len = 4
-00C8  89 13 00 00              ack = 5001
-00CC                           (end of file, 204 bytes)
+00BC  72 00 04 00              option 0x0072 ack, len = 4
+00C0  89 13 00 00              ack = 5001
+00C4                           (end of file, 196 bytes)
 ```
 
 Things to read off it: the magic at fixed offset 8 identifies the file; the 8-byte

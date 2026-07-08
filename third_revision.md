@@ -228,6 +228,10 @@ Beyond I‑1/I‑2 (filed under inconsistencies), the gaps are small:
   Drop it, or make it optional-and-checked. (Contrast the `prim:` width rule,
   which does specify its mismatch behavior — the spec already knows redundant
   fields need one.)
+  **→ RESOLVED** — dropped entirely. A record's end is defined once (under
+  "Fields used") as the computed `seq_start + payload_len` (mod 2³²); the
+  merge algorithm, examples, conformance bullets, and hex walkthrough (now
+  196 bytes) use the derived value, and registry id `0x0071` is removed.
 - **I‑5: JSONL examples omit the Source `kind` body field.** The mapping rule
   says body fields project under their canonical names and only *options* may
   be absent, yet the chat and two-file examples write
@@ -339,8 +343,9 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
 4. ~~**Correct the `ack` definition (I‑3)**~~ **DONE** — defined at both sites
    as the wire acknowledgement number, one past the highest contiguous peer
    byte received.
-5. **Drop `seq_end`** (I‑4), or make it optional with specified mismatch
-   handling.
+5. ~~**Drop `seq_end`** (I‑4)~~ **DONE** — dropped entirely; readers compute
+   the record end as `seq_start + payload_len` (mod 2³²). See the I‑4
+   resolution note above.
 6. **Add an optional Session End block** — restores bounded memory for
    streaming readers and makes "session over" observable.
 7. **Upgrade per-participant `seq_start` order from SHOULD to MUST**, with
