@@ -198,6 +198,13 @@ Beyond I‑1/I‑2 (filed under inconsistencies), the gaps are small:
   Fix: make Undecoded name the input stream the way `spans` already does —
   its `session_id`/`pid` should be in the *source's* namespace (or carry both
   pairs explicitly).
+  **→ RESOLVED** — source-namespace option adopted. The Undecoded body now
+  names the input stream in the referenced source's id namespace and was
+  reordered to be byte-identical to a packed `spans` entry (`source_id, pid,
+  session_id, off_start, off_end`); the this-file link is gone (consumers
+  correlate holes via decoded records' `spans` citing the same input stream),
+  and the coverage guarantee is restated over source-namespace streams. The
+  dangling "G1 ambiguity" reference was removed in the same edit.
 - **I‑3: `ack` is defined off by one.** Prose and registry say "highest
   absolute peer sequence number the sender had received," but the worked
   example stores `ack:1019` for a peer stream whose highest received byte is
@@ -312,9 +319,10 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
    *pass-through* file (decoder-less byte runs referencing `zpf-input` Sources,
    per-participant `origin` provenance, offsets preserved, gaps implicit). See
    the I‑1 resolution note above.
-2. **Fix the Undecoded namespace (I‑2).** Its `session_id`/`pid` should name
-   the input stream in the *source's* namespace, exactly as `spans` entries
-   do; restate the coverage guarantee in those terms.
+2. ~~**Fix the Undecoded namespace (I‑2).**~~ **DONE** — Undecoded body ids
+   are now in the source's namespace, the body layout is span-entry-identical,
+   and the coverage guarantee is restated in those terms. See the I‑2
+   resolution note above.
 3. **Mandate little-endian.** Deletes the dual-decode burden from every reader
    forever, in line with the readers-first goal; the BOM stays as magic. Last
    cheap moment for this change is now.
@@ -333,9 +341,9 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
 9. **Fix the JSONL examples / define a `kind` default (I‑5)** and add the
    flag-boolean keys to the alias table (I‑6).
 10. **State the 64 KB TLV cap** and the writer rule when `spans` overflows it.
-11. **Editorial:** replace the dangling "G1 ambiguity" reference with
-    self-contained wording; specify or drop the `syn` record flag; add a
-    well-known-values note for `proto`.
+11. **Editorial:** ~~replace the dangling "G1 ambiguity" reference with
+    self-contained wording~~ (**DONE** as part of the I‑2 fix); specify or
+    drop the `syn` record flag; add a well-known-values note for `proto`.
 12. **Future-proofing for SCTP (question 10):** reword the `datagram` flag and
     merge algorithm transport-neutrally, and note `stream_id`/`tsn`/
     `cum_tsn_ack` as the reserved extension path.

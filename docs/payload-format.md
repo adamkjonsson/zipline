@@ -595,7 +595,9 @@ predecessor stream and a `reason`; it carries **no payload**, only a reference, 
 a consumer that wants the bytes follows the span back toward the raw file. This
 gives the **coverage guarantee**: in a decode stage's output, every region of an input
 participant stream is either covered by a decoded record's `spans` *or* marked
-Undecoded — never silently dropped, never both. A consumer can thus distinguish
+Undecoded — never silently dropped, never both. Both sides name the input
+stream in the input's own id namespace, so the guarantee is checkable stream
+by stream. A consumer can thus distinguish
 "a message we could not parse" (`reason` = `undecodable`, bytes recoverable
 upstream) from "no data here" (`reason` = `tcp-gap`/`truncated`, the offset range
 is a hole with no bytes anywhere), and a re-derivation can target just the
@@ -611,7 +613,8 @@ The input `.zpf` is a
 (logical stream offsets, not transport offsets) and a `content_type` saying what
 its bytes are (here the http decoder's own `dec:` types), and the undecodable
 tail is stated as an explicit `undecoded` block (referencing the input span whose
-bytes it could not parse, not copying them):
+bytes it could not parse — its ids read in `raw.zpf`'s namespace, coincidentally
+equal to the output's here — not copying them):
 
 ```jsonl
 {"type":"file","format":"zipline-payload/1","time_units":"us",
@@ -631,7 +634,7 @@ bytes it could not parse, not copying them):
 {"type":"record","session_id":7,"sender_pid":1,"ts":995,"decoder_id":1,
  "spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],
  "content_type":"dec:response","payload":"…decoded response…"}
-{"type":"undecoded","session_id":7,"pid":1,"source_id":1,
+{"type":"undecoded","source_id":1,"session_id":7,"pid":1,
  "off_start":100,"off_end":139,"reason":"undecodable","decoder_id":1}
 ```
 
@@ -892,15 +895,20 @@ payload: it carries no bytes, only the input span where they do (or would) live.
 
 | Field            | Type | Notes                                              |
 |------------------|------|----------------------------------------------------|
-| `session_id`     | u64  | session the region belongs to (in *this* file)     |
-| `participant_id` | u16  | participant (stream) the region is in              |
-| `source_id`      | u16  | the input Source (`kind = zpf-input`) whose stream `off_start`/`off_end` index — resolves the G1 ambiguity for multi-input files |
+| `source_id`      | u16  | the input Source (`kind = zpf-input`) whose stream the offsets index |
+| `participant_id` | u16  | participant (stream) *inside that input*           |
+| `session_id`     | u64  | session *inside that input*                        |
 | `off_start`      | u64  | logical 0-based stream offset, first byte = 0      |
 | `off_end`        | u64  | one past the last byte (half-open `[start, end)`)  |
 
-Offsets are logical 0-based stream offsets in the `source_id` input, the same
-convention used by `spans` (*not* absolute sequence numbers), and follow the
-hole-inclusive contiguity rule (see
+Every body field is read against the **input**: `session_id`/`participant_id`
+are in the referenced *source's* id namespace — exactly as a span entry's are
+(see [the namespace rule](#tlv-option-framing--id-registry)) — never the
+current file's. The body is in fact byte-identical to a single packed `spans`
+entry (28 bytes, same field order, same u16s-lead alignment), so one struct
+parses both. Offsets are logical 0-based stream offsets in the `source_id`
+input, the same convention used by `spans` (*not* absolute sequence numbers),
+and follow the hole-inclusive contiguity rule (see
 [Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
 Options: `reason` (string, e.g. `undecodable` / `tcp-gap` / `truncated`),
 `decoder_id` (u16, which decoder declined the region).
@@ -916,9 +924,14 @@ file that holds the actual bytes; a missing intermediate file stops recovery
 there. Crossing a **pass-through** file costs nothing extra: its participants'
 [`origin`](#participant-descriptor-0x11) options map each stream to the
 corresponding input stream, and offsets are preserved, so the same
-`[off_start, off_end)` range resolves unchanged one level further down. An
-Undecoded block has no `timestamp`; order it among a participant's
-records by its `off_start`.
+`[off_start, off_end)` range resolves unchanged one level further down.
+
+An Undecoded block has no `timestamp`, and no placement constraint beyond
+declare-on-first-use (its `source_id` must already be declared). A region is
+identified purely by `(source_id, session_id, participant_id,
+[off_start, off_end))`; a consumer locates it relative to the decoded output
+via the decoded records whose `spans` cite the same input stream — the same
+lookup it already does for provenance.
 
 A **raw** or **pass-through** file expresses its TCP gaps *implicitly*, as a
 discontinuity between consecutive records' sequence numbers — neither has
@@ -1048,13 +1061,15 @@ a `capture` source, they are **byte offsets into the capture file** and
 `session_id`/`pid` are unused (write 0). One option id (`spans`) serves both raw
 capture-provenance and decoded derivation-provenance.
 
-**A span's `session_id`/`pid` are in the referenced *source's* id namespace, never
-the current file's.** They name a session/participant *inside* `source_id` (the
-input being cited), which is a different id space from the file that carries the
-span — even when the numbers happen to coincide. In the [end-to-end decoded
-example](#a-decoded-file-end-to-end) the decoded file's own `session_id 7` and the
-span's `session_id 7` are the *same number by coincidence*; resolving the span
-means looking up session 7 in `raw.zpf`, not in the decoded file. (A writer drawing
+**A span's — and an [Undecoded](#undecoded-0x21) body's — `session_id`/`pid` are
+in the referenced *source's* id namespace, never the current file's.** They name
+a session/participant *inside* `source_id` (the input being cited), which is a
+different id space from the file that carries the reference — even when the
+numbers happen to coincide. In the [end-to-end decoded
+example](#a-decoded-file-end-to-end) the decoded file's own `session_id 7` and
+the `session_id 7` cited by its `spans` and its `undecoded` block are the *same
+number by coincidence*; resolving either means looking up session 7 in
+`raw.zpf`, not in the decoded file. (A writer drawing
 `session_id`s from a global sequence — see
 [Identifiers & ordering](#identifiers--ordering) — makes them literally identical,
 which is convenient but does not change that the span is read in the source's
@@ -1178,8 +1193,8 @@ input `.zpf`s as a `zpf-input` Source and set the File Header
   Such a file MUST declare every Decoder it references and account for every
   input region it did not decode with an **Undecoded** block rather than
   dropping it: within each input participant stream, every offset MUST be
-  covered either by some decoded record's `spans` or by an Undecoded block (the
-  coverage guarantee). Decoder Descriptors and Undecoded blocks appear only in
+  covered either by some decoded record's `spans` or by an Undecoded block
+  naming that stream in the source's id namespace (the coverage guarantee). Decoder Descriptors and Undecoded blocks appear only in
   decode-stage files.
 - A **pass-through** record carries no `decoder_id`, and its `source_id`
   references a `zpf-input` Source; it appears only in a pass-through file. A
