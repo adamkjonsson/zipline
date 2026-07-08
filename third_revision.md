@@ -153,6 +153,15 @@ Beyond I‑1/I‑2 (filed under inconsistencies), the gaps are small:
   general rule such as "a reader that detects a violation of a MUST may either
   reject the file or discard the offending block, but MUST NOT silently
   reinterpret it" — would keep implementations from diverging.
+  **→ RESOLVED** — a two-tier "Error handling" passage was added to
+  Conformance: structural corruption (bad magic, misplaced/absent header,
+  unsupported major version, `tick_hz = 0`, unaligned `length`, TLV overrun)
+  MUST reject the file, with truncation explicitly carved out as an expected
+  condition; semantic violations in well-framed blocks (undeclared/duplicate
+  ids, misplaced blocks, coverage failures) MAY be isolated per block or
+  session, never silently reinterpreted or repaired, with tolerated
+  violations SHOULD-reported. Bytes after a valid End block leave the file
+  complete but MUST NOT be interpreted and SHOULD be reported.
 - **The 64 KB TLV value cap is never acknowledged.** `len: u16` caps every
   option value at 65 535 bytes — in particular `spans` at ⌊65535/28⌋ = 2340
   entries per record. Probably ample, but the spec should state the limit and
@@ -365,9 +374,10 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
    **DONE** — MUST at all four sites, with the violation rule (reader MAY
    reject file or session, never required to reorder). See the resolution
    note under question 5.
-8. **Add a reader error-handling paragraph** to Conformance: one general rule
-   for undeclared ids, duplicate ids, misplaced blocks, and trailing bytes
-   after End.
+8. ~~**Add a reader error-handling paragraph**~~ **DONE** — two-tier rule in
+   Conformance (structural → MUST reject; semantic → MAY isolate, never
+   reinterpret; SHOULD report), with truncation carved out and the after-End
+   rule specified. See the resolution note under question 6.
 9. **Fix the JSONL examples / define a `kind` default (I‑5)** and add the
    flag-boolean keys to the alias table (I‑6).
 10. **State the 64 KB TLV cap** and the writer rule when `spans` overflows it.

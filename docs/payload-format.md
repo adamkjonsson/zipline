@@ -1026,7 +1026,9 @@ it. Body:
 | `end_magic` | u32  | `0x5A454E44` (`"ZEND"`); on disk the little-endian bytes `44 4E 45 5A` |
 
 Options: `comment`. Bytes after this block are invalid — a `.zpf` is never
-concatenated (see [Conformance](#conformance)).
+concatenated. A reader MUST NOT interpret them as blocks and SHOULD report
+them; everything up to and including the End block remains valid and the file
+still counts as complete (see [Conformance](#conformance)).
 
 Completeness is detected by **forward reading alone**: reaching a valid End block
 as the final block means complete; reaching end-of-stream — or a short, partial
@@ -1292,6 +1294,44 @@ still-open session — but MAY free a session's state the moment they see it.
 Readers MUST skip unknown block types (via frame `length`) and unknown option
 ids (via `len`), and MUST treat reserved fields/bits as ignored-on-read.
 
+**Error handling.** Writer obligations in this document are enforced by
+readers in two tiers, split by what the violation poisons:
+
+- **Structural corruption — the reader MUST reject the file.** When the byte
+  stream itself can no longer be trusted, isolating a smaller unit is unsound.
+  This tier: a bad or missing [magic](#file-header-0x01); a File Header absent
+  or not first; a `version_major` the reader does not implement;
+  `tick_hz = 0`; a block `length` that is not a multiple of 4; a `payload_len`
+  or TLV `len` that overruns its block. One condition that looks structural is not:
+  running out of bytes at the **end of the stream** is *truncation*, an
+  expected condition with its own lenient rule
+  ([Truncation and completeness](#truncation-and-completeness)), which takes
+  precedence.
+- **Semantic violations — the reader MAY isolate.** When a well-framed block's
+  *content* violates a MUST — it references an undeclared
+  `session_id`/`pid`/`source_id`/`decoder_id`; an id is declared twice; a
+  block appears where its kind is forbidden (an Undecoded block or an `origin`
+  option in a raw file, a block referencing a session after its
+  [Session End](#session-end-0x12), a second Session End); the coverage
+  guarantee fails — the reader MAY reject the file, or discard the smallest
+  unit it can soundly isolate: the offending block, or the session it belongs
+  to. It MUST NOT silently reinterpret or repair the data — no reordering
+  records, no inventing missing declarations, no guessing at what the writer
+  meant. Where this document states a specific rule for a violation (the
+  per-participant [ordering rule](#identifiers--ordering), the `prim:`
+  [width-mismatch rule](#enums)), that rule is an instance of this tier and
+  takes precedence.
+
+A reader that tolerates a semantic violation or discards data SHOULD surface a
+diagnostic — data must never vanish silently. **Bytes after a valid End block**
+get the same isolating treatment at file scope: everything up to and including
+the End block remains valid and the file still counts as complete, but the
+reader MUST NOT interpret the trailing bytes as blocks and SHOULD report them
+(they are usually an accidental concatenation — see below). None of this
+applies to the *extension mechanism*: an unknown block type, an unknown option
+id, or a nonzero reserved field is **not** a violation — the skip/ignore rules
+above are the normal, conformant path.
+
 **Concatenation is not supported.** A `.zpf` file has exactly one File Header,
 at its very start; bytes after the last complete block are not a new section.
 Concatenating two `.zpf` files does **not** yield a valid `.zpf`. To split a
@@ -1303,7 +1343,9 @@ their order recoverable out-of-band (a naming convention, a manifest, etc.).
 The format is forward-only and streamable. A reader that finds fewer than
 `length` bytes remaining for a block MUST treat the file as **truncated at that
 block** (a writer crash mid-flush) and discard the partial tail; all complete
-prior blocks remain valid.
+prior blocks remain valid. Truncation is an expected condition, not structural
+corruption — a short *final* block is governed by this rule, never by the
+reject rule in [Conformance](#conformance).
 
 Completeness is signalled positively by the optional [End block](#end-of-file-0x41):
 a file ending in a valid End block was finalized cleanly, whereas one that reaches
