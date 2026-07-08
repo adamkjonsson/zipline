@@ -236,7 +236,7 @@ Per **Record** (TCP):
 |--------------|----------------------------------------------------------------|
 | `seq_start`  | absolute sequence number of the sender's first payload byte    |
 | `seq_end`    | `seq_start + payload_len` (mod 2³²; one past the last byte)     |
-| `ack`        | highest absolute peer sequence number the sender had received  |
+| `ack`        | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 
 ### Merge algorithm
 
@@ -1039,7 +1039,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0064` | origin           | packed     | Participant (pass-through) | input stream this participant re-emits: `source_id: u16, pid: u16, session_id: u64` — ids in the source's namespace (see [Participant Descriptor](#participant-descriptor-0x11)) |
 | `0x0070` | seq_start        | u32        | Record (TCP)             | absolute sequence number of the first payload byte             |
 | `0x0071` | seq_end          | u32        | Record (TCP)             | absolute sequence number one past the last payload byte (mod 2³²) |
-| `0x0072` | ack              | u32        | Record (TCP)             | highest absolute peer sequence number the sender had received  |
+| `0x0072` | ack              | u32        | Record (TCP)             | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes were built from (see below)          |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which Decoder Descriptor produced/declined this record/region |

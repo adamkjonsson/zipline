@@ -218,6 +218,9 @@ Beyond I‑1/I‑2 (filed under inconsistencies), the gaps are small:
   assumes. The value and algorithm are right; the English definition is wrong.
   Define it as "the acknowledgement number from the wire: one past the highest
   contiguous peer byte received."
+  **→ RESOLVED** — both definition sites (the "Fields used" table and registry
+  id `0x0072`) now carry the wire-ack wording; the guarantee, merge rule, and
+  examples were already consistent with it.
 - **I‑4: `seq_end` is redundant and its failure mode is undefined.** It is
   *defined* as `seq_start + payload_len (mod 2³²)`, so it carries no
   information, costs 8 bytes of TLV per record, and creates an inconsistency
@@ -333,8 +336,9 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
    is gone, and the `prim:` `-be`/`-le` suffixes were dropped (fixed-width
    `prim:` payloads are little-endian, decoder-normalized). See the resolution
    note under question 5.
-4. **Correct the `ack` definition (I‑3)** to "one past the highest contiguous
-   peer byte received (the wire acknowledgement number)."
+4. ~~**Correct the `ack` definition (I‑3)**~~ **DONE** — defined at both sites
+   as the wire acknowledgement number, one past the highest contiguous peer
+   byte received.
 5. **Drop `seq_end`** (I‑4), or make it optional with specified mismatch
    handling.
 6. **Add an optional Session End block** — restores bounded memory for
