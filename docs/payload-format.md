@@ -32,7 +32,9 @@ which combines separately-captured directions into one sequenced `.zpf` (see
   *separate file* derived from the raw one, not a layer inside it (see
   [Layers](#layers-raw-and-decoded-live-in-separate-files)).
 - Be **append-only / streamable** so a writer can flush a finished session and
-  forget it, keeping memory bounded on unbounded input.
+  forget it, keeping memory bounded on unbounded input — and so a reader can do
+  the same, dropping a session's state at its
+  [Session End](#session-end-0x12) marker.
 - Carry timestamps on a **packet-time clock** (capture time), never wall clock,
   so replay is deterministic and live/offline captures order identically.
 - Reconstruct cross-participant **interleaving from TCP seq/ack**, not just
@@ -111,6 +113,7 @@ Block types:
 | 0x03 | Decoder Descriptor      | a decoder's id, name, version, params digest    |
 | 0x10 | Session Descriptor      | session id, protocol, flow key, metadata        |
 | 0x11 | Participant Descriptor  | participant id within a session, endpoint, TCP ISN |
+| 0x12 | Session End             | optional: no further blocks reference this session; how it ended |
 | 0x20 | Record                  | a directed payload unit (see fields below)      |
 | 0x21 | Undecoded               | a region the transform did not decode, referencing the predecessor's bytes (see Layers) |
 | 0x30 | Name/Identity Resolution| optional: map participant ids → human labels    |
@@ -152,7 +155,11 @@ participants to emit up front:
 - The same holds for **Decoder** and **Source** descriptors in derived files.
 
 A consumer therefore builds its session/participant tables incrementally as it
-reads, exactly as the writer built them. (A future
+reads, exactly as the writer built them — and tears them down incrementally
+too: the mirror of declare-on-first-use is **end-on-flush**, a
+[Session End](#session-end-0x12) block the writer SHOULD emit at the moment it
+flushes-and-forgets a session, after which nothing references that session
+again and a reader may drop its state. (A future
 [random-access index](#possible-future-extensions) could gather descriptor
 offsets without changing this streaming contract.)
 
@@ -163,7 +170,9 @@ payloads base64 — a small multi-party capture shows the shape. A 3-party chat
 room is just additional descriptors, participants beyond two, and records with no
 TCP hints (ordering falls back to timestamps, since a single chat server saw all
 messages on one clock). Participants are declared as they appear: `dave` joins
-mid-stream and is declared only at that point.
+mid-stream and is declared only at that point. When the writer later evicts the
+idle room it says so with a `session_end` — nothing references session 8 after
+that line.
 
 ```jsonl
 {"type":"file","format":"zipline-payload/1","time_units":"us"}
@@ -184,6 +193,8 @@ mid-stream and is declared only at that point.
 {"type":"participant","session_id":8,"pid":3,"endpoint":"dave"}
 {"type":"record","session_id":8,"sender_pid":3,"source_id":1,"ts":2300,
  "payload":"YW0gSSBsYXRlPw=="}
+
+{"type":"session_end","session_id":8,"reason":"timeout"}
 ```
 
 ## Causal ordering from TCP seq/ack
@@ -833,6 +844,36 @@ pass-through transform preserves each stream's bytes and logical offsets,
 `origin` is the entire stream-level provenance — pass-through records carry no
 `spans`. `origin` MUST NOT appear in raw files.
 
+**Session End (`0x12`)**
+
+Optional; any file kind. Declares that **this file contains nothing more for
+the session**: the writer SHOULD emit it at the exact moment it
+flushes-and-forgets a session — the moment it already knows — and, having
+emitted it, MUST NOT emit *any* later block referencing that `session_id`
+(records, participants, and Name/Identity labels alike; a late label is
+written *before* the Session End). At most one Session End per session, and
+only after the session's declaration. A reader that sees it MAY free all
+state for that session on the spot; this is the reader-side half of the
+bounded-memory contract.
+
+| Field        | Type | Notes                       |
+|--------------|------|-----------------------------|
+| `session_id` | u64  | the session being ended     |
+
+Options: `reason` (string), `comment`.
+
+`reason` says *how* the session ended — an open vocabulary with suggested
+values `fin` (clean TCP close), `rst` (reset), `timeout` (idle eviction),
+`capture-end` (the capture stopped while the session was live). Note the
+distinction: the block itself only asserts the **file** is done with the
+session; whether the *wire* conversation actually terminated is what `reason`
+conveys (`fin`/`rst` = it ended; `timeout`/`capture-end` = the writer merely
+stopped tracking). Reaching the [End block](#end-of-file-0x41) or end-of-stream
+implicitly closes every still-open session, so a Session End as a file's last
+act is redundant but harmless; readers MUST NOT require the block (a crashed
+writer never wrote it). A transform SHOULD emit a Session End for an output
+session once its input for that session is exhausted.
+
 ### Record (`0x20`)
 
 Body (fixed part):
@@ -1051,6 +1092,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded (`undecodable`/`tcp-gap`/`truncated`/…) |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
+| `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
 
 A **span-list** value is `count` packed entries, each 28 bytes:
 `source_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
@@ -1233,6 +1275,13 @@ clock requirement for every hint-less session, and a downstream tool may rely on
 it to sequence streams it regroups (see
 [Sequenced files](#sequenced-files-precomputed-order)).
 
+**Session lifetime.** A writer SHOULD emit a [Session End](#session-end-0x12)
+block at the moment it flushes-and-forgets a session. At most one Session End
+MAY appear per session, only after that session's declaration; after it the
+writer MUST NOT emit any block referencing that `session_id`. Readers MUST NOT
+require the block — reaching the End block or end-of-stream closes every
+still-open session — but MAY free a session's state the moment they see it.
+
 Readers MUST skip unknown block types (via frame `length`) and unknown option
 ids (via `len`), and MUST treat reserved fields/bits as ignored-on-read.
 
@@ -1281,6 +1330,7 @@ canonical key and MUST NOT be placed in `options`. The block is selected by its
 | `decoder`     | Decoder Descriptor (`0x03`)       |
 | `session`     | Session Descriptor (`0x10`)       |
 | `participant` | Participant Descriptor (`0x11`)   |
+| `session_end` | Session End (`0x12`)              |
 | `record`      | Record (`0x20`)                   |
 | `undecoded`   | Undecoded (`0x21`)                |
 | `name`        | Name/Identity Resolution (`0x30`) |
@@ -1470,3 +1520,8 @@ declare-on-first-use contract holding in the byte stream.
   consistency rule, and duplicating a fact the registry already holds. If ever
   wanted, the `id` high bit (dropping ids to a 15-bit space) is the place — *not*
   the `len` bit, which would halve the 64 KB option-value cap.
+
+- **Per-session integrity counts.** Optional totals (record count, per-
+  participant byte count) as TLVs on the [Session End](#session-end-0x12)
+  block, as a truncation/loss tripwire. Deferred: they are pure additions, so
+  they fit a later minor version without a format change.

@@ -278,6 +278,13 @@ An optional block (say `0x12`, body `session_id` + a `reason`/`how-it-ended`
 option: fin/rst/timeout/eof) that a writer emits when it flushes-and-forgets
 would close this cheaply and stays fully append-only. Strongly recommended;
 after 1.0 it can only be a SHOULD that old files lack forever.
+**→ RESOLVED** — Session End block `0x12` added (body `session_id`, optional
+`reason` `0x00C0` with open vocabulary `fin`/`rst`/`timeout`/`capture-end`).
+Writers SHOULD emit it on flush-and-forget; it is a hard barrier (no later
+block of any kind may reference the session — late Name/Identity labels go
+first); readers MAY free session state on sight, MUST NOT require it, and
+EOF/End closes remaining sessions. Integrity counts deferred to "Possible
+future extensions".
 
 Smaller wishes, all fine to defer: the compression story (already an open
 question), the random-access index (already sketched), and a capture-drop
@@ -346,8 +353,9 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
 5. ~~**Drop `seq_end`** (I‑4)~~ **DONE** — dropped entirely; readers compute
    the record end as `seq_start + payload_len` (mod 2³²). See the I‑4
    resolution note above.
-6. **Add an optional Session End block** — restores bounded memory for
-   streaming readers and makes "session over" observable.
+6. ~~**Add an optional Session End block**~~ **DONE** — block `0x12` with
+   SHOULD-on-flush, hard barrier, and optional `reason`. See the resolution
+   note under question 9.
 7. **Upgrade per-participant `seq_start` order from SHOULD to MUST**, with
    specified reader behavior on violation, so readers can drop the sort
    fallback.
