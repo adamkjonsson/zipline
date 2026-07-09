@@ -166,15 +166,26 @@ Beyond I‑1/I‑2 (filed under inconsistencies), the gaps are small:
   option value at 65 535 bytes — in particular `spans` at ⌊65535/28⌋ = 2340
   entries per record. Probably ample, but the spec should state the limit and
   say what a writer with more spans does (split the record).
+  **→ RESOLVED** — the 64 KB cap is stated in the TLV framing section, and
+  `spans` became a repeatable id: successive occurrences concatenate into one
+  list, lifting the per-occurrence 2340-entry ceiling (writers SHOULD coalesce
+  adjacent ranges first).
 - **SYN-flag records are underspecified.** The `syn` record flag exists, but
   nothing says what such a record looks like (zero-length? what `seq_start` —
   the ISN itself, occupying sequence space?). Either specify it in one
   sentence or drop the flag (the handshake is already captured by `isn` +
   `tcp_role`).
+  **→ RESOLVED** — specified: a "Handshake records" paragraph defines the
+  `syn` record as zero-length, `timestamp` = the SYN packet's time,
+  `seq_start` = `isn + 1`, so causal edges and ordering work unchanged; it
+  carries handshake *timing*, identity stays on the participant.
 - **`proto` is an open vocabulary.** `tcp`/`udp`/`irc`/`http`/`tls` are given
   as examples, not a registry. Interop nit: one tool's `http` is another's
   `http/1.1`. A short "well-known values" list with a rule for private values
   would be cheap insurance.
+  **→ RESOLVED** — well-known values `tcp`/`udp`/`http`/`tls`/`irc`/`dns` in
+  both the Session Descriptor text and the registry; other values permitted,
+  MUST be lowercase, unrecognized treated as opaque.
 
 ### 7. Are there any inconsistencies in the format?
 
@@ -252,11 +263,16 @@ Beyond I‑1/I‑2 (filed under inconsistencies), the gaps are small:
   `{"type":"source","source_id":1,"uri":"…"}` with no `"kind"`. Either fix the
   examples or (better, given `capture` is the common case) state a JSONL
   default: absent `kind` means `capture`.
+  **→ RESOLVED** — always-explicit chosen (no default): the three capture
+  `source` lines now carry `"kind":"capture"`, and the mapping rule states
+  body fields always project (only options may be absent).
 - **I‑6 (editorial): the flag-boolean keys are undeclared aliases.** The
   mapping section promises the brevity-alias table lists *the only* keys whose
   JSON name differs from the binary name, but the `flags` bitfields project as
   `"single_clock"`/`"sequenced"` booleans — a rename declared only in the
   value-encoding bullet. Add them to the alias table or note the exception.
+  **→ RESOLVED** — both added as alias-table rows; the table's "the only
+  keys" claim is now accurate (a Record's `flags` array keeps its own key).
 
 ### 8. Do any features add more complexity than usefulness?
 
@@ -378,12 +394,14 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
    Conformance (structural → MUST reject; semantic → MAY isolate, never
    reinterpret; SHOULD report), with truncation carved out and the after-End
    rule specified. See the resolution note under question 6.
-9. **Fix the JSONL examples / define a `kind` default (I‑5)** and add the
-   flag-boolean keys to the alias table (I‑6).
-10. **State the 64 KB TLV cap** and the writer rule when `spans` overflows it.
-11. **Editorial:** ~~replace the dangling "G1 ambiguity" reference with
-    self-contained wording~~ (**DONE** as part of the I‑2 fix); specify or
-    drop the `syn` record flag; add a well-known-values note for `proto`.
+9. ~~**Fix the JSONL examples / define a `kind` default (I‑5)** and add the
+   flag-boolean keys to the alias table (I‑6).~~ **DONE** — examples made
+   explicit (no default), alias rows added. See the I‑5/I‑6 resolution notes.
+10. ~~**State the 64 KB TLV cap**~~ **DONE** — cap stated; `spans` made
+    repeatable (occurrences concatenate) as the overflow rule.
+11. ~~**Editorial:**~~ **DONE** — the "G1 ambiguity" reference was fixed with
+    I‑2; the `syn` flag is now specified ("Handshake records"); `proto` has a
+    well-known-values list.
 12. **Future-proofing for SCTP (question 10):** reword the `datagram` flag and
     merge algorithm transport-neutrally, and note `stream_id`/`tsn`/
     `cum_tsn_ack` as the reserved extension path.

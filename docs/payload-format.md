@@ -176,7 +176,7 @@ that line.
 
 ```jsonl
 {"type":"file","format":"zipline-payload/1","time_units":"us"}
-{"type":"source","source_id":1,"uri":"chat.pcap"}
+{"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
 {"type":"participant","session_id":8,"pid":0,"endpoint":"alice"}
@@ -332,8 +332,8 @@ The canonical case for seq/ack ordering — the two directions captured to
 
 ```jsonl
 {"type":"file","format":"zipline-payload/1","time_units":"us"}
-{"type":"source","source_id":1,"uri":"sideA.pcap"}
-{"type":"source","source_id":2,"uri":"sideB.pcap"}
+{"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
+{"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
 {"type":"session","session_id":7,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80"}
@@ -788,8 +788,12 @@ Options: `name`, `version`, `params_digest`, `comment`.
 |--------------|------|-----------------------------|
 | `session_id` | u64  | id referenced by participants and records |
 
-Options: `proto` (string, lowercase, e.g. `tcp`/`udp`/`irc`/`http`/`tls`),
-`flow_key` (string), `flags` (u16, session-level flags; see below), `comment`.
+Options: `proto` (string; see below), `flow_key` (string), `flags` (u16,
+session-level flags; see below), `comment`.
+
+`proto` names the session's protocol. Well-known values: `tcp`, `udp`, `http`,
+`tls`, `irc`, `dns`. Other values are permitted and MUST be lowercase; a
+consumer treats a value it does not recognize as opaque.
 
 **Session flags.** The `flags` option is a u16 bitfield; when absent, every bit
 is 0. Bit `0x0001` (**SEQUENCED**) asserts this session is a
@@ -931,6 +935,16 @@ The canonical `timestamp` is always the completion (last-packet) time.
 ordering — are inherently signed. The range given up versus u64 is immaterial at
 the resolutions `tick_hz` is meant for.
 
+**Handshake records.** A writer MAY record an observed TCP handshake as a
+zero-length record carrying the `syn` flag: `timestamp` is the SYN packet's
+capture time and `seq_start` is `isn + 1` — the stream origin, so its computed
+end equals it and every causal edge and ordering rule works unchanged (it
+precedes the data that starts at the same origin simply by being produced
+first). The responder's SYN-ACK is its own zero-length `syn` record, and MAY
+carry an `ack` like any record. This is how session-establishment *timing* is
+carried; the handshake's identity already lives on the participant (`isn`,
+`tcp_role`).
+
 ### Undecoded (`0x21`)
 
 Decode-stage files only (see [Conformance](#conformance)). Marks a region of a
@@ -1041,7 +1055,9 @@ is found in the normal block walk. In the JSONL projection it is a final
 ### TLV option framing & id registry
 
 `id: u16, len: u16, value` (then pad to 4 bytes). Options run until the block
-`length` is consumed; there is no end-of-options sentinel. `id 0x0001` is
+`length` is consumed; there is no end-of-options sentinel. Because `len` is a
+u16, **a single option value holds at most 65 535 bytes** (repeatable ids lift
+this per-occurrence cap off the logical list — see below). `id 0x0001` is
 `comment` (UTF-8) on any block. Ids are grouped by the block they belong to but
 an id never changes meaning across blocks where it is reused (e.g. `decoder_id`).
 
@@ -1055,13 +1071,18 @@ Whether an id is *single-valued* or *repeatable* is a **semantic** property in t
 registry, consulted only by a consumer that actually interprets the id:
 
 - A **repeatable** id is an ordered list; its occurrences and their order are
-  significant. **The only repeatable id in v1.0 is `endpoint`** (any future
-  repeatable id MUST be added to this closed list).
+  significant. **The repeatable ids in v1.0 are `endpoint` and `spans`** (any
+  future repeatable id MUST be added to this closed list).
 - A **single-valued** id (every other id) SHOULD appear at most once; a consumer
   that interprets it uses the **first** occurrence. If it nonetheless repeats, a
   faithful reader still preserves the extra occurrences for round-trip.
-- `spans` is **single-valued**: it appears at most once, and its multiplicity
-  lives *inside* the packed value (a list of entries), not across occurrences.
+- The two repeatable ids list differently. Each `endpoint` occurrence is one
+  list element (a tunnel layer). Each `spans` occurrence is a **chunk** of
+  packed entries: successive occurrences concatenate, in file order, into the
+  record's one span list. That is what lifts the per-occurrence value cap
+  (⌊65 535 / 28⌋ = 2340 entries) off the logical list — a record needing more
+  spans simply carries several `spans` options. Writers SHOULD coalesce
+  adjacent ranges before resorting to that.
 
 | Id       | Name             | Value type | Used in                  | Meaning                                                        |
 |----------|------------------|------------|--------------------------|----------------------------------------------------------------|
@@ -1077,7 +1098,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0041` | name             | string     | Decoder                  | decoder identifier, e.g. `http/1.1`                            |
 | `0x0042` | version          | string     | Decoder                  | decoder version                                                |
 | `0x0043` | params_digest    | string     | Decoder                  | hash of the decoder config, so the decode is reproducible      |
-| `0x0050` | proto            | string     | Session                  | session protocol, lowercase (`tcp`/`udp`/`irc`/`http`/`tls`)   |
+| `0x0050` | proto            | string     | Session                  | session protocol; well-known values `tcp`/`udp`/`http`/`tls`/`irc`/`dns`, other lowercase values permitted (unrecognized = opaque) |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick; **repeatable**, outermost tunnel layer first → innermost last |
@@ -1098,7 +1119,9 @@ registry, consulted only by a consumer that actually interprets the id:
 
 A **span-list** value is `count` packed entries, each 28 bytes:
 `source_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
-(`count = len / 28`). The two u16s lead so the u64 fields stay 4-byte aligned
+(`count = len / 28`). A record MAY carry several `spans` options; their entry
+lists concatenate in file order into the record's single span set (see the
+repeatability rules above). The two u16s lead so the u64 fields stay 4-byte aligned
 within the packed entry — this packed order (`source_id, pid, session_id, …`)
 differs from the logical/JSON field order (`source_id, session_id, pid, …`) *only*
 for that alignment; all three faces name the same five fields, and since JSON is
@@ -1141,7 +1164,7 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0001` | `psh`        | TCP PSH seen in this run                                 |
 | `0x0002` | `fin`        | TCP FIN seen                                             |
 | `0x0004` | `rst`        | TCP RST seen                                             |
-| `0x0008` | `syn`        | TCP SYN (handshake record)                               |
+| `0x0008` | `syn`        | TCP SYN — a zero-length handshake-timing record (see [Handshake records](#record-0x20)) |
 | `0x0010` | `urg`        | TCP URG seen                                             |
 | `0x0040` | `retransmit` | retransmission/overlap was resolved inside this record   |
 | `0x0080` | `datagram`   | datagram boundary (UDP: record is exactly one datagram)  |
@@ -1364,7 +1387,8 @@ options are added rather than depending on an enumerated key list.
 binary body fields and its TLV options — the field names in the block's body
 table and the `Name` column of the
 [option registry](#tlv-option-framing--id-registry) — used verbatim as JSON keys,
-*except* for the brevity aliases below. A field or option a converter does not
+*except* for the brevity aliases below. **Body fields always project** — an
+omitted key can only ever be an absent *option* (the absent-key rule below). A field or option a converter does not
 recognise (a future registry id, a `Custom` block's contents) round-trips through
 a generic `options` array (below); anything that **is** registered MUST use its
 canonical key and MUST NOT be placed in `options`. The block is selected by its
@@ -1394,8 +1418,10 @@ name:
 | `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/1"` ⇒ major 1, minor 0) |
 | `time_units` | `tick_hz` (File Header)                                          |
 | `ts`         | `timestamp` (Record)                                            |
-| `pid`        | `participant_id` (block body, and each `spans` entry)            |
+| `pid`        | `participant_id` (block body, each `spans` entry, and `origin`)  |
 | `key`        | `flow_key` (Session)                                            |
+| `single_clock` | File Header `flags` bit `0x0001`, rendered as a boolean        |
+| `sequenced`  | Session `flags` bit `0x0001`, rendered as a boolean             |
 
 (`proto` is **not** an alias — its JSON key equals its option name.)
 
@@ -1418,9 +1444,11 @@ name:
   on `session`), and a Record's multi-bit `flags` is an **array of set-bit
   tokens** (the JSON-token column of the [flags enum](#enums), e.g.
   `"flags":["psh","fin"]`). A zero/unset bitfield is omitted.
-- **Repeatable options** (`endpoint`) → a JSON **array**, order preserved.
+- **Repeatable options** (`endpoint`) → a JSON **array**, order preserved
+  (`spans`, whose repetition is chunking, has its own rule below).
 - **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
-  objects.
+  objects; repeated binary occurrences merge into this one array, and a
+  converter back to binary MAY split it into several occurrences.
 - **`origin`** → a JSON object `{source_id, session_id, pid}` (a `spans` entry
   without offsets; ids in the referenced source's namespace).
 - An **absent** option is an **omitted** key; a reader treats a missing key as
@@ -1439,7 +1467,8 @@ block carries `pen`, `subtype`, and a base64 `payload`.
 
 **Semantic, not byte-exact.** A binary → JSONL → binary round-trip preserves
 every field's *value*, but **not** the exact bytes: padding, the ordering of
-distinct options within a block, and the choice of optional/default encodings are
+distinct options within a block, how a `spans` list is split across
+occurrences, and the choice of optional/default encodings are
 not pinned down by JSONL. Consequently a round-tripped file's hash differs from
 the original's. The `digest` dependency-edge (and any conformance hashing) is
 therefore defined over the **binary form only** — never over a file that has been
