@@ -358,6 +358,14 @@ recommendation for 1.0: don't add SCTP, but (a) cut `seq_end`, (b) reword the
 `datagram` flag and the merge algorithm in transport-neutral terms, and
 (c) note `stream_id`/`tsn`/`cum_tsn_ack` as the reserved extension path. That
 makes SCTP a pure minor-version addition later.
+**→ RESOLVED** — (a) was done as #5; (b) the flag is renamed `message` and
+defined transport-neutrally, and the merge algorithm gains a "Transport
+neutrality" note stating its abstract contract (per-sender monotonic sequence
+position + cumulative peer acknowledgement, both serial-number-compared);
+(c) an "SCTP support" bullet under Possible future extensions maps the whole
+addition (`stream_id`, `tsn`/`cum_tsn_ack`, per-stream offset scoping,
+multi-homing address sets, `proto` `sctp`) with no registry earmarks, per the
+no-annotations-for-unassigned-ids precedent.
 
 ### Suggested improvements
 
@@ -402,6 +410,6 @@ Prioritized; 1–4 are the ones I would not ship 1.0 without.
 11. ~~**Editorial:**~~ **DONE** — the "G1 ambiguity" reference was fixed with
     I‑2; the `syn` flag is now specified ("Handshake records"); `proto` has a
     well-known-values list.
-12. **Future-proofing for SCTP (question 10):** reword the `datagram` flag and
-    merge algorithm transport-neutrally, and note `stream_id`/`tsn`/
-    `cum_tsn_ack` as the reserved extension path.
+12. ~~**Future-proofing for SCTP (question 10)**~~ **DONE** — `message` flag,
+    merge transport-neutrality note, and the "SCTP support" future-extensions
+    bullet. See the resolution note under question 10.

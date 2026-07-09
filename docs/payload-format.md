@@ -305,6 +305,16 @@ participant's stream (already `seq_start`-ordered) need not merge at all. Only a
 consumer that wants the single cross-participant timeline of a *non-sequenced*
 file runs the algorithm above.
 
+**Transport neutrality.** Though stated in TCP's terms, the algorithm needs
+only two properties of a transport's ordering hints: (a) a **per-sender
+monotonic sequence position** compared with the serial-number rule, and (b) a
+**cumulative acknowledgement** of the peer's positions. TCP instantiates them
+with `seq_start` (plus the computed record end) and `ack`. SCTP's TSNs — the
+same 32-bit serial-number space — and its cumulative TSN ack meet the identical
+contract, so supporting a new transport means adding option ids (see
+[Possible future extensions](#possible-future-extensions)), never changing the
+algorithm.
+
 ### Caveats
 
 - Acks are **cumulative** and may be **delayed**, so `ack` is a *lower bound* on
@@ -1167,7 +1177,7 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0008` | `syn`        | TCP SYN — a zero-length handshake-timing record (see [Handshake records](#record-0x20)) |
 | `0x0010` | `urg`        | TCP URG seen                                             |
 | `0x0040` | `retransmit` | retransmission/overlap was resolved inside this record   |
-| `0x0080` | `datagram`   | datagram boundary (UDP: record is exactly one datagram)  |
+| `0x0080` | `message`    | message boundary: the record is exactly one transport message (a UDP datagram, an SCTP message, …) |
 | `0xFF20` | —            | reserved, MUST be 0                                      |
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
@@ -1265,7 +1275,8 @@ input `.zpf`s as a `zpf-input` Source and set the File Header
   `seq_start` (and `ack` where known); TCP participants **MUST** carry
   `isn` when the handshake was observed (it fixes the stream's absolute origin —
   see [Referencing the source by stream offset](#referencing-the-source-by-stream-offset))
-  and omit it otherwise; UDP records SHOULD set the datagram-boundary flag.
+  and omit it otherwise; records of message-oriented transports (UDP) SHOULD
+  set the `message` flag.
 - A **decoded** record MUST carry a `decoder_id`, and its `source_id`/`spans`
   reference a `zpf-input` Source; it appears only in a decode stage's output.
   Such a file MUST declare every Decoder it references and account for every
@@ -1603,3 +1614,14 @@ declare-on-first-use contract holding in the byte stream.
   participant byte count) as TLVs on the [Session End](#session-end-0x12)
   block, as a truncation/loss tripwire. Deferred: they are pure additions, so
   they fit a later minor version without a format change.
+
+- **SCTP support.** The container needs no frame or block changes — SCTP is a
+  minor-version addition of options: a per-record `stream_id` (u16, the SCTP
+  stream an association multiplexes), `tsn` and `cum_tsn_ack` (u32 ordering
+  hints; TSNs live in the same RFC 1982 serial-number space and acks are
+  cumulative, so the [merge](#merge-algorithm) instantiates unchanged — see
+  its transport-neutrality note), logical offset spaces scoped per
+  `(session, pid, stream_id)`, the `proto` value `sctp`, and an address-set
+  convention for multi-homing (distinct from the tunnel-layer `endpoint`
+  list, whose order already means something else). Message boundaries reuse
+  the `message` record flag as-is.
