@@ -19,14 +19,16 @@ The format is tool-independent — any program can read or write it.
 
 ## Status
 
-Early design. The format is not yet implemented; the specification is being
-worked out.
+**Version 1.0 — the specification is final.** The format is stable for
+implementation and interchange; future changes arrive only as version bumps
+(minor bumps add blocks/options that old readers safely skip). No reference
+implementation exists yet — implementations are welcome.
 
 ## Documentation
 
-- [docs/payload-format.md](docs/payload-format.md) — the format design sketch:
-  conceptual model, binary container, JSON-Lines projection, causal ordering,
-  and the raw → decoded derivation workflow.
+- [docs/payload-format.md](docs/payload-format.md) — the specification:
+  conceptual model, normative binary container, JSON-Lines projection, causal
+  ordering, and the raw → decoded derivation workflow.
 
 ## License
 

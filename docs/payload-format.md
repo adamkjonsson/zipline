@@ -1,8 +1,10 @@
-# Zipline Payload Format (v1.0 beta)
+# Zipline Payload Format (v1.0)
 
-> Status: **version 1.0 beta** — the specification is feature-complete and the
-> format is considered stable for implementation, but not yet finalized: details
-> may still change in response to implementation feedback before 1.0 final. This
+> Status: **version 1.0** — the specification is final. The format is stable
+> for implementation and interchange: a conformant 1.0 file stays valid, and
+> any future change arrives only as a version bump (a **minor** bump adds
+> blocks/options that old readers safely skip; see
+> [File Header](#file-header-0x01)). This
 > document specifies the **Zipline Payload Format** (`.zpf`), a file format for
 > the *payload* output of a network sessionizer: the bytes that flow between
 > endpoints once packets have been reassembled into sessions, plus the metadata
