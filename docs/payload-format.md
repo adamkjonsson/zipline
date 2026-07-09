@@ -1,8 +1,10 @@
-# Zipline Payload Format (v1.0 beta)
+# Zipline Payload Format (v1.0)
 
-> Status: **version 1.0 beta** — the specification is feature-complete and the
-> format is considered stable for implementation, but not yet finalized: details
-> may still change in response to implementation feedback before 1.0 final. This
+> Status: **version 1.0** — the specification is final. The format is stable
+> for implementation and interchange: a conformant 1.0 file stays valid, and
+> any future change arrives only as a version bump (a **minor** bump adds
+> blocks/options that old readers safely skip; see
+> [File Header](#file-header-0x01)). This
 > document specifies the **Zipline Payload Format** (`.zpf`), a file format for
 > the *payload* output of a network sessionizer: the bytes that flow between
 > endpoints once packets have been reassembled into sessions, plus the metadata
@@ -847,6 +849,24 @@ address at which the participant actually speaks the session protocol. A reader
 that wants "the" address uses the last `endpoint`; the earlier ones describe the
 delivery path. A single un-tunnelled participant has exactly one `endpoint`.
 
+**Endpoint syntax.** An `endpoint` is free-form UTF-8 — nothing in the format
+ever parses one — but two producers naming the *same* address should produce
+the *same string*, or a consumer cannot correlate sessions across files
+("find every session involving this host"). Writers therefore SHOULD spell the
+common forms like this:
+
+- IPv4 with a port: `10.0.0.1:51000`; IPv6 with a port in brackets:
+  `[2001:db8::1]:443`. A bare address (no port) omits the brackets.
+- An Ethernet address as lowercase colon-hex: `aa:bb:cc:dd:ee:ff`.
+- A layer that is not a plain address as `<scheme>:<value>`, e.g. `vni:5001`
+  (a VXLAN network identifier) or `gre:0x1234` (a GRE key) — natural for the
+  outer entries of a tunnelled participant's endpoint list.
+- An application-level name (a chat nick, a username) as a bare string.
+
+This is a naming convention, not a grammar: it buys byte-equality for the
+common cases, and a reader MUST NOT reject an endpoint it cannot parse —
+unrecognized forms are opaque labels.
+
 **`origin` (pass-through files).** In a pass-through derived file (see
 [Conformance](#conformance)), every participant MUST carry exactly one `origin`
 option naming the input stream it re-emits: a packed
@@ -1111,7 +1131,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0050` | proto            | string     | Session                  | session protocol; well-known values `tcp`/`udp`/`http`/`tls`/`irc`/`dns`, other lowercase values permitted (unrecognized = opaque) |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
-| `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick; **repeatable**, outermost tunnel layer first → innermost last |
+| `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick (recommended spellings: see [Participant Descriptor](#participant-descriptor-0x11)); **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
 | `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
