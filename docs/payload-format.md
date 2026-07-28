@@ -1,10 +1,21 @@
-# Zipline Payload Format (v1.0)
+# Zipline Payload Format (v1.1-beta)
 
-> Status: **version 1.0** — the specification is final. The format is stable
-> for implementation and interchange: a conformant 1.0 file stays valid, and
-> any future change arrives only as a version bump (a **minor** bump adds
-> blocks/options that old readers safely skip; see
-> [File Header](#file-header-0x01)). This
+> Status: **version 1.1-beta** — in development. **Version 1.0 remains final and
+> unchanged**; every conformant 1.0 file stays valid under 1.1 and always will.
+> 1.1 collects clarifications and additions arising from the first
+> implementation (see [CHANGELOG.md](../CHANGELOG.md) for the precise list, and
+> [implementation-feedback-analysis.md](implementation-feedback-analysis.md) for
+> the reasoning). It is a **minor** bump: it adds blocks/options that old readers
+> safely skip, pins down behaviour 1.0 left undefined, and relaxes some writer
+> restrictions — it never changes the frame, an existing block body, or the
+> meaning of a field a 1.0 file already carries (see
+> [File Header](#file-header-0x01)).
+>
+> **What beta means.** The wording here may still change; do not treat
+> 1.1-specific text as settled for interchange. Implement 1.0 for production and
+> track this document for what is coming. Beta status lives in this document
+> only — it is not representable on the wire, so a file claiming minor `1`
+> asserts 1.1, beta or not. This
 > document specifies the **Zipline Payload Format** (`.zpf`), a file format for
 > the *payload* output of a network sessionizer: the bytes that flow between
 > endpoints once packets have been reassembled into sessions, plus the metadata
@@ -726,7 +737,7 @@ MUST be the first block in the file. Body:
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `1` for this document                                        |
-| `version_minor` | u16  | `0`                                                          |
+| `version_minor` | u16  | `1` for this document; `0` is version 1.0, and a reader of this version MUST still accept it |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -739,6 +750,14 @@ recognising it makes for a useful diagnostic message.)
 Suggested file extension `.zpf`. A **minor** version bump only adds
 blocks/options (old readers keep working); a **major** bump may break frame/body
 layout.
+
+**Which minor a writer stamps.** `version_minor` describes the *file*, not the
+writer: a writer SHOULD emit the **lowest** minor whose features the file
+actually uses — a file using nothing beyond 1.0 carries `0` even if written by a
+1.1 tool. This keeps the field a useful hint about what a reader must understand.
+It is only ever a hint: a reader MUST NOT gate parsing on it, because the
+skip-what-you-don't-know rules already make an unknown block or option safe (see
+[Conformance](#conformance)).
 
 **Reconstructing wall time.** A record's `timestamp` is in `tick_hz` ticks from
 the origin `time_epoch` (itself ticks since the Unix epoch, default 0). The
