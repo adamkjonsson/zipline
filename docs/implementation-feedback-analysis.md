@@ -714,16 +714,20 @@ Closes #8, #9a and #9c.
 
 ### Phase 3 — Additive vocabulary
 
-- [ ] **#12** — canonicalise `skipped`; motivate it from the coverage guarantee
-      (a decoder skipping a BOM has no honest third option today)
-- [ ] State the reason vocabulary's **two-class structure** explicitly
-      (bytes-exist: `undecodable`, `skipped` / hole: `tcp-gap`, `truncated`) at
-      [payload-format.md:1006-1013](docs/payload-format.md#L1006-L1013)
-- [ ] Settle unrecognised `reason` (§4.2): unknown recoverability — attempt the
-      follow, report if nothing is there; never assume "hole"
-- [ ] Update the `reason` registry row
-      ([payload-format.md:1145](docs/payload-format.md#L1145)) and the coverage
-      narrative ([payload-format.md:616-633](docs/payload-format.md#L616-L633))
+- [x] **#12** — `skipped` canonicalised, motivated from the coverage guarantee
+      (a decoder skipping a BOM had no honest third option) and from keeping
+      `undecodable` usable as a decoder-quality signal
+- [x] Two-class structure stated as a table in *Undecoded*: bytes exist
+      (`undecodable`, `skipped`) vs hole (`tcp-gap`, `truncated`), with the class
+      called out as the only part a consumer acts on
+- [x] Unrecognised `reason` settled (§4.2): unknown recoverability, MUST NOT
+      assume a class, and specifically MUST NOT assume "hole" — follow the
+      reference, report empty only if nothing is found
+- [x] `reason` registry row and the *Coverage honesty* narrative both updated
+- [x] Considered adding a `skipped` line to the end-to-end decoded example and
+      **did not**: its span arithmetic is coverage-consistent as it stands and is
+      cited by the byte-level example, so the prose carries the concrete cases
+      (BOM, padding, reserved field) instead
 
 ### Phase 4 — Taxonomy and derived-file semantics (the substantive work)
 
