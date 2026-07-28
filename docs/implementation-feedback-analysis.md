@@ -577,10 +577,19 @@ answer, not a design exercise.
 - [ ] **#14a basis** — producer-asserted order *(recommended)* vs deferring to
       generic ordering hints in a later minor; if asserted, decide whether the
       basis is recorded (`sequenced_basis` option) or left silent
-- [ ] **Packaging** — single **v1.1** covering all nine *(recommended: simpler,
-      and there is one implementation)* vs the errata/1.1 split in §5
+- [x] **Packaging** — **decided: a single v1.1** covering all nine, rather than
+      the errata/1.1 split in §5. The document is now `1.1-beta`,
+      `version_minor` is `1`, and [CHANGELOG.md](../CHANGELOG.md) holds the
+      1.0 → 1.1 delta
 - [ ] Record the decisions in this document (short "Decisions taken" note under
       each affected issue) so the analysis stays readable against the final text
+
+**Standing rule for every phase below:** each landed change gets its
+[CHANGELOG.md](../CHANGELOG.md) entry **in the same commit**, under the category
+matching its change class in §1 — *Clarified* for clarifications, *Added* for
+additive items, *Changed* for widenings (flagged `[strict-reader]` where a v1.0
+reader may refuse the result, i.e. #13 and #14a), *Fixed* for the contradictions
+in Phase 1.
 
 ### Phase 1 — Contradictions and omissions (no new capability)
 
@@ -683,10 +692,17 @@ together.
 
 ### Phase 5 — Consistency pass and release
 
-- [ ] Bump `version_minor` in the *File Header* table
-      ([payload-format.md:729](docs/payload-format.md#L729)) and every JSONL
-      `format` string that should advertise it, per the Phase 0 packaging decision
-- [ ] Update the status banner ([payload-format.md:1-12](docs/payload-format.md#L1-L12))
+- [x] Bump `version_minor` in the *File Header* table and update the status
+      banner and title — **done up front**, along with a new rule that a writer
+      stamps the *lowest* minor whose features the file uses (which is why the
+      JSONL examples keep `"zipline-payload/1"`: they use no 1.1 feature)
+- [x] Create [CHANGELOG.md](../CHANGELOG.md) and point [README.md](../README.md)
+      at it
+- [ ] Revisit the JSONL `format` strings once 1.1 features actually appear in an
+      example — only an example that *uses* one advertises `1.1`
+- [ ] Confirm the CHANGELOG's `[Unreleased]` section is the complete 1.0 → 1.1
+      delta, then release it as `[1.1]` with a date and a compare link
+- [ ] Drop the beta caveat from the status banner and README when 1.1 is final
 - [ ] Verify the byte-level worked example
       ([payload-format.md:1508-1591](docs/payload-format.md#L1508-L1591)) is
       unaffected — it should be, since nothing structural changed. If it *is*

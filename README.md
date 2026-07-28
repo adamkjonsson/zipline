@@ -51,16 +51,23 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 1.0 — the specification is final.** The format is stable for
-implementation and interchange; future changes arrive only as version bumps
-(minor bumps add blocks/options that old readers safely skip). No reference
-implementation exists yet — implementations are welcome.
+**Version 1.0 is final.** The format is stable for implementation and
+interchange; future changes arrive only as version bumps (minor bumps add
+blocks/options that old readers safely skip). Implement 1.0 for production.
+
+**Version 1.1 is in beta**, collecting clarifications and additions from the
+first implementation. It is a minor bump — every conformant 1.0 file stays valid
+— but its wording is not yet settled. See [CHANGELOG.md](CHANGELOG.md) for what
+changes and [docs/implementation-feedback-analysis.md](docs/implementation-feedback-analysis.md)
+for why.
 
 ## Documentation
 
 - [docs/payload-format.md](docs/payload-format.md) — the specification:
   conceptual model, normative binary container, JSON-Lines projection, causal
   ordering, and the raw → decoded derivation workflow.
+- [CHANGELOG.md](CHANGELOG.md) — what changed in each version, and what an
+  implementer has to do about it.
 
 ## License
 
