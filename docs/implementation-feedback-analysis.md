@@ -827,7 +827,6 @@ together.
       that the precondition's scope is now stated more prominently
 - [ ] Reply on **#13** about moving the annotation off `comment` (free-text human
       note) to a `Custom` block or a registered option
-- [ ] Reply on **#12** noting the `truncated` spelling
 - [ ] Close #8, #9, #10, #12, #14, #15, #16 against the landed sections
 - [ ] **Strip the issue references from [CHANGELOG.md](../CHANGELOG.md)** — 23 of
       them at present (`(#13)` ×6, `(#9)` ×3, `(#10)` ×3, `(#12)` ×3, `(#14)` ×3,
