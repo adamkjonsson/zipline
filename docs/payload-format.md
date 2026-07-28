@@ -188,7 +188,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","time_units":"us"}
+{"type":"file","format":"zipline-payload/1","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -354,7 +354,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","time_units":"us"}
+{"type":"file","format":"zipline-payload/1","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -430,7 +430,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","time_units":"us",
+{"type":"file","format":"zipline-payload/1","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -465,6 +465,17 @@ That is a *sound* order only when all the session's records share **one
 trustworthy clock** — the normal case when a single observer (one chat server,
 one receiver) saw the whole session. A producer therefore **MUST NOT** mark a
 hint-less session `SEQUENCED` unless its records share a single trustworthy clock.
+
+**The clock precondition applies to hint-less sessions only.** A session *with*
+causal hints has **no** timestamp requirement whatsoever: its sequenced order is
+derived from `seq`/`ack`, so it is sound however badly the capture clocks
+disagree, and its stored records may freely run backwards in time. That is not a
+tolerated edge case but the central one — the
+[worked example](#worked-example-a-skewed-two-file-capture) sequences exactly
+such a pair, storing a record stamped `ts 995` *after* the one at `ts 1000` that
+causes it. Sequencing never means "sorted by timestamp"; it means "stored in a
+valid causal order", and only a hint-less session is reduced to using timestamps
+to find one.
 
 **File-level `SINGLE_CLOCK`.** That clock precondition has a file-wide form, the
 `SINGLE_CLOCK` flag on the [File Header](#file-header-0x01): it asserts that
@@ -656,7 +667,7 @@ bytes it could not parse — its ids read in `raw.zpf`'s namespace, coincidental
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","time_units":"us",
+{"type":"file","format":"zipline-payload/1","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -1217,7 +1228,7 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0010` | `urg`        | TCP URG seen                                             |
 | `0x0040` | `retransmit` | retransmission/overlap was resolved inside this record   |
 | `0x0080` | `message`    | message boundary: the record is exactly one transport message (a UDP datagram, an SCTP message, …) |
-| `0xFF20` | —            | reserved, MUST be 0                                      |
+| `0xFF20` | —            | reserved, MUST be written 0, and MUST be ignored on read  |
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
@@ -1355,7 +1366,28 @@ Header `flags` **SINGLE_CLOCK** bit is the file-wide assertion of that property
 (timestamps globally comparable, no inter-source skew); when set it satisfies the
 clock requirement for every hint-less session, and a downstream tool may rely on
 it to sequence streams it regroups (see
-[Sequenced files](#sequenced-files-precomputed-order)).
+[Sequenced files](#sequenced-files-precomputed-order)). That clock requirement
+binds **hint-less sessions only** — a session carrying `seq`/`ack` may be
+sequenced whatever its timestamps do.
+
+**Timestamps are not an ordering invariant.** Record timestamps are **not**
+required to be non-decreasing in stored order, in any session, sequenced or not.
+A reader therefore:
+
+- **MUST NOT** reject a file, or discard a session, because timestamps run
+  backwards in stored order. Inversion is an expected consequence of skewed
+  capture clocks and of causal sequencing, not a corruption signal (see the
+  [worked example](#worked-example-a-skewed-two-file-capture)).
+- **MUST NOT** re-sort a **SEQUENCED** session by timestamp. Its stored order is
+  the authoritative order; a timestamp that contradicts it is the clock being
+  wrong, not the file.
+- Uses timestamps for ordering in exactly one place: as the tie-break between
+  causally *concurrent* records while running the [merge](#merge-algorithm) on a
+  non-sequenced session (step 4).
+
+The only stored-order guarantee a reader may rely on — and the only one whose
+violation it may act on — is the per-participant `seq_start` ordering above,
+which is a **sequence** rule, not a time rule.
 
 **Session lifetime.** A writer SHOULD emit a [Session End](#session-end-0x12)
 block at the moment it flushes-and-forgets a session. At most one Session End
@@ -1460,13 +1492,12 @@ canonical key and MUST NOT be placed in `options`. The block is selected by its
 | `end`         | End (`0x41`)                      |
 | `custom`      | Custom (`0xFF`)                   |
 
-**Brevity aliases** — the *only* keys whose JSON name differs from the binary
-name:
+**Brevity aliases** — the only *current* keys whose JSON name differs from the
+binary name (one further key, deprecated, is listed below):
 
 | JSONL key    | Binary field / option                                            |
 |--------------|------------------------------------------------------------------|
 | `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/1"` ⇒ major 1, minor 0) |
-| `time_units` | `tick_hz` (File Header)                                          |
 | `ts`         | `timestamp` (Record)                                            |
 | `pid`        | `participant_id` (block body, each `spans` entry, and `origin`)  |
 | `key`        | `flow_key` (Session)                                            |
@@ -1475,10 +1506,20 @@ name:
 
 (`proto` is **not** an alias — its JSON key equals its option name.)
 
+**Deprecated keys.** The File Header rate is the key **`tick_hz`**, carrying the
+same number as the binary field — the general rule, with no alias. Version 1.0
+also defined the alias `time_units` for it, which is **deprecated**: a reader
+MUST accept `time_units` carrying a number and treat it as `tick_hz`, and a
+writer MUST NOT emit it. (A `time_units` carrying a *unit name* such as `"us"`
+was never valid — the value is a rate in ticks per second, not a unit label.
+Some 1.0-era examples showed that form in error.) The key is removed in a later
+version; until then it is the one deprecated key, and nothing else in the
+projection has ever changed name.
+
 **Value encoding.**
 
 - **Integers** → JSON number, with one exception: a **64-bit** field (`session_id`,
-  `ts`/`timestamp`, `time_units`/`tick_hz`, `time_epoch`, `produced_at`,
+  `ts`/`timestamp`, `tick_hz`, `time_epoch`, `produced_at`,
   `ts_first`, `off_start`, `off_end`) MAY be written as a JSON number **or** a
   decimal string, and a writer SHOULD use the string form when the value exceeds
   2⁵³ (beyond JSON's exact-integer range). A reader MUST accept both. 32-bit and
