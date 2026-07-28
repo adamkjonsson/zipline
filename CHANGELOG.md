@@ -73,9 +73,48 @@ below and still accepted on read.
 - **Reserved bits of the Record `flags` field are ignored on read** (#16), now
   stated as it already was for the File Header and Session `flags` fields. The
   global reserved-fields rule always required this; only the wording differed.
+  A bit nonetheless set is *preserved* through a round-trip without being
+  interpreted (#9) — the same split between retaining and interpreting that 1.0
+  already applied to unknown option ids.
+
+- **Unknown Source `kind` values are an isolatable semantic condition** (#9). A
+  reader that cannot classify a Source cannot interpret any record or span
+  referencing it — `kind` selects whether span offsets are capture-file byte
+  offsets or logical stream offsets — so it MAY reject or discard that Source
+  and its dependents, and MUST NOT guess. An unrecognised `tcp_role`, being
+  advisory, just means "unknown". *`kind` is therefore not a free extension
+  point: unlike a new option id, a new `kind` value will be isolated by existing
+  readers.*
+
+### Added
+
+- **The JSONL projection's four escapes for unrecognised data** (#8, #9). The
+  binary face has always had one universal rule for what a reader does not
+  recognise — skip by length, retain, never error. The projection now mirrors
+  it: every unrecognised element has a defined syntactic escape, a converter
+  never invents meaning for one, and never silently drops one.
+
+  | Unrecognised | JSONL form |
+  |---|---|
+  | option id | `options` array entry *(already in 1.0)* |
+  | block type | `"type":"0x0042"` + base64 `"content"` |
+  | enum value | the raw number |
+  | flag bit | a hex token, e.g. `["psh","0x0020"]` |
+
+  *Without this, the first block type or flag bit added by any future minor
+  version would be silently lost by a JSONL round-trip, breaking the format's
+  forward-compatibility promise on the JSONL side.* An unrecognised block's
+  content is base64'd whole — body, options and padding together, since a
+  converter cannot take apart a layout it does not know — which makes that one
+  case byte-exact rather than merely semantically lossless.
 
 ### Changed
 
+- **A converter MUST NOT invent an option id** for an unrecognised JSON key on a
+  known block (#9). There is no id to write, and guessing manufactures data.
+  Such a key cannot arise from a binary source, only from hand-written or
+  third-party JSONL; on the JSONL → binary path a converter MUST reject the line
+  or drop the key, and MUST report it either way.
 - **JSONL: the File Header rate is the key `tick_hz`, carrying a number** (#10)
   — previously the alias `time_units`. `tick_hz` is the binary field's own name,
   so the projection's general naming rule now covers it and the alias table has
@@ -94,6 +133,9 @@ below and still accepted on read.
   permits only a number or a decimal string. The examples were non-conformant
   against their own specification, so anything written by copying them was too.
   Corrected to `"tick_hz":1000000`.
+- **The example of an *unregistered* option id was `0x0091`** (#8), which is
+  registered — it is `content_type`. Changed to `0x0200`, which is outside the
+  registry.
 
 ---
 

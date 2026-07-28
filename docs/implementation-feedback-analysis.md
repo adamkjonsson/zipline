@@ -689,26 +689,28 @@ directions; no file changes meaning.
 One new subsection in the JSONL section, plus the two rules that hang off it.
 Closes #8, #9a and #9c.
 
-- [ ] Draft the mirror principle: every unrecognised element has a defined
-      syntactic escape; a converter never invents meaning and never silently drops
-- [ ] **#8** — unknown block type: hex `type` string + base64 of the whole block
-      content (body ++ options ++ padding as one opaque blob — a converter cannot
-      split body from options for a type it does not know)
-- [ ] **#9b** — unknown flag bit: hex token in the flags array; add the
-      round-trip clause to the record-flags reserved row, whose "ignored on read"
-      half landed in Phase 1
-- [ ] **#9c (JSONL half)** — unrecognised enum value renders as the raw number
-      rather than a label; applies to `kind` and `tcp_role` alike
-- [ ] **#9a** — prohibition, not a mechanism: a converter MUST NOT invent an
-      option id; reject the line or drop the key with a diagnostic
-- [ ] **#9c (semantic half)** — unknown Source `kind` as an isolatable semantic
-      condition in the error tiers
-      ([payload-format.md:1364-1377](docs/payload-format.md#L1364-L1377)), noting
-      that it makes dependent `spans` uninterpretable
-- [ ] Check the *Semantic, not byte-exact* paragraph
-      ([payload-format.md:1499-1506](docs/payload-format.md#L1499-L1506)) still
-      holds — the #8 blob is byte-exact, which is a *stronger* guarantee and
-      should not be described as an exception to losslessness
+- [x] Mirror principle drafted as a new subsection, *Unrecognised data: the four
+      escapes*, with the escapes given as a table and one note each
+- [x] **#8** — unknown block type: `"type":"0x0042"` + base64 `content` covering
+      body ++ options ++ padding as one blob, since a converter cannot split a
+      layout it does not know
+- [x] **#9b** — unknown flag bit renders as a hex token; the record-flags
+      reserved row gained its round-trip clause, completing the row begun in
+      Phase 1
+- [x] **#9c (JSONL half)** — an enum value with no defined label renders as its
+      raw number; noted on the *Enums* bullet and in the escapes table
+- [x] **#9a** — prohibition stated: a converter MUST NOT invent an option id;
+      reject the line or drop the key, and report it either way
+- [x] **#9c (semantic half)** — unknown Source `kind` added to the error tiers as
+      an isolatable condition, with `tcp_role` contrasted as advisory, plus a
+      note that **`kind` is not a free extension point** — a new value will be
+      isolated by existing readers, unlike a new option id
+- [x] Checked the *Semantic, not byte-exact* paragraph — it needed a
+      parenthetical, since an unrecognised block is now preserved byte-for-byte
+      and would otherwise contradict the "never the exact bytes" claim
+- [x] Reconciled the two upstream sentences that promised `options` would absorb
+      everything unrecognised — they now point at the escapes, and the section
+      intro advertises the mirror principle alongside the one-rule formulation
 
 ### Phase 3 — Additive vocabulary
 
