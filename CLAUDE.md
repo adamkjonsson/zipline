@@ -2,7 +2,7 @@
 
 This projects specifies a file format for decoded payload data from network traffic.
 
-The format is currently specified in docs/payload-format.md.
+The format is currently specified in docs/zipline-payload-format.md.
 
 The aims of the format is also described there.
 

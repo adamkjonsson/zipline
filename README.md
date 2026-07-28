@@ -63,7 +63,7 @@ for why.
 
 ## Documentation
 
-- [docs/payload-format.md](docs/payload-format.md) — the specification:
+- [docs/zipline-payload-format.md](docs/zipline-payload-format.md) — the specification:
   conceptual model, normative binary container, JSON-Lines projection, causal
   ordering, and the raw → decoded derivation workflow.
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version, and what an

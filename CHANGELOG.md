@@ -10,7 +10,7 @@ with two adaptations noted under [Conventions](#conventions).
 ## Conventions
 
 **Versions are `major.minor`**, matching the `version_major` / `version_minor`
-fields in the [File Header](docs/payload-format.md#file-header-0x01) — there is
+fields in the [File Header](docs/zipline-payload-format.md#file-header-0x01) — there is
 no patch component, because a version that is not on the wire cannot be
 communicated to a reader. The meanings are the format's own:
 
@@ -102,6 +102,12 @@ below and still accepted on read.
   the input. `decoder_id` says which decoder's layer a record belongs to, and a
   pass-through carries inherited ones forward, so it no longer implies the
   decoder ran in this stage.
+- **`version_minor` describes the file, not the rendering.** A converter
+  projects any file into whichever version of the JSONL face it implements, so a
+  1.0 file rendered by a 1.1 converter still reports `"zipline-payload/1"` while
+  using 1.1 key spellings such as `tick_hz`. A writer stamps the *lowest* minor
+  whose features the file actually uses. *Do not raise a file's version because
+  your tool is newer — the field answers "what does this file contain".*
 - **A one-participant or single-sender session is trivially sequenceable** (#14).
   It has no cross-participant order to get wrong, so it needs no basis at all.
   Vacuous under 1.0's rule, but worth stating, since the clock precondition
@@ -165,7 +171,7 @@ below and still accepted on read.
   input's coverage guarantee then holds of the output without the output
   carrying any `spans`. Decoder Descriptors and Undecoded blocks are no longer
   restricted to decode-stage files. *A strict 1.0 reader may refuse a file that
-  carries `decoder_id`s alongside `origin`; the [annotator example](docs/payload-format.md)
+  carries `decoder_id`s alongside `origin`; the [annotator example](docs/zipline-payload-format.md)
   shows the shape.*
 - **A transform that only adds metadata is a pass-through** (#13), and its
   output is a *derived* file. Annotating a raw file therefore moves capture-level
@@ -185,6 +191,11 @@ below and still accepted on read.
   qualifies, with `sequenced_basis` to say which. The producer owns the
   soundness; a reader could never verify the clock claim either. *This permits
   sequenced multi-party UDP and chat sessions that 1.0 forbade.*
+- **The specification file is now `docs/zipline-payload-format.md`** (#15),
+  renamed from `docs/payload-format.md`: kebab-case, project name included, and
+  no version in the filename so the path survives future versions. *A
+  documentation-layout change, not a format change — but it breaks existing
+  links.*
 - **A converter MUST NOT invent an option id** for an unrecognised JSON key on a
   known block (#9). There is no id to write, and guessing manufactures data.
   Such a key cannot arise from a binary source, only from hand-written or
@@ -214,6 +225,10 @@ below and still accepted on read.
 - **The decoded-file example's two `record` lines omitted `source_id`** (#13), a
   mandatory body field that the projection's own rule says always projects. Every
   other example in the document includes it. Added.
+- **Three cross-reference anchors never resolved** — `#session-descriptor-0x10`,
+  `#participant-descriptor-0x11` and `#session-end-0x12` pointed at bold labels,
+  which generate no anchor. Those five descriptor blocks are now `####`
+  headings, matching every other block in the document.
 
 ---
 
