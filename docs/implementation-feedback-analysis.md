@@ -16,7 +16,7 @@ commit `bc4bcfb`.
 |---|-------|---------------------|--------------|-----------------|--------|
 | #8 | JSONL projection of an unknown binary block type | **Yes** — real gap | Clarification | JSONL face | S |
 | #9 | Missing conversions at three edges | **Yes**, with one nuance (a) and one under-stated consequence (c) | Clarification + one new error rule | JSONL face, Conformance | S–M |
-| #10 | `tick_hz` vs `"time_units":"us"` | **Yes** — the examples contradict the normative text | Widening (or errata) | JSONL face + 6 examples | S |
+| #10 | `tick_hz` vs `"time_units":"us"` | **Yes** — the examples contradict the normative text | Removed alias *(decided: C)* | JSONL face + 6 examples | S |
 | #11 | Sequencing vs non-increasing timestamps | **Premise is wrong** — v1.0 already allows this for TCP | None | — | — |
 | #12 | Add a canonical `skipped` reason | **Yes**, and it is better motivated than the issue states | Additive vocabulary | Undecoded `reason` | S |
 | #13 | Annotator transforms (no data change) | **Half right** — case A is already legal; case B is a genuine hole | Widening + clarification | Conformance taxonomy | **M–L** |
@@ -212,6 +212,23 @@ actively misleads. That window closes as implementations multiply.
 **Impact: small. Compatible under B; a break under A or C** (for files that
 followed the examples, which were never conformant to begin with).
 
+> **Decision taken: option C.** The JSONL key becomes `tick_hz`, numeric, and
+> the `time_units` alias goes. Rationale: leanest end-state, one fewer alias,
+> and it removes a name that promises a unit while carrying a rate — worth
+> taking now, while the implementation count is one.
+>
+> **Consequence needing a sub-decision in Phase 1.** `"time_units":1000000` was
+> *conformant* 1.0 JSONL (only the symbolic `"us"` in the examples was not), so
+> deleting the alias outright breaks a file 1.0 permitted — the only such break
+> in 1.1, and it sits against the "every 1.0 file stays valid" claim in the
+> status banner and CHANGELOG. Recommended implementation: **deprecate rather
+> than delete** — a reader MUST accept `time_units` (numeric) and treat it as
+> `tick_hz`; a writer MUST NOT emit it; removal lands in a later version. This
+> reaches the decided end-state for writers, keeps the compatibility claim
+> intact, and is exactly what the CHANGELOG's *Deprecated* category is for. A
+> hard removal remains available if the clean break is preferred — say so and
+> the banner claim gets scoped to the binary container instead.
+
 ### #11 — Sequenced records for non-increasing timestamps
 
 **The premise is incorrect, and no change follows from this issue.** Three
@@ -365,6 +382,16 @@ mechanism should move off `comment`.
 files** — option 2 is a widening: no v1.0 file changes meaning, but new files may
 be isolated by a strict v1.0 reader (see §5).
 
+> **Decision taken: option 2 — layer-preserving pass-through.** A decode stage
+> *creates* a layer; a pass-through transform *preserves* whatever layer its
+> input had, and may therefore re-emit `decoder_id`s, re-declare Decoder
+> Descriptors, and carry Undecoded blocks forward unchanged. Drafting must keep
+> the preservation obligation total — bytes, logical offsets, `decoder_id`s and
+> `spans` all unchanged — since that obligation is the whole reason the
+> trichotomy still means something afterwards. Case A (annotating a raw file)
+> is documented as already-legal, not changed. Carries **[strict-reader]** in
+> the CHANGELOG.
+
 ### #14 — Logically sequenced records vs. timestamps
 
 Two independent asks; both valid, and the second is more urgent than the first.
@@ -426,6 +453,24 @@ authoritative order.*
 
 **Impact: (a) medium, (b) small. Both compatible** — (b) is a clarification;
 (a) is a widening that only permits new writer behaviour.
+
+> **Decision taken (a): producer-asserted order, with the basis recorded.** The
+> precondition relaxes from "single trustworthy clock" to "a sound basis, which
+> may be protocol-specific knowledge the producer is responsible for", and a new
+> `sequenced_basis` string option lets the producer state which. Generic
+> ordering hints are **not** adopted now and move to *Possible future
+> extensions* — they stay the right answer for a transport supplying both a
+> monotonic per-sender position and a cumulative peer ack (SCTP), which is
+> precisely what the UDP cases motivating #14 do not supply.
+>
+> Two drafting notes: the `sequenced_basis` option is **additive** (a new
+> registry id, skippable by old readers), so only the relaxation itself carries
+> **[strict-reader]**; and the N = 1 / single-sender vacuity goes in regardless
+> of this decision, since it is a statement about what 1.0 already guarantees.
+> Whether `sequenced_basis` is a free string or a small open vocabulary
+> (`clock`, `transport`, `protocol`, `external`) is a Phase 4 drafting call —
+> an open vocabulary with suggested values matches how `reason` already works
+> on Session End and Undecoded.
 
 ### #15 — Rename the specification file
 
@@ -490,13 +535,21 @@ carry. The compatibility question is therefore not "do old files still parse"
 (they do, universally) but **"can an old reader read new files"**, which splits
 the nine issues in two:
 
-**Group 1 — safe in both directions** (#8, #9a, #9b, #9c, #10 under option B, #12,
-#14b, #15, #16). These either clarify undefined behaviour, widen the JSONL face,
-or add a value to an already-open vocabulary. A v1.0 reader is unaffected because
-these describe files it could already meet, or JSONL it would already have
-mishandled.
+**Group 1 — safe in both directions** (#8, #9a, #9b, #9c, #12, #14b, #15, #16).
+These either clarify undefined behaviour, widen the JSONL face, or add a value to
+an already-open vocabulary. A v1.0 reader is unaffected because these describe
+files it could already meet, or JSONL it would already have mishandled.
+`sequenced_basis` (#14a) belongs here too — a new option id is skippable by
+construction; only the *relaxation* it accompanies is in Group 2.
 
-**Group 2 — old readers may refuse new files** (#13 option 2, #14a). Both are
+**Group 1b — the one break, and it is JSONL-only** (#10 as decided). Dropping the
+`time_units` alias invalidates `"time_units":1000000`, which was conformant 1.0
+JSONL. It touches no binary file, and the recommended deprecate-and-accept-on-read
+implementation defers the break to a later version — but taken as a hard removal
+it is the single place where 1.1 refuses something 1.0 permitted, and the
+"every 1.0 file stays valid" claim would need scoping to the binary container.
+
+**Group 2 — old readers may refuse new files** (#13 option 2, #14a's relaxation). Both are
 widenings that let a producer emit a file v1.0 forbids. A strict v1.0 reader
 encountering, say, an Undecoded block in a pass-through file will hit the
 semantic-violation tier ([payload-format.md:1364-1377](docs/payload-format.md#L1364-L1377))
@@ -523,8 +576,9 @@ compatibility mechanism. A defensible packaging:
 - **v1.1** — everything that permits genuinely new files: #13, #14a, #12 if you
   want it canonical rather than merely legal, #10 under option B.
 
-A single 1.1 covering all nine is also defensible and simpler, given the
-implementation count.
+**Decided: a single v1.1** covering all nine, given the implementation count.
+The document is now `1.1-beta` and [CHANGELOG.md](../CHANGELOG.md) carries the
+delta; the split above is recorded only as the alternative that was weighed.
 
 ---
 
@@ -544,8 +598,7 @@ Ordered by value per unit of effort, not by issue number:
    with it.
 6. **#13 + §4.1** — the substantive design work. Case B and the decoded-file
    offset space are the same underlying question and should be resolved together.
-7. **#14a** — decide between producer assertion (recommended) and deferring to
-   generic ordering hints.
+7. **#14a** — producer assertion plus `sequenced_basis`, as decided in Phase 0.
 8. **#15** — do last, in its own commit; it touches every path reference.
 
 **#11 needs no change**; it should be closed with a pointer to
@@ -567,22 +620,29 @@ spec is left in a self-consistent state after each phase.
 Four choices gate the drafting. Recommendations are from §3; each is a one-line
 answer, not a design exercise.
 
-- [ ] **#10 representation** — B (accept symbolic `s`/`ms`/`us`/`ns` **and**
-      numeric) *(recommended: strictly widening, keeps example-following files
-      legal)* vs C (drop the `time_units` alias, numeric `tick_hz` only — leanest
-      end-state, breaks existing emitters; the window for it closes as
-      implementations multiply)
-- [ ] **#13 taxonomy** — option 2, generalise pass-through to *layer-preserving*
-      *(recommended)* vs option 3, a third "annotation" derived kind
-- [ ] **#14a basis** — producer-asserted order *(recommended)* vs deferring to
-      generic ordering hints in a later minor; if asserted, decide whether the
-      basis is recorded (`sequenced_basis` option) or left silent
+- [x] **#10 representation** — **decided: C**, drop the `time_units` alias;
+      the JSONL key is `tick_hz`, numeric. One sub-decision deferred to Phase 1:
+      deprecate-and-accept-on-read *(recommended)* vs hard removal — see the
+      decision note under [#10](#10--representation-of-the-file-header-tick-rate)
+- [x] **#13 taxonomy** — **decided: option 2**, generalise pass-through to
+      *layer-preserving*
+- [x] **#14a basis** — **decided: producer-asserted order, with the basis
+      recorded** in a new `sequenced_basis` option; generic ordering hints
+      deferred to *Possible future extensions*
 - [x] **Packaging** — **decided: a single v1.1** covering all nine, rather than
       the errata/1.1 split in §5. The document is now `1.1-beta`,
       `version_minor` is `1`, and [CHANGELOG.md](../CHANGELOG.md) holds the
       1.0 → 1.1 delta
-- [ ] Record the decisions in this document (short "Decisions taken" note under
-      each affected issue) so the analysis stays readable against the final text
+- [x] Record the decisions in this document — "Decision taken" notes now sit
+      under [#10](#10--representation-of-the-file-header-tick-rate),
+      [#13](#13--transforms-that-change-no-data-annotators) and
+      [#14](#14--logically-sequenced-records-vs-timestamps) in §3
+
+> **Navigating this plan.** The line references throughout this document are
+> pinned to commit `bc4bcfb` (see the header) and drift as edits land — the
+> spec has already moved by ~19 lines. Navigate by section anchor, not line
+> number; the pin exists so the *analysis* stays checkable against the text it
+> analysed, not as a live index.
 
 **Standing rule for every phase below:** each landed change gets its
 [CHANGELOG.md](../CHANGELOG.md) entry **in the same commit**, under the category
@@ -596,12 +656,15 @@ in Phase 1.
 Each item here corrects the document to what it already meant. Safe in both
 directions; no file changes meaning.
 
-- [ ] **#10** — reconcile `tick_hz` / `time_units` per the Phase 0 decision:
-      normative rule in *Value encoding*
-      ([payload-format.md:1459-1466](docs/payload-format.md#L1459-L1466)), alias
-      table row ([payload-format.md:1450](docs/payload-format.md#L1450)), **and all
-      six JSONL examples** (lines 180, 346, 422, 648 and the two merged-file
-      headers)
+- [ ] **#10 sub-decision** — deprecate-and-accept-on-read (recommended) vs hard
+      removal; if hard removal, scope the "every 1.0 file stays valid" claim in
+      the status banner and CHANGELOG to the binary container
+- [ ] **#10** — drop the `time_units` alias: remove its row from the *Brevity
+      aliases* table, state the `tick_hz` key (and the deprecated-accept rule, if
+      taken) in *Value encoding*, and update **all six JSONL examples** — the
+      four `file` lines plus the two merged/decoded headers
+- [ ] Check no prose elsewhere says `time_units`; the alias is referenced in the
+      narrative as well as the mapping table
 - [ ] **#14b** — reader obligation in *Conformance*
       ([payload-format.md:1320-1339](docs/payload-format.md#L1320-L1339)):
       timestamps are never an ordering invariant to validate against or re-sort
@@ -672,7 +735,7 @@ together.
 - [ ] **#13 case A consequence** — note explicitly that the output is no longer a
       *raw* file, so capture-level provenance (`link_type`, capture byte offsets)
       moves one level away
-- [ ] **#13 case B** — implement the Phase 0 choice; for option 2, relax the two
+- [ ] **#13 case B** — implement **option 2** (layer-preserving): relax the two
       "decode-stage files only" sentences
       ([payload-format.md:788](docs/payload-format.md#L788),
       [payload-format.md:980](docs/payload-format.md#L980)), restate the
@@ -682,11 +745,13 @@ together.
       unchanged)
 - [ ] Re-check the coverage guarantee still reads correctly for a pass-through
       file that carries Undecoded blocks forward
-- [ ] **#14a** — implement the Phase 0 choice in
-      [payload-format.md:447-456](docs/payload-format.md#L447-L456) and
-      [payload-format.md:1326-1339](docs/payload-format.md#L1326-L1339); state
-      plainly that the N = 1 / single-sender case is trivially sequenceable and
-      the clock precondition adds nothing there
+- [ ] **#14a** — relax the precondition to "a sound basis" in *Sequenced files*
+      and *Conformance*; state plainly that the N = 1 / single-sender case is
+      trivially sequenceable and the clock precondition adds nothing there
+- [ ] **#14a option** — register `sequenced_basis` (string, Session) in the
+      option-id registry; decide free string vs open vocabulary
+      (`clock`/`transport`/`protocol`/`external`), and give it a JSONL key and a
+      row in the mapping table
 - [ ] Add a worked example for the annotator pipeline — it is the one case where
       the taxonomy is now subtle enough to warrant one
 
