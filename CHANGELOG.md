@@ -10,7 +10,7 @@ with two adaptations noted under [Conventions](#conventions).
 ## Conventions
 
 **Versions are `major.minor`**, matching the `version_major` / `version_minor`
-fields in the [File Header](docs/payload-format.md#file-header-0x01) — there is
+fields in the [File Header](docs/zipline-payload-format.md#file-header-0x01) — there is
 no patch component, because a version that is not on the wire cannot be
 communicated to a reader. The meanings are the format's own:
 
@@ -171,7 +171,7 @@ below and still accepted on read.
   input's coverage guarantee then holds of the output without the output
   carrying any `spans`. Decoder Descriptors and Undecoded blocks are no longer
   restricted to decode-stage files. *A strict 1.0 reader may refuse a file that
-  carries `decoder_id`s alongside `origin`; the [annotator example](docs/payload-format.md)
+  carries `decoder_id`s alongside `origin`; the [annotator example](docs/zipline-payload-format.md)
   shows the shape.*
 - **A transform that only adds metadata is a pass-through** (#13), and its
   output is a *derived* file. Annotating a raw file therefore moves capture-level
@@ -191,6 +191,11 @@ below and still accepted on read.
   qualifies, with `sequenced_basis` to say which. The producer owns the
   soundness; a reader could never verify the clock claim either. *This permits
   sequenced multi-party UDP and chat sessions that 1.0 forbade.*
+- **The specification file is now `docs/zipline-payload-format.md`** (#15),
+  renamed from `docs/payload-format.md`: kebab-case, project name included, and
+  no version in the filename so the path survives future versions. *A
+  documentation-layout change, not a format change — but it breaks existing
+  links.*
 - **A converter MUST NOT invent an option id** for an unrecognised JSON key on a
   known block (#9). There is no id to write, and guessing manufactures data.
   Such a key cannot arise from a binary source, only from hand-written or
