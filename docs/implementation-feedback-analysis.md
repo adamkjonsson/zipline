@@ -656,29 +656,33 @@ in Phase 1.
 Each item here corrects the document to what it already meant. Safe in both
 directions; no file changes meaning.
 
-- [ ] **#10 sub-decision** — deprecate-and-accept-on-read (recommended) vs hard
-      removal; if hard removal, scope the "every 1.0 file stays valid" claim in
-      the status banner and CHANGELOG to the binary container
-- [ ] **#10** — drop the `time_units` alias: remove its row from the *Brevity
-      aliases* table, state the `tick_hz` key (and the deprecated-accept rule, if
-      taken) in *Value encoding*, and update **all six JSONL examples** — the
-      four `file` lines plus the two merged/decoded headers
-- [ ] Check no prose elsewhere says `time_units`; the alias is referenced in the
-      narrative as well as the mapping table
-- [ ] **#14b** — reader obligation in *Conformance*
-      ([payload-format.md:1320-1339](docs/payload-format.md#L1320-L1339)):
-      timestamps are never an ordering invariant to validate against or re-sort
-      by; for a SEQUENCED session stored order is authoritative. Use the scoped
-      wording from §3, **not** the issue's broader phrasing
-- [ ] **#14b follow-through** — make the scope of the clock precondition
-      (hint-less sessions *only*) prominent at all three sites
-      ([payload-format.md:452-456](docs/payload-format.md#L452-L456),
-      [payload-format.md:1332-1334](docs/payload-format.md#L1332-L1334)), since
-      #11 is evidence the single adjective does not carry it
-- [ ] **#16 + #9b** — rewrite the record-flags reserved row
-      ([payload-format.md:1201](docs/payload-format.md#L1201)) once, stating both
-      "ignored on read" and "preserved for round-trip"; do not split these into
-      two edits
+- [x] **#10 sub-decision** — **decided: deprecate and accept on read.** Writers
+      reach the end-state now; readers keep accepting numeric `time_units` for
+      one version, so the "every 1.0 file stays valid" claim needs no scoping
+- [x] **#10** — alias row removed from *Brevity aliases*, `tick_hz` stated in a
+      new *Deprecated keys* note, `time_units`/`tick_hz` collapsed to `tick_hz`
+      in the 64-bit list, and the examples corrected. **Four** example lines, not
+      six — the earlier count conflated the `file` lines with the multi-line
+      merged/decoded headers, which are the same four
+- [x] Check no prose elsewhere says `time_units` — only the mapping table and
+      the 64-bit integer list did; both handled
+- [x] **#14b** — *Timestamps are not an ordering invariant* added to
+      *Conformance*, as three reader rules (never reject on inversion; never
+      re-sort a SEQUENCED session; timestamps order only concurrent records in a
+      merge) plus a closing note that the sole actionable stored-order guarantee
+      is the per-participant `seq_start` rule, which is a sequence rule and not a
+      time rule
+- [x] **#14b follow-through** — *The clock precondition applies to hint-less
+      sessions only* added to *What a sequenced session rests on*, and the scope
+      restated in *Conformance*. The third site (the per-session rationale in
+      *Sequenced files*) already scoped it correctly and was left alone
+- [x] **#16** — record-flags reserved row now reads identically to the File
+      Header and Session flag rows
+- [ ] **#9b's half of that row** — the round-trip clause ("preserved by a
+      converter") lands in Phase 2 with the hex-token mechanism it depends on.
+      Splitting it this way introduces no inconsistency: #16 alone *removes* one,
+      and a forward reference to a rule that does not exist yet would have added
+      one
 
 ### Phase 2 — The JSONL unknown-handling principle (§2)
 
@@ -690,8 +694,9 @@ Closes #8, #9a and #9c.
 - [ ] **#8** — unknown block type: hex `type` string + base64 of the whole block
       content (body ++ options ++ padding as one opaque blob — a converter cannot
       split body from options for a type it does not know)
-- [ ] **#9b** — unknown flag bit: hex token in the flags array; confirm the
-      wording agrees with the Phase 1 row rewrite
+- [ ] **#9b** — unknown flag bit: hex token in the flags array; add the
+      round-trip clause to the record-flags reserved row, whose "ignored on read"
+      half landed in Phase 1
 - [ ] **#9c (JSONL half)** — unrecognised enum value renders as the raw number
       rather than a label; applies to `kind` and `tcp_role` alike
 - [ ] **#9a** — prohibition, not a mechanism: a converter MUST NOT invent an

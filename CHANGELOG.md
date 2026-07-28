@@ -42,8 +42,7 @@ maximum reach should avoid those constructs until readers have caught up.
 
 ## [Unreleased] — 1.1-beta
 
-**In development; nothing has landed yet.** Version 1.0 remains final and
-unchanged.
+**In development.** Version 1.0 remains final and unchanged.
 
 Version 1.1 collects clarifications and additions arising from the first
 implementation of the standard (issues #8–#16). The analysis behind it, the
@@ -52,8 +51,49 @@ open decisions, and the phased plan are in
 Entries appear here as each change lands, so this section is the precise
 1.0 → 1.1 delta for implementers.
 
-No change in 1.1 alters the block frame, an existing block body, an existing
-option id, or the meaning of any field a 1.0 file already carries.
+No change in 1.1 alters the **binary** container: not the block frame, not an
+existing block body, not an existing option id, and not the meaning of any field
+a 1.0 file already carries. The JSONL projection has one deprecated key, listed
+below and still accepted on read.
+
+### Clarified
+
+- **Timestamps are not an ordering invariant** (#11, #14). A reader MUST NOT
+  reject a file or discard a session because stored timestamps run backwards,
+  and MUST NOT re-sort a `SEQUENCED` session by timestamp — its stored order is
+  authoritative. Timestamps order records in exactly one place: as the tie-break
+  between causally concurrent records during a merge. 1.0 demonstrated a
+  legitimate inversion in a worked example but never stated the reader's side of
+  it. *A reader that validates monotonic timestamps must drop that check.*
+- **The single-trustworthy-clock precondition for `SEQUENCED` binds hint-less
+  sessions only** (#11). A session carrying TCP `seq`/`ack` may be sequenced
+  however badly its capture clocks disagree; sequencing means "stored in a valid
+  causal order", never "sorted by timestamp". 1.0 said this, but rested the
+  scope on a single adjective and was misread.
+- **Reserved bits of the Record `flags` field are ignored on read** (#16), now
+  stated as it already was for the File Header and Session `flags` fields. The
+  global reserved-fields rule always required this; only the wording differed.
+
+### Changed
+
+- **JSONL: the File Header rate is the key `tick_hz`, carrying a number** (#10)
+  — previously the alias `time_units`. `tick_hz` is the binary field's own name,
+  so the projection's general naming rule now covers it and the alias table has
+  one fewer exception. *Writers: emit `tick_hz`.*
+
+### Deprecated
+
+- **JSONL key `time_units`** (#10), superseded by `tick_hz`. A reader MUST still
+  accept it carrying a number and treat it as `tick_hz`; a writer MUST NOT emit
+  it. Removal lands in a later version. *Readers: keep accepting it for now.*
+
+### Fixed
+
+- **Four JSONL examples wrote `"time_units":"us"`** (#10) — a unit label, where
+  1.0's normative text defines the value as a rate in ticks per second and
+  permits only a number or a decimal string. The examples were non-conformant
+  against their own specification, so anything written by copying them was too.
+  Corrected to `"tick_hz":1000000`.
 
 ---
 
