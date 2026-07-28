@@ -1228,7 +1228,7 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0010` | `urg`        | TCP URG seen                                             |
 | `0x0040` | `retransmit` | retransmission/overlap was resolved inside this record   |
 | `0x0080` | `message`    | message boundary: the record is exactly one transport message (a UDP datagram, an SCTP message, …) |
-| `0xFF20` | —            | reserved, MUST be written 0, and MUST be ignored on read  |
+| `0xFF20` | —            | reserved, MUST be written 0, and MUST be ignored on read; a bit nonetheless set is preserved through a round-trip (as a hex token in JSONL), never interpreted |
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
@@ -1437,6 +1437,27 @@ applies to the *extension mechanism*: an unknown block type, an unknown option
 id, or a nonzero reserved field is **not** a violation — the skip/ignore rules
 above are the normal, conformant path.
 
+**Unrecognised enum values.** An enum value with no defined label is likewise not
+a violation in itself; what follows from it depends on what the enum governs, and
+the two v1.0 enums differ:
+
+- `tcp_role` is advisory, so an unrecognised value means simply "unknown",
+  exactly as an omitted option does. A reader carries it and moves on.
+- Source `kind` is **load-bearing**: it classifies the file as raw or derived,
+  tells a decoder-less record apart as raw or pass-through, and selects how a
+  `spans` entry's offsets are read (capture-file byte offsets vs logical stream
+  offsets — see the [span-list rule](#tlv-option-framing--id-registry)). A reader
+  that does not recognise a Source's `kind` therefore cannot interpret any record
+  or span referencing it, and this **is** an isolatable semantic condition: the
+  reader MAY reject the file, or discard that Source together with everything
+  referencing it, and SHOULD report it. It MUST NOT guess a kind.
+
+A consequence worth stating for future editors: **`kind` is not a free extension
+point.** Adding a value to it is not like adding an option id, which old readers
+skip harmlessly; old readers will isolate sources they cannot classify. Any new
+`kind` must therefore come with a minor bump and the expectation that pre-existing
+readers reject those files.
+
 **Concatenation is not supported.** A `.zpf` file has exactly one File Header,
 at its very start; bytes after the last complete block are not a new section.
 Concatenating two `.zpf` files does **not** yield a valid `.zpf`. To split a
@@ -1463,18 +1484,23 @@ fine for a live stream that is legitimately still open).
 
 The JSON-Lines projection is **semantically** lossless for every field. It is
 defined by **one rule plus a short list of exceptions**, so it stays complete as
-options are added rather than depending on an enumerated key list.
+options are added rather than depending on an enumerated key list — and by a
+mirror of the binary face's skip-what-you-don't-know rule
+([the four escapes](#unrecognised-data-the-four-escapes)), so it stays complete
+as *later versions* add blocks, values and bits.
 
 **The rule.** For any block, its JSON keys are the **canonical names** of its
 binary body fields and its TLV options — the field names in the block's body
 table and the `Name` column of the
 [option registry](#tlv-option-framing--id-registry) — used verbatim as JSON keys,
 *except* for the brevity aliases below. **Body fields always project** — an
-omitted key can only ever be an absent *option* (the absent-key rule below). A field or option a converter does not
-recognise (a future registry id, a `Custom` block's contents) round-trips through
-a generic `options` array (below); anything that **is** registered MUST use its
-canonical key and MUST NOT be placed in `options`. The block is selected by its
-`type` string.
+omitted key can only ever be an absent *option* (the absent-key rule below). An
+option a converter does not recognise (a future registry id) round-trips through
+a generic `options` array; anything that **is** registered MUST use its canonical
+key and MUST NOT be placed in `options`. Everything else a converter may fail to
+recognise — a block type, an enum value, a flag bit — has its own escape (see
+[the four escapes](#unrecognised-data-the-four-escapes)). The block is selected
+by its `type` string.
 
 **`type` string ↔ block.**
 
@@ -1529,12 +1555,15 @@ projection has ever changed name.
   `=` padding).
 - **Enums** render as their defined **string label**: `kind` as
   `"capture"`/`"zpf-input"`, `tcp_role` as `"initiator"`/`"responder"` (omitted
-  when unknown).
+  when unknown). A value with **no defined label** renders as its raw number
+  (see [the escapes](#unrecognised-data-the-four-escapes)).
 - **Flag bitfields** render by name, never as the raw integer: the single-bit
   file and session flags are booleans (`"single_clock"` on `file`, `"sequenced"`
   on `session`), and a Record's multi-bit `flags` is an **array of set-bit
   tokens** (the JSON-token column of the [flags enum](#enums), e.g.
-  `"flags":["psh","fin"]`). A zero/unset bitfield is omitted.
+  `"flags":["psh","fin"]`). A set bit with **no token** renders as a hex token
+  (see [the escapes](#unrecognised-data-the-four-escapes)). A zero/unset
+  bitfield is omitted.
 - **Repeatable options** (`endpoint`) → a JSON **array**, order preserved
   (`spans`, whose repetition is chunking, has its own rule below).
 - **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
@@ -1549,19 +1578,62 @@ projection has ever changed name.
   padding have no JSON key — the `type` string, the JSON object structure, and the
   base64 `payload`'s own length stand in for them.
 
-**Unrecognised data and `Custom` blocks.** A converter MUST round-trip what it
-does not recognise, mirroring the binary skip-by-`length`/`len` rule: an
-unregistered option becomes an entry in the block's `options` array, each
-`{"id":"0x0091","value":"<base64 of the raw option value>"}`; an unknown `type`
-string, or unknown keys on a known block, are preserved unchanged; a `Custom`
-block carries `pen`, `subtype`, and a base64 `payload`.
+#### Unrecognised data: the four escapes
+
+The binary face has one universal rule for anything a reader does not recognise:
+skip it by its stated length, retain it, and do not treat it as an error. The
+projection mirrors that rule exactly — **every unrecognised element has a defined
+syntactic escape, a converter never invents meaning for one, and a converter
+never silently drops one.** None of this is an error path; it is the normal,
+conformant behaviour that lets a file written against a later minor version
+survive a round-trip through an older converter.
+
+| Unrecognised            | JSONL form                                                                 |
+|-------------------------|----------------------------------------------------------------------------|
+| **option id** — not in the registry | an entry in the block's `options` array: `{"id":"0x0200","value":"<base64 of the raw option value>"}` |
+| **block type** — not in the `type` table | `"type":"0x0042"` plus `"content":"<base64 of the block's whole content>"` |
+| **enum value** — no defined label | the raw number in place of the string label                  |
+| **flag bit** — no JSON token | a hex token for that single bit, e.g. `"flags":["psh","0x0020"]`  |
+
+A hex form is `0x` followed by exactly four hex digits, spelled as in the
+[option registry](#tlv-option-framing--id-registry). It is unambiguous against
+every defined `type` string and flag token, all of which are words.
+
+**Unknown block type.** A converter that does not know a `type` cannot split the
+block into body and options — the body layout is exactly what it lacks — so it
+does not try. `content` is the block's entire content field (body ++ options ++
+padding) as one opaque base64 value, and the line carries no other key.
+Converting back writes that type number and those bytes verbatim. Since content
+is always a whole number of 4-byte units, this particular round-trip is
+byte-exact.
+
+**Unknown enum value and unknown flag bit** both carry their number across
+unchanged, so a value or bit that gains a name in a later minor version
+round-trips through an older converter and is understood by a newer one.
+Preserving is not interpreting: a reader still ignores reserved bits
+semantically, exactly as it retains but ignores unknown option ids.
+
+**Unknown keys on a known block** are the one case with no escape, by design. A
+converter **MUST NOT** invent an option id for a JSON key it does not recognise —
+there is no id to write, and guessing would manufacture data. Such a key cannot
+come from a binary source (unregistered options project into `options` under
+their real id), only from hand-written or third-party JSONL. On the JSONL →
+binary path a converter MUST therefore either reject the line or drop the key,
+and MUST report it either way; on a JSONL → JSONL path it preserves the key
+unchanged.
+
+**`Custom` blocks** are recognised, not unknown: a `custom` line carries `pen`,
+`subtype`, and a base64 `payload`.
 
 **Semantic, not byte-exact.** A binary → JSONL → binary round-trip preserves
 every field's *value*, but **not** the exact bytes: padding, the ordering of
 distinct options within a block, how a `spans` list is split across
 occurrences, and the choice of optional/default encodings are
-not pinned down by JSONL. Consequently a round-tripped file's hash differs from
-the original's. The `digest` dependency-edge (and any conformance hashing) is
+not pinned down by JSONL. (An unrecognised block is the lone exception — its
+content survives byte-for-byte, precisely because a converter cannot take it
+apart and so cannot re-encode it differently.) Consequently a round-tripped
+file's hash differs from the original's. The `digest` dependency-edge (and any
+conformance hashing) is
 therefore defined over the **binary form only** — never over a file that has been
 passed through the JSONL face.
 
