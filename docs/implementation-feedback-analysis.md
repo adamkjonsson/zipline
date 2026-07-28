@@ -792,9 +792,17 @@ together.
       1.0 examples to `1.1`, since a 1.0 converter cannot read that key. Only the
       annotator example declares `1.1`, because a pass-through carrying a decoded
       layer is a 1.1 construct in the **binary** file
-- [ ] Confirm the CHANGELOG's `[Unreleased]` section is the complete 1.0 → 1.1
-      delta, then release it as `[1.1]` with a date and a compare link
-- [ ] Drop the beta caveat from the status banner and README when 1.1 is final
+- [ ] ~~Confirm the CHANGELOG's `[Unreleased]` section is the complete 1.0 → 1.1
+      delta, then release it as `[1.1]` with a date and a compare link~~
+- [ ] ~~Drop the beta caveat from the status banner and README when 1.1 is final~~
+
+> **Both superseded.** The `python-zipline` review of 1.1-beta established that
+> this work is not a minor bump — its relaxations break conformant 1.0 readers,
+> which the specification's own definition of a minor forbids. The July 2026
+> release is being retroactively designated **0.9** and this work released as
+> **1.0**. See
+> [implementation-review-response.md](implementation-review-response.md), whose
+> Phase 8 carries the renumbering and replaces both steps above.
 - [x] Byte-level worked example verified **unaffected**, as predicted — nothing
       structural changed in Phases 1–4. It also now doubles as a demonstration of
       the lowest-minor rule: 1.0 content, so `version_minor = 0` stands
