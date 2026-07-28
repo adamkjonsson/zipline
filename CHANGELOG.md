@@ -28,8 +28,8 @@ communicated to a reader. The meanings are the format's own:
   cases are affected. Implementers should read these first — they are where two
   independent implementations most easily disagree.
 
-Each entry names the issue it resolves. Entries state the delta only; the
-specification itself remains the normative text.
+Entries state the delta only; the specification itself remains the normative
+text.
 
 **Reading across versions.** A `1.0` reader meeting a `1.1` file skips what it
 does not recognise and reads the rest — with one exception class, flagged
@@ -58,7 +58,7 @@ below and still accepted on read.
 
 ### Clarified
 
-- **Timestamps are not an ordering invariant** (#11, #14). A reader MUST NOT
+- **Timestamps are not an ordering invariant**. A reader MUST NOT
   reject a file or discard a session because stored timestamps run backwards,
   and MUST NOT re-sort a `SEQUENCED` session by timestamp — its stored order is
   authoritative. Timestamps order records in exactly one place: as the tie-break
@@ -66,17 +66,17 @@ below and still accepted on read.
   legitimate inversion in a worked example but never stated the reader's side of
   it. *A reader that validates monotonic timestamps must drop that check.*
 - **The single-trustworthy-clock precondition for `SEQUENCED` binds hint-less
-  sessions only** (#11). A session carrying TCP `seq`/`ack` may be sequenced
+  sessions only**. A session carrying TCP `seq`/`ack` may be sequenced
   however badly its capture clocks disagree; sequencing means "stored in a valid
   causal order", never "sorted by timestamp". 1.0 said this, but rested the
   scope on a single adjective and was misread.
-- **Reserved bits of the Record `flags` field are ignored on read** (#16), now
+- **Reserved bits of the Record `flags` field are ignored on read**, now
   stated as it already was for the File Header and Session `flags` fields. The
   global reserved-fields rule always required this; only the wording differed.
   A bit nonetheless set is *preserved* through a round-trip without being
-  interpreted (#9) — the same split between retaining and interpreting that 1.0
+  interpreted — the same split between retaining and interpreting that 1.0
   already applied to unknown option ids.
-- **Unknown Source `kind` values are an isolatable semantic condition** (#9). A
+- **Unknown Source `kind` values are an isolatable semantic condition**. A
   reader that cannot classify a Source cannot interpret any record or span
   referencing it — `kind` selects whether span offsets are capture-file byte
   offsets or logical stream offsets — so it MAY reject or discard that Source
@@ -84,20 +84,20 @@ below and still accepted on read.
   advisory, just means "unknown". *`kind` is therefore not a free extension
   point: unlike a new option id, a new `kind` value will be isolated by existing
   readers.*
-- **The `Undecoded` `reason` vocabulary has two recoverability classes** (#12):
+- **The `Undecoded` `reason` vocabulary has two recoverability classes**:
   *bytes exist* (`undecodable`, `skipped`) and *hole* (`tcp-gap`, `truncated`).
   The class, not the word, is what a consumer acts on. 1.0 described the split
   in prose without naming it as the actionable part.
-- **Each layer has its own offset space, and a decoded stream's is now defined**
-  (#13): the concatenation of a participant's decoded record payloads in stored
-  order, byte 0 being the first byte of the first such record. Undecoded regions
+- **Each layer has its own offset space, and a decoded stream's is now defined**:
+  the concatenation of a participant's decoded record payloads in stored order,
+  byte 0 being the first byte of the first such record. Undecoded regions
   contribute nothing, so unlike a transport stream's space it is *not*
   hole-inclusive. 1.0 defined offsets only for reassembled transport streams,
   which left `raw → tls-records → http` — a pipeline 1.0 explicitly invites —
   with no defined offset space for its second stage to reference.
   *Implementers doing multi-stage decode: this is the rule you were missing.*
 - **`spans` versus `origin`, not `decoder_id`, discriminates what a file's own
-  stage produced** (#13). A record carrying `spans` was built by this stage; a
+  stage produced**. A record carrying `spans` was built by this stage; a
   record without them, whose participant carries `origin`, was re-emitted from
   the input. `decoder_id` says which decoder's layer a record belongs to, and a
   pass-through carries inherited ones forward, so it no longer implies the
@@ -108,11 +108,11 @@ below and still accepted on read.
   using 1.1 key spellings such as `tick_hz`. A writer stamps the *lowest* minor
   whose features the file actually uses. *Do not raise a file's version because
   your tool is newer — the field answers "what does this file contain".*
-- **A one-participant or single-sender session is trivially sequenceable** (#14).
+- **A one-participant or single-sender session is trivially sequenceable**.
   It has no cross-participant order to get wrong, so it needs no basis at all.
   Vacuous under 1.0's rule, but worth stating, since the clock precondition
   appeared to bite exactly the one-way UDP case it cannot apply to.
-- **An unrecognised `reason` has unknown recoverability** (#12). A consumer MUST
+- **An unrecognised `reason` has unknown recoverability**. A consumer MUST
   NOT assume a class, and in particular MUST NOT treat the range as a hole —
   that would discard bytes that may exist. It follows the reference as for the
   bytes-exist class and reports the region empty only if nothing is found. 1.0
@@ -120,14 +120,14 @@ below and still accepted on read.
 
 ### Added
 
-- **Session option `sequenced_basis`** (`0x0053`, string) (#14) — what a
+- **Session option `sequenced_basis`** (`0x0053`, string) — what a
   `SEQUENCED` hint-less session's order rests on. Open vocabulary; suggested
   `clock`, `transport`, `protocol`, `external`. A producer SHOULD set it when
   sequencing a hint-less session. It is advisory: it does not make the order
   checkable, it tells a consumer how far to trust it. A reader MUST NOT reject a
   session for an unrecognised value, or for its absence. *Additive — a new
   option id, skippable by 1.0 readers.*
-- **Canonical `Undecoded` reason `skipped`** (#12) — a region the decoder
+- **Canonical `Undecoded` reason `skipped`** — a region the decoder
   declined *on purpose*: data it does not care about, or data carrying no
   information, such as a byte-order mark, a padding or a reserved field. It sits
   in the bytes-exist class alongside `undecodable`, from which it differs in
@@ -139,7 +139,7 @@ below and still accepted on read.
   *The vocabulary was already open, so this canonicalises an existing
   possibility rather than adding a capability; 1.0 readers treat `skipped` as
   any unrecognised reason.*
-- **The JSONL projection's four escapes for unrecognised data** (#8, #9). The
+- **The JSONL projection's four escapes for unrecognised data**. The
   binary face has always had one universal rule for what a reader does not
   recognise — skip by length, retain, never error. The projection now mirrors
   it: every unrecognised element has a defined syntactic escape, a converter
@@ -162,7 +162,7 @@ below and still accepted on read.
 ### Changed
 
 - **A pass-through transform preserves its input's *layer*, not just its bytes**
-  (#13) **[strict-reader]**. 1.0 defined pass-through as carrying no
+  **[strict-reader]**. 1.0 defined pass-through as carrying no
   `decoder_id`, which silently confined it to raw input and left any transform
   over a decoded file — an annotator, a filter, a re-merge — unexpressible. A
   pass-through now re-emits its input's records with bytes, logical offsets,
@@ -173,56 +173,56 @@ below and still accepted on read.
   restricted to decode-stage files. *A strict 1.0 reader may refuse a file that
   carries `decoder_id`s alongside `origin`; the [annotator example](docs/zipline-payload-format.md)
   shows the shape.*
-- **A transform that only adds metadata is a pass-through** (#13), and its
+- **A transform that only adds metadata is a pass-through**, and its
   output is a *derived* file. Annotating a raw file therefore moves capture-level
   provenance (`link_type`, the capture's `uri`/`digest`) one level away, reached
   through the input Source rather than directly. Nothing is lost, but a consumer
   reading it must take the extra hop.
 - **A pass-through carrying inherited Undecoded blocks MUST also declare the
-  file those blocks name** (#13) and make their `source_id` resolve to it. This
+  file those blocks name** and make their `source_id` resolve to it. This
   is the one case where a derived file names something other than its immediate
   input — because the statement being carried forward was always about that
   further-up file. Keeping the inherited ids and numbering the immediate input
   around them lets the blocks be copied verbatim.
 - **`SEQUENCED` on a hint-less session requires a sound basis, not specifically
-  a clock** (#14) **[strict-reader]**. A single trustworthy clock remains the
+  a clock** **[strict-reader]**. A single trustworthy clock remains the
   common basis; ordering knowledge the format does not model — a server-assigned
   order, an application sequence number, an out-of-band record — now also
   qualifies, with `sequenced_basis` to say which. The producer owns the
   soundness; a reader could never verify the clock claim either. *This permits
   sequenced multi-party UDP and chat sessions that 1.0 forbade.*
-- **The specification file is now `docs/zipline-payload-format.md`** (#15),
+- **The specification file is now `docs/zipline-payload-format.md`**,
   renamed from `docs/payload-format.md`: kebab-case, project name included, and
   no version in the filename so the path survives future versions. *A
   documentation-layout change, not a format change — but it breaks existing
   links.*
 - **A converter MUST NOT invent an option id** for an unrecognised JSON key on a
-  known block (#9). There is no id to write, and guessing manufactures data.
+  known block. There is no id to write, and guessing manufactures data.
   Such a key cannot arise from a binary source, only from hand-written or
   third-party JSONL; on the JSONL → binary path a converter MUST reject the line
   or drop the key, and MUST report it either way.
-- **JSONL: the File Header rate is the key `tick_hz`, carrying a number** (#10)
-  — previously the alias `time_units`. `tick_hz` is the binary field's own name,
-  so the projection's general naming rule now covers it and the alias table has
-  one fewer exception. *Writers: emit `tick_hz`.*
+- **JSONL: the File Header rate is the key `tick_hz`, carrying a number** —
+  previously the alias `time_units`. `tick_hz` is the binary field's own name, so
+  the projection's general naming rule now covers it and the alias table has one
+  fewer exception. *Writers: emit `tick_hz`.*
 
 ### Deprecated
 
-- **JSONL key `time_units`** (#10), superseded by `tick_hz`. A reader MUST still
+- **JSONL key `time_units`**, superseded by `tick_hz`. A reader MUST still
   accept it carrying a number and treat it as `tick_hz`; a writer MUST NOT emit
   it. Removal lands in a later version. *Readers: keep accepting it for now.*
 
 ### Fixed
 
-- **Four JSONL examples wrote `"time_units":"us"`** (#10) — a unit label, where
+- **Four JSONL examples wrote `"time_units":"us"`** — a unit label, where
   1.0's normative text defines the value as a rate in ticks per second and
   permits only a number or a decimal string. The examples were non-conformant
   against their own specification, so anything written by copying them was too.
   Corrected to `"tick_hz":1000000`.
-- **The example of an *unregistered* option id was `0x0091`** (#8), which is
+- **The example of an *unregistered* option id was `0x0091`**, which is
   registered — it is `content_type`. Changed to `0x0200`, which is outside the
   registry.
-- **The decoded-file example's two `record` lines omitted `source_id`** (#13), a
+- **The decoded-file example's two `record` lines omitted `source_id`**, a
   mandatory body field that the projection's own rule says always projects. Every
   other example in the document includes it. Added.
 - **Three cross-reference anchors never resolved** — `#session-descriptor-0x10`,

@@ -821,22 +821,26 @@ together.
 
 ### Phase 6 — Close the loop
 
-- [ ] Close **#11** with a pointer to
-      [zipline-payload-format.md:340-368](zipline-payload-format.md#L340-L368) and
-      [zipline-payload-format.md:421-438](zipline-payload-format.md#L421-L438) and a note
-      that the precondition's scope is now stated more prominently
-- [ ] Reply on **#13** about moving the annotation off `comment` (free-text human
-      note) to a `Custom` block or a registered option
-- [ ] Close #8, #9, #10, #12, #14, #15, #16 against the landed sections
-- [ ] **Strip the issue references from [CHANGELOG.md](../CHANGELOG.md)** — 23 of
-      them at present (`(#13)` ×6, `(#9)` ×3, `(#10)` ×3, `(#12)` ×3, `(#14)` ×3,
-      and the rest). They are useful while drafting, to trace an entry back to
-      the feedback that prompted it, but the changelog's audience is an
-      implementer with no access to this repo's issue tracker, to whom a bare
-      `(#13)` is noise. Do this **after** the issues are closed, so the trail
-      survives in the git history and in this document's §3 rather than being
-      lost. Leave this document's own references alone — it is organised by
-      issue, so they are its structure
+- [x] Closed **#11** as no-change-required, pointing at the worked example that
+      already sequenced against inverted timestamps, and noting that 1.1 now
+      states the converse positively because one misreading is evidence enough
+- [x] Replied on **#13** recommending the decoder choice move off `comment`
+      (specified as a free-text human note) to a registered option or a `Custom`
+      block, since step 3 of that pipeline parses it mechanically
+- [x] Closed #8, #9, #10, #12, #14, #15, #16 against the landed sections. Each
+      close names where the resolution deviates from what the issue proposed —
+      #9's prohibition-instead-of-mechanism, #10's rejected symbolic vocabulary,
+      #15's kebab-case-without-`_standard` — rather than glossing them
+- [x] **Stripped the issue references from [CHANGELOG.md](../CHANGELOG.md)** — 24
+      per-entry tags removed, after the issues were closed so the trail survives
+      in git history, in this document's §3, and now in the closing comments
+      themselves. Two follow-ons the removal forced: the *Conventions* section
+      claimed "each entry names the issue it resolves", which had become false;
+      and two entries needed re-wrapping where the tag had been carrying the line
+      break. Kept the single provenance sentence in the release preamble
+      ("arising from the first implementation … issues #8–#16") — it says where
+      1.1 came from and points at this document, rather than tagging an entry.
+      This document's own references are untouched: it is organised by issue
 - [ ] Feed the outcome back to the Python implementation — #10 and the Phase 2
       escapes are the items it must change
 
