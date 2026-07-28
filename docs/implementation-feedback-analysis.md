@@ -5,7 +5,7 @@ This document analyses *what each issue means for the standard* and *how big the
 impact is*. It deliberately stops short of drafting spec wording; that is the
 next step.
 
-All line references are to [docs/payload-format.md](docs/payload-format.md) as of
+All line references are to [docs/payload-format.md](payload-format.md) as of
 commit `bc4bcfb`.
 
 ---
@@ -51,16 +51,16 @@ five patches.
 The binary face has a single, universal principle for anything a reader does not
 recognise, stated in several places and never violated:
 
-- unknown block type → skip via frame `length` ([payload-format.md:716-719](docs/payload-format.md#L716-L719))
-- unknown option id → skip via `len`, but **retain every occurrence in file order** ([payload-format.md:1094-1098](docs/payload-format.md#L1094-L1098))
-- reserved fields/bits → ignore on read ([payload-format.md:699-700](docs/payload-format.md#L699-L700))
-- none of these is an error ([payload-format.md:1385-1387](docs/payload-format.md#L1385-L1387))
+- unknown block type → skip via frame `length` ([payload-format.md:716-719](payload-format.md#L716-L719))
+- unknown option id → skip via `len`, but **retain every occurrence in file order** ([payload-format.md:1094-1098](payload-format.md#L1094-L1098))
+- reserved fields/bits → ignore on read ([payload-format.md:699-700](payload-format.md#L699-L700))
+- none of these is an error ([payload-format.md:1385-1387](payload-format.md#L1385-L1387))
 
 The JSONL face is defined as "**one rule plus a short list of exceptions**"
-([payload-format.md:1411-1426](docs/payload-format.md#L1411-L1426)) — but that rule
+([payload-format.md:1411-1426](payload-format.md#L1411-L1426)) — but that rule
 maps *known* names to *known* names. It provides exactly one escape hatch for the
 unrecognised: the generic `options` array for unregistered option ids
-([payload-format.md:1492-1497](docs/payload-format.md#L1492-L1497)). There is no
+([payload-format.md:1492-1497](payload-format.md#L1492-L1497)). There is no
 escape hatch for an unknown **block type**, an unknown **enum value**, or an
 unknown **flag bit** — so a converter meeting one has no conformant output, and
 the format's own forward-compatibility promise (a v1.1 file readable by v1.0
@@ -88,15 +88,15 @@ binary encoding is touched.
 
 ### #8 — JSONL projection for an unknown binary block type
 
-**Valid.** [payload-format.md:1428-1442](docs/payload-format.md#L1428-L1442) maps
-eleven block types to `type` strings. [payload-format.md:1495-1496](docs/payload-format.md#L1495-L1496)
+**Valid.** [payload-format.md:1428-1442](payload-format.md#L1428-L1442) maps
+eleven block types to `type` strings. [payload-format.md:1495-1496](payload-format.md#L1495-L1496)
 says an unknown `type` *string* is preserved unchanged — that covers
 JSONL→JSONL, but a binary→JSONL converter meeting an unknown u16 type has no
 string to emit, and JSONL→binary has no way to recover the number from a string
 it was never told how to form.
 
 **What it means.** The spec promises a minor bump adds blocks old readers safely
-skip ([payload-format.md:739-741](docs/payload-format.md#L739-L741)). Today that
+skip ([payload-format.md:739-741](payload-format.md#L739-L741)). Today that
 promise holds in binary and fails in JSONL — the first v1.1 block type makes the
 JSONL face lossy. That is the real cost, and it is a forward-compatibility bug,
 not merely a missing table row.
@@ -118,7 +118,7 @@ Three separate edges; they deserve three different answers.
 **(a) An unknown JSONL key on a known block, converting to binary.**
 Correct that it is undefined — but I would push back on framing it as a
 round-trip loss. The spec's contract is *binary → JSONL → binary*
-([payload-format.md:95-96](docs/payload-format.md#L95-L96)), and a
+([payload-format.md:95-96](payload-format.md#L95-L96)), and a
 binary-originated JSONL line can never contain an unknown key: unregistered
 options land in the `options` array under their numeric id. Unknown keys arise
 only from hand-authored or third-party JSONL, which is outside the round-trip
@@ -127,7 +127,7 @@ contract. So this is not a hole in losslessness; it is a missing *error rule*.
 The right resolution is a prohibition rather than a mechanism: a converter **MUST
 NOT** invent an option id, and MUST either reject the line or drop the key with a
 diagnostic (the spec's existing "data must never vanish silently" principle,
-[payload-format.md:1379-1380](docs/payload-format.md#L1379-L1380)). Adding a
+[payload-format.md:1379-1380](payload-format.md#L1379-L1380)). Adding a
 mechanism here — e.g. a reserved id range for "named but unregistered" — would be
 over-engineering: it invents a second extension channel alongside `Custom`
 (`0xFF`) and the option registry, for input that is out of contract anyway.
@@ -135,13 +135,13 @@ over-engineering: it invents a second extension channel alongside `Custom`
 **(b) A record flags bit with no JSONL token.**
 Real, and it is a genuine (if small) round-trip loss: a set bit in the `0xFF20`
 reserved mask has no token, and "a zero/unset bitfield is omitted"
-([payload-format.md:1477](docs/payload-format.md#L1477)) gives it nowhere to go, so
+([payload-format.md:1477](payload-format.md#L1477)) gives it nowhere to go, so
 it vanishes.
 
 There is an apparent tension with "reserved bits MUST be ignored on read" — but
 it is only apparent, and the spec has already resolved this exact tension for
 option ids: *ignore for semantics, preserve for round-trip*
-([payload-format.md:1094-1098](docs/payload-format.md#L1094-L1098)). A hex-token
+([payload-format.md:1094-1098](payload-format.md#L1094-L1098)). A hex-token
 fallback (`"flags":["psh","0x0020"]`) follows the established precedent and, more
 importantly, is what lets a v1.1-written file survive a v1.0 JSONL round-trip
 once bit `0x0020` is assigned a meaning. Without it, the flags field is the one
@@ -151,15 +151,15 @@ place where a minor bump silently loses data.
 Valid, and the issue under-states it — this is **not** just a rendering question.
 Source `kind` is load-bearing in three places:
 
-1. It classifies the whole file as raw vs derived ([payload-format.md:1278-1281](docs/payload-format.md#L1278-L1281)).
-2. It tells a decoder-less record apart as raw vs pass-through ([payload-format.md:1286-1288](docs/payload-format.md#L1286-L1288)).
+1. It classifies the whole file as raw vs derived ([payload-format.md:1278-1281](payload-format.md#L1278-L1281)).
+2. It tells a decoder-less record apart as raw vs pass-through ([payload-format.md:1286-1288](payload-format.md#L1286-L1288)).
 3. **It selects how `spans` offsets are interpreted** — logical stream offsets for
    `zpf-input`, byte offsets into the capture file for `capture`
-   ([payload-format.md:1158-1163](docs/payload-format.md#L1158-L1163)).
+   ([payload-format.md:1158-1163](payload-format.md#L1158-L1163)).
 
 So an unknown `kind` does not merely lack a label: every record and span
 referencing that source becomes uninterpretable. This needs a semantic rule in
-the error-handling tiers ([payload-format.md:1364-1377](docs/payload-format.md#L1364-L1377)),
+the error-handling tiers ([payload-format.md:1364-1377](payload-format.md#L1364-L1377)),
 not just a JSONL rule — an unknown `kind` should be an isolatable semantic
 condition (reject, or discard the sources/records that depend on it), while the
 JSONL side renders the raw number.
@@ -176,14 +176,14 @@ sentence to Conformance.
 ### #10 — Representation of the file header tick rate
 
 **Valid, and it is an outright contradiction inside v1.0, not an open question.**
-`tick_hz` is a u64 ([payload-format.md:730](docs/payload-format.md#L730)); the alias
-table maps JSONL `time_units` → `tick_hz` ([payload-format.md:1450](docs/payload-format.md#L1450));
+`tick_hz` is a u64 ([payload-format.md:730](payload-format.md#L730)); the alias
+table maps JSONL `time_units` → `tick_hz` ([payload-format.md:1450](payload-format.md#L1450));
 and value encoding says a 64-bit field is a JSON number or a **decimal string**
-([payload-format.md:1461-1466](docs/payload-format.md#L1461-L1466)). Under that
+([payload-format.md:1461-1466](payload-format.md#L1461-L1466)). Under that
 rule `"us"` is illegal. Yet all six JSONL examples write `"time_units":"us"`
 (lines 180, 346, 422, 648, …).
 
-Normative text wins over examples ([payload-format.md:673-674](docs/payload-format.md#L673-L674)),
+Normative text wins over examples ([payload-format.md:673-674](payload-format.md#L673-L674)),
 so *the examples are non-conformant* — which is the worst possible failure mode,
 because implementers copy examples. This is the highest-value item in the whole
 set relative to its size.
@@ -235,18 +235,18 @@ followed the examples, which were never conformant to begin with).
 corrections:
 
 1. *"a zpf-file can only be marked as sequenced"* — sequencing is **per session**,
-   not per file, and deliberately so ([payload-format.md:373-385](docs/payload-format.md#L373-L385)).
+   not per file, and deliberately so ([payload-format.md:373-385](payload-format.md#L373-L385)).
 2. *"…if their time stamps are increasing"* — v1.0 imposes the timestamp/clock
    precondition **only on hint-less sessions**: "A producer therefore **MUST NOT**
    mark a *hint-less* session SEQUENCED unless its records share a single
-   trustworthy clock" ([payload-format.md:447-456](docs/payload-format.md#L447-L456),
-   restated at [payload-format.md:1332-1334](docs/payload-format.md#L1332-L1334)).
+   trustworthy clock" ([payload-format.md:447-456](payload-format.md#L447-L456),
+   restated at [payload-format.md:1332-1334](payload-format.md#L1332-L1334)).
    A TCP session's sequenced order is causal and explicitly clock-independent.
 3. *"Look for a mechanism that allows records to be stored logically sequenced
    even if the time stamps contradict"* — that mechanism is v1.0's central worked
-   example. [payload-format.md:340-368](docs/payload-format.md#L340-L368) shows the
+   example. [payload-format.md:340-368](payload-format.md#L340-L368) shows the
    server record at `ts:995` answering a client request at `ts:1000`, and
-   [payload-format.md:421-438](docs/payload-format.md#L421-L438) shows the merged
+   [payload-format.md:421-438](payload-format.md#L421-L438) shows the merged
    output storing them in that inverted-timestamp order **with `"sequenced":true`**.
 
 So for TCP, the requested capability already exists and is demonstrated. What
@@ -262,13 +262,13 @@ the converse — the point #14's second half makes.
 
 **Valid, and better motivated than the issue argues.** No format change is needed
 at all: `reason` is explicitly an open vocabulary
-([payload-format.md:1003](docs/payload-format.md#L1003), `e.g.`), so `skipped` is
+([payload-format.md:1003](payload-format.md#L1003), `e.g.`), so `skipped` is
 already legal. The question is whether to *canonicalise* it, and the answer is yes
 for a reason the issue does not give:
 
 **The coverage guarantee forces the choice.** In a decode stage, every offset of
 every input stream must be covered by a decoded record's `spans` or by an
-Undecoded block ([payload-format.md:1302-1307](docs/payload-format.md#L1302-L1307)).
+Undecoded block ([payload-format.md:1302-1307](payload-format.md#L1302-L1307)).
 A decoder that deliberately ignores a BOM or a reserved field therefore has only
 two legal moves today: stretch a record's span over bytes it did not interpret,
 or mark them `undecodable` — which is a lie, since the decoder *could* decode
@@ -281,7 +281,7 @@ makes "undecoded bytes" a meaningful metric.
 
 **Where it sits in the existing semantics.** The reason vocabulary is really a
 two-class taxonomy, and only the class is machine-relevant
-([payload-format.md:1006-1013](docs/payload-format.md#L1006-L1013)):
+([payload-format.md:1006-1013](payload-format.md#L1006-L1013)):
 
 - *bytes exist upstream, follow the reference*: `undecodable` — and `skipped`
   joins this class
@@ -311,13 +311,13 @@ is right that it is not obvious.** An annotator that adds session comments to a
 raw file *is* a pass-through transform, and everything it needs exists: declare
 the input as a `zpf-input` Source with `uri`+`digest`, mint ids, put an `origin`
 option on every participant, re-emit the records byte- and offset-identically
-([payload-format.md:1308-1318](docs/payload-format.md#L1308-L1318)). To the issue's
+([payload-format.md:1308-1318](payload-format.md#L1308-L1318)). To the issue's
 direct question — *"What should the provenance be, the original pcap or the first
 zpf?"* — the spec's model already answers unambiguously: **provenance always names
 the immediate input**, never the grandparent. The chain is walked one level at a
-time ([payload-format.md:1010-1017](docs/payload-format.md#L1010-L1017)), and the
+time ([payload-format.md:1010-1017](payload-format.md#L1010-L1017)), and the
 `digest` is a Makefile-style dependency edge, not a copy
-([payload-format.md:572-574](docs/payload-format.md#L572-L574)). So: the first
+([payload-format.md:572-574](payload-format.md#L572-L574)). So: the first
 `.zpf`, and the pcap is reached by opening it.
 
 Two consequences worth writing down rather than leaving readers to derive:
@@ -332,14 +332,14 @@ Two consequences worth writing down rather than leaving readers to derive:
 **Case B — annotating a *decoded* file: a genuine hole in the taxonomy.** This is
 the issue's strongest point and it is correct. v1.0 states a strict trichotomy: a
 derived file is exactly one of a decode stage or a pass-through, never a mix
-([payload-format.md:1278-1285](docs/payload-format.md#L1278-L1285)). An annotated
+([payload-format.md:1278-1285](payload-format.md#L1278-L1285)). An annotated
 copy of a decoded file fits neither:
 
 - it cannot be a **pass-through**, because pass-through records carry no
-  `decoder_id` ([payload-format.md:1308](docs/payload-format.md#L1308)) while its
+  `decoder_id` ([payload-format.md:1308](payload-format.md#L1308)) while its
   records must (a decoded record's meaning *is* its `decoder_id`), and because
   Decoder Descriptors and Undecoded blocks are "decode-stage files only"
-  ([payload-format.md:788](docs/payload-format.md#L788), [payload-format.md:980](docs/payload-format.md#L980))
+  ([payload-format.md:788](payload-format.md#L788), [payload-format.md:980](payload-format.md#L980))
   while it must carry the Undecoded blocks forward or break the coverage guarantee;
 - it cannot honestly be a **decode stage**, because it decoded nothing, and its
   records' `spans` point into its input's *input*, in a namespace it would have to
@@ -368,12 +368,12 @@ There is no conformant way to express this today. Given #13's own pipeline
 **Pushback on the mechanism, worth raising back on the issue.** The described
 pipeline puts *"which decoder to use"* in a session **`comment`**, which the
 registry defines as a "free-text human note"
-([payload-format.md:1119](docs/payload-format.md#L1119)). Using it as a
+([payload-format.md:1119](payload-format.md#L1119)). Using it as a
 machine-readable control channel is a misuse: unspecified syntax, no namespace, no
 way for a second annotator to add a second annotation without collision, and it
 makes a *human* field load-bearing for correctness. The format already provides
 the right vehicles — a `Custom` block (`0xFF`, PEN-namespaced, designed exactly
-for vendor/experimental data, [payload-format.md:1050-1059](docs/payload-format.md#L1050-L1059))
+for vendor/experimental data, [payload-format.md:1050-1059](payload-format.md#L1050-L1059))
 for a tool-private annotation, or a registered option in a later minor if this
 becomes a standard pipeline stage. Whichever way #13 is resolved, the annotation
 mechanism should move off `comment`.
@@ -405,9 +405,9 @@ declared sequenced even when the producer knows the order for certain.
 Before changing anything, note that **part of this is already vacuous**, and
 saying so may be most of the fix:
 
-- An **N = 1 session** (one-way UDP/multicast feed, [payload-format.md:87](docs/payload-format.md#L87))
+- An **N = 1 session** (one-way UDP/multicast feed, [payload-format.md:87](payload-format.md#L87))
   has no cross-participant order to resolve at all, and its per-participant order
-  is *already* a normative MUST ([payload-format.md:1250-1257](docs/payload-format.md#L1250-L1257)).
+  is *already* a normative MUST ([payload-format.md:1250-1257](payload-format.md#L1250-L1257)).
   Its stored order is therefore trivially a valid linearization, whatever the
   clocks did. The clock precondition adds nothing here.
 - The same holds for any session whose records all come from one participant.
@@ -417,7 +417,7 @@ clock, but a protocol-level ordering the producer can see.** Two designs:
 
 | Design | What it is | Assessment |
 |---|---|---|
-| **Generic ordering hints** — transport-neutral `seq_pos`/`cum_ack` option ids | The route already sketched for SCTP ([payload-format.md:1638-1647](docs/payload-format.md#L1638-L1647)) and licensed by the transport-neutrality note ([payload-format.md:310-318](docs/payload-format.md#L310-L318)) | Keeps order *checkable* by consumers. But the merge needs **both** a monotonic per-sender position **and** a cumulative ack of the peer; many UDP protocols (RTP, for instance) supply only the first, which yields no cross-participant edges — so this does not actually solve the N ≥ 2 case for them. Heavier, and pays off only if consumers must re-derive order. |
+| **Generic ordering hints** — transport-neutral `seq_pos`/`cum_ack` option ids | The route already sketched for SCTP ([payload-format.md:1638-1647](payload-format.md#L1638-L1647)) and licensed by the transport-neutrality note ([payload-format.md:310-318](payload-format.md#L310-L318)) | Keeps order *checkable* by consumers. But the merge needs **both** a monotonic per-sender position **and** a cumulative ack of the peer; many UDP protocols (RTP, for instance) supply only the first, which yields no cross-participant edges — so this does not actually solve the N ≥ 2 case for them. Heavier, and pays off only if consumers must re-derive order. |
 | **Producer-asserted order** (what #14 asks for) | Relax the precondition from "single trustworthy clock" to "a sound basis, which may be protocol-specific knowledge the producer is responsible for" | Minimal: no new blocks, no new options, no algorithm change. |
 
 **Recommendation: producer assertion**, with the honest caveat stated in the
@@ -432,21 +432,21 @@ transport actually supplies both required properties.
 
 **(b) State the reader-side obligation.** **Fully endorsed — this is a pure
 omission, and the most likely of all nine to cause a real interop failure.** The
-Conformance section ([payload-format.md:1320-1339](docs/payload-format.md#L1320-L1339))
+Conformance section ([payload-format.md:1320-1339](payload-format.md#L1320-L1339))
 never says a reader must not reject or re-sort on timestamp inversion, while it
 *does* say, two paragraphs earlier, that a reader meeting an out-of-order record
-MAY reject the file ([payload-format.md:1263-1265](docs/payload-format.md#L1263-L1265)).
+MAY reject the file ([payload-format.md:1263-1265](payload-format.md#L1263-L1265)).
 An implementer reading only Conformance can easily read "out-of-order" as "out of
 timestamp order" — and #11 is direct evidence that exactly this misreading
 happens. Note that v1.0's own merged worked example
-([payload-format.md:421-438](docs/payload-format.md#L421-L438)) would be rejected
+([payload-format.md:421-438](payload-format.md#L421-L438)) would be rejected
 by such a reader.
 
 One refinement to the wording proposed in the issue. *"in a session with causal
 hints, stored order supersedes timestamps"* is too broad: in a **non**-sequenced
 session, cross-participant stored order is explicitly *not* authoritative — only
 the per-participant subsequence is, and the interleaving comes from the merge
-([payload-format.md:1265-1267](docs/payload-format.md#L1265-L1267)). The obligation
+([payload-format.md:1265-1267](payload-format.md#L1265-L1267)). The obligation
 should be scoped: *timestamps are never an ordering invariant a reader may
 validate against or re-sort by; for a SEQUENCED session, stored order is the
 authoritative order.*
@@ -480,7 +480,7 @@ Uncontroversial and zero format impact. Two notes:
   is more consistent than the underscored name proposed in the issue.
 - Do **not** put a version in the filename — the document carries its own version
   and is meant to be amended in place.
-- It is referenced from [README.md](README.md) and [CLAUDE.md](CLAUDE.md); both
+- It is referenced from [README.md](../README.md) and [CLAUDE.md](../CLAUDE.md); both
   need updating in the same commit. Any external permalink breaks, which at this
   stage is acceptable.
 
@@ -489,11 +489,11 @@ Uncontroversial and zero format impact. Two notes:
 Correct, and correctly characterised as harmless. The three bitfields are
 inconsistent only in wording:
 
-- File flags: "reserved, MUST be written 0, and MUST be ignored on read" ([payload-format.md:761-762](docs/payload-format.md#L761-L762))
-- Session flags: same ([payload-format.md:814-815](docs/payload-format.md#L814-L815))
-- Record flags: "reserved, MUST be 0" ([payload-format.md:1201](docs/payload-format.md#L1201))
+- File flags: "reserved, MUST be written 0, and MUST be ignored on read" ([payload-format.md:761-762](payload-format.md#L761-L762))
+- Session flags: same ([payload-format.md:814-815](payload-format.md#L814-L815))
+- Record flags: "reserved, MUST be 0" ([payload-format.md:1201](payload-format.md#L1201))
 
-The global rule at [payload-format.md:699-700](docs/payload-format.md#L699-L700)
+The global rule at [payload-format.md:699-700](payload-format.md#L699-L700)
 already supplies the reader half, so this is editorial. **Do it together with
 #9b**, which rewrites the same table row anyway: if unrecognised bits get a hex
 token, the row must say both "ignored on read" *and* "preserved for round-trip",
@@ -510,10 +510,10 @@ Not raised in the issues, but adjacent and worth folding into the same revision:
 
 1. **The logical offset space of a *decoded* file is never defined.** Offsets are
    defined against "the reassembled stream" with byte 0 anchored at `isn + 1` or
-   the first reassembled byte ([payload-format.md:514-526](docs/payload-format.md#L514-L526))
+   the first reassembled byte ([payload-format.md:514-526](payload-format.md#L514-L526))
    — a definition that only makes sense for a raw/pass-through stream. Yet chained
    decoding (`raw → tls-records → http → …`) is explicitly supported
-   ([payload-format.md:502-504](docs/payload-format.md#L502-L504)) and requires the
+   ([payload-format.md:502-504](payload-format.md#L502-L504)) and requires the
    second decoder to cite `spans` into the first decoded file. What offset 0 of a
    *decoded* participant stream means (presumably the concatenation of that
    participant's decoded record payloads in stored order) is nowhere stated.
@@ -552,7 +552,7 @@ it is the single place where 1.1 refuses something 1.0 permitted, and the
 **Group 2 — old readers may refuse new files** (#13 option 2, #14a's relaxation). Both are
 widenings that let a producer emit a file v1.0 forbids. A strict v1.0 reader
 encountering, say, an Undecoded block in a pass-through file will hit the
-semantic-violation tier ([payload-format.md:1364-1377](docs/payload-format.md#L1364-L1377))
+semantic-violation tier ([payload-format.md:1364-1377](payload-format.md#L1364-L1377))
 and MAY reject it. That is a *conformant* v1.0 reader doing its job, so the
 incompatibility is real, not a bug.
 
@@ -602,8 +602,8 @@ Ordered by value per unit of effort, not by issue number:
 8. **#15** — do last, in its own commit; it touches every path reference.
 
 **#11 needs no change**; it should be closed with a pointer to
-[payload-format.md:340-368](docs/payload-format.md#L340-L368) and
-[payload-format.md:421-438](docs/payload-format.md#L421-L438), noting that the
+[payload-format.md:340-368](payload-format.md#L340-L368) and
+[payload-format.md:421-438](payload-format.md#L421-L438), noting that the
 scope of the clock precondition (hint-less sessions only) is being made more
 prominent as part of #14b.
 
@@ -785,29 +785,43 @@ together.
       JSONL examples keep `"zipline-payload/1"`: they use no 1.1 feature)
 - [x] Create [CHANGELOG.md](../CHANGELOG.md) and point [README.md](../README.md)
       at it
-- [ ] Revisit the JSONL `format` strings once 1.1 features actually appear in an
-      example — only an example that *uses* one advertises `1.1`
+- [x] JSONL `format` strings revisited. Settling this needed a rule the spec did
+      not have: `version_minor` describes the **file**, not the *rendering*, so a
+      1.0 file rendered by a 1.1 converter still reports `zipline-payload/1`
+      while using 1.1 key spellings. Without it, `tick_hz` would drag all four
+      1.0 examples to `1.1`, since a 1.0 converter cannot read that key. Only the
+      annotator example declares `1.1`, because a pass-through carrying a decoded
+      layer is a 1.1 construct in the **binary** file
 - [ ] Confirm the CHANGELOG's `[Unreleased]` section is the complete 1.0 → 1.1
       delta, then release it as `[1.1]` with a date and a compare link
 - [ ] Drop the beta caveat from the status banner and README when 1.1 is final
-- [ ] Verify the byte-level worked example
-      ([payload-format.md:1508-1591](docs/payload-format.md#L1508-L1591)) is
-      unaffected — it should be, since nothing structural changed. If it *is*
-      affected, something went wrong in Phases 1–4
-- [ ] Re-check every cross-reference and anchor touched by the edits
-- [ ] Move anything not adopted into *Possible future extensions*
-      ([payload-format.md:1610](docs/payload-format.md#L1610)) — in particular
-      generic ordering hints if #14a took the assertion route, and the
-      "annotation" derived kind if #13 took option 2
+- [x] Byte-level worked example verified **unaffected**, as predicted — nothing
+      structural changed in Phases 1–4. It also now doubles as a demonstration of
+      the lowest-minor rule: 1.0 content, so `version_minor = 0` stands
+- [x] Cross-references and anchors swept mechanically (GitHub slug rules, all 105
+      internal links). Found and fixed **three broken anchors** predating this
+      work — `#session-descriptor-0x10`, `#participant-descriptor-0x11` and
+      `#session-end-0x12` pointed at **bold labels**, which generate no anchor.
+      The five descriptor blocks are now `####` headings, matching how every
+      other block is written, and all 105 links resolve
+- [x] Fixed **65 broken relative links in this document** — they were written
+      root-relative (`docs/payload-format.md`, `README.md`) but this file lives
+      in `docs/`, so they resolved to `docs/docs/…`. Now correct in all four
+      markdown files
+- [x] Deferred items moved into *Possible future extensions*: transport-neutral
+      ordering hints (recording *why* they do not solve the UDP/chat case — the
+      merge needs a cumulative peer ack, which those transports lack) and the
+      machine-checkable "annotation" kind (recording that `spans`-vs-`origin`
+      already supplies the check it would have bought)
 - [ ] **#15** — rename to `zipline-payload-format.md` (kebab-case, no version in
-      the name) **in its own commit, last**; update [README.md](README.md) and
-      [CLAUDE.md](CLAUDE.md) in the same commit
+      the name) **in its own commit, last**; update [README.md](../README.md) and
+      [CLAUDE.md](../CLAUDE.md) in the same commit
 
 ### Phase 6 — Close the loop
 
 - [ ] Close **#11** with a pointer to
-      [payload-format.md:340-368](docs/payload-format.md#L340-L368) and
-      [payload-format.md:421-438](docs/payload-format.md#L421-L438) and a note
+      [payload-format.md:340-368](payload-format.md#L340-L368) and
+      [payload-format.md:421-438](payload-format.md#L421-L438) and a note
       that the precondition's scope is now stated more prominently
 - [ ] Reply on **#13** about moving the annotation off `comment` (free-text human
       note) to a `Custom` block or a registered option
@@ -834,5 +848,5 @@ Deliberately deferred; recorded so they are not silently lost:
       supply only the per-sender position and would gain nothing
 - [ ] A machine-checkable "annotation" derived kind (#13 option 3)
 - [ ] The two standing *Open questions*
-      ([payload-format.md:1603-1608](docs/payload-format.md#L1603-L1608)) —
+      ([payload-format.md:1603-1608](payload-format.md#L1603-L1608)) —
       compression, and per-session digests on a `zpf-input` Source

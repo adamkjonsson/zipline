@@ -765,6 +765,11 @@ layer** — records keep their `decoder_id` and `content_type` but carry no `spa
 of their own, provenance is the participants' `origin`, and the Undecoded block
 rides along unchanged.
 
+This is the one example in this document that declares `1.1`: a pass-through
+carrying a decoded layer is a 1.1 construct, so the file cannot claim `1.0`. The
+others use nothing beyond 1.0 and say so, even though they are rendered with 1.1
+key spellings.
+
 Note the two Sources. `decoded.zpf` is the immediate input, which `origin` names
 and the records reference. `raw.zpf` is declared as well — not as a second input,
 but because the inherited `undecoded` line has always been a statement about
@@ -772,7 +777,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/1.1","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -885,6 +890,12 @@ It is only ever a hint: a reader MUST NOT gate parsing on it, because the
 skip-what-you-don't-know rules already make an unknown block or option safe (see
 [Conformance](#conformance)).
 
+It describes the file, not the *rendering*: a converter projects any file into
+whichever version of the [JSONL face](#jsonl--binary-field-mapping) it
+implements, so a 1.0 file rendered by a 1.1 converter still reports
+`"zipline-payload/1"` while using 1.1 key spellings. The version answers "what
+does this file contain", never "which tool wrote this line".
+
 **Reconstructing wall time.** A record's `timestamp` is in `tick_hz` ticks from
 the origin `time_epoch` (itself ticks since the Unix epoch, default 0). The
 absolute time is `unix_seconds = (time_epoch + timestamp) / tick_hz` (integer
@@ -912,7 +923,7 @@ Each fixed body ends with a `_reserved: u16` (0) where needed to round it to a
 multiple of 4 bytes. The `Options` line under each table lists that block's TLV
 options (see the [id registry](#tlv-option-framing--id-registry)).
 
-**Source Descriptor (`0x02`)**
+#### Source Descriptor (`0x02`)
 
 One block type for both a raw **capture** and a derived **`.zpf` input**,
 discriminated by `kind`. A record's `source_id` and a span's `source_id` both
@@ -930,8 +941,10 @@ typically carries `uri`/`digest`/`link_type`; a `zpf-input` source carries
 `uri`/`digest`. The transform's own build provenance (`produced_by`/
 `produced_at`) is on the File Header, not here.
 
-**Decoder Descriptor (`0x03`)** — files carrying a decoded layer (a decode
-stage's output, or a pass-through preserving one)
+#### Decoder Descriptor (`0x03`)
+
+Files carrying a decoded layer (a decode stage's output, or a pass-through
+preserving one).
 
 | Field        | Type | Notes                       |
 |--------------|------|-----------------------------|
@@ -940,7 +953,7 @@ stage's output, or a pass-through preserving one)
 
 Options: `name`, `version`, `params_digest`, `comment`.
 
-**Session Descriptor (`0x10`)**
+#### Session Descriptor (`0x10`)
 
 | Field        | Type | Notes                       |
 |--------------|------|-----------------------------|
@@ -961,7 +974,7 @@ appear in the file in a valid causal order, so a reader MAY consume them in stor
 order without running the [merge](#merge-algorithm). All other bits are reserved,
 MUST be written 0, and MUST be ignored on read.
 
-**Participant Descriptor (`0x11`)**
+#### Participant Descriptor (`0x11`)
 
 | Field            | Type | Notes                                   |
 |------------------|------|-----------------------------------------|
@@ -1029,7 +1042,7 @@ pass-through transform preserves each stream's bytes and logical offsets,
 pass-throughs therefore chain their provenance: a consumer walks one level at a
 time, exactly as it does for `spans`.
 
-**Session End (`0x12`)**
+#### Session End (`0x12`)
 
 Optional; any file kind. Declares that **this file contains nothing more for
 the session**: the writer SHOULD emit it at the exact moment it
@@ -1961,3 +1974,23 @@ declare-on-first-use contract holding in the byte stream.
   convention for multi-homing (distinct from the tunnel-layer `endpoint`
   list, whose order already means something else). Message boundaries reuse
   the `message` record flag as-is.
+
+- **Transport-neutral ordering hints.** Generic `seq_pos` / `cum_ack` options,
+  letting the [merge](#merge-algorithm) derive causal edges for transports the
+  format does not model — the SCTP entry above is the same idea named concretely.
+  *Not adopted in 1.1:* the merge needs **both** a monotonic per-sender position
+  and a *cumulative* peer acknowledgement, and the sessions that motivated the
+  request (multi-party UDP, chat) supply neither. RTP-style protocols supply only
+  the first, which yields no cross-participant edges at all. Those cases are
+  served instead by a producer asserting the order and recording
+  `sequenced_basis` (see [Sequenced files](#sequenced-files-precomputed-order)).
+  Worth revisiting for any transport that genuinely carries both.
+
+- **A machine-checkable "annotation" file kind.** A third derived-file kind
+  asserting that a transform changed nothing but metadata, so a consumer could
+  skip re-verifying the payloads. *Not adopted in 1.1:* the layer-preserving
+  pass-through already covers the case, and the `spans`-versus-`origin`
+  distinction (see [Conformance](#conformance)) already tells mechanically
+  whether a file's own stage built a record or re-emitted it. A third kind would
+  add a permanent branch to a taxonomy whose value is that it has two, to buy a
+  guarantee nobody has yet needed to check.
