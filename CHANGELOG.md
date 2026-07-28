@@ -76,7 +76,6 @@ below and still accepted on read.
   A bit nonetheless set is *preserved* through a round-trip without being
   interpreted (#9) — the same split between retaining and interpreting that 1.0
   already applied to unknown option ids.
-
 - **Unknown Source `kind` values are an isolatable semantic condition** (#9). A
   reader that cannot classify a Source cannot interpret any record or span
   referencing it — `kind` selects whether span offsets are capture-file byte
@@ -85,9 +84,30 @@ below and still accepted on read.
   advisory, just means "unknown". *`kind` is therefore not a free extension
   point: unlike a new option id, a new `kind` value will be isolated by existing
   readers.*
+- **The `Undecoded` `reason` vocabulary has two recoverability classes** (#12):
+  *bytes exist* (`undecodable`, `skipped`) and *hole* (`tcp-gap`, `truncated`).
+  The class, not the word, is what a consumer acts on. 1.0 described the split
+  in prose without naming it as the actionable part.
+- **An unrecognised `reason` has unknown recoverability** (#12). A consumer MUST
+  NOT assume a class, and in particular MUST NOT treat the range as a hole —
+  that would discard bytes that may exist. It follows the reference as for the
+  bytes-exist class and reports the region empty only if nothing is found. 1.0
+  made the vocabulary open but left this undefined.
 
 ### Added
 
+- **Canonical `Undecoded` reason `skipped`** (#12) — a region the decoder
+  declined *on purpose*: data it does not care about, or data carrying no
+  information, such as a byte-order mark, a padding or a reserved field. It sits
+  in the bytes-exist class alongside `undecodable`, from which it differs in
+  intent, not recoverability. It earns canonical status because the coverage
+  guarantee leaves a decoder no honest third option — without it, a decoder
+  ignoring a BOM must either stretch a record's `spans` over bytes it never
+  interpreted or call them `undecodable`, asserting a failure that did not
+  happen. It also keeps `undecodable` usable as a decoder-quality signal.
+  *The vocabulary was already open, so this canonicalises an existing
+  possibility rather than adding a capability; 1.0 readers treat `skipped` as
+  any unrecognised reason.*
 - **The JSONL projection's four escapes for unrecognised data** (#8, #9). The
   binary face has always had one universal rule for what a reader does not
   recognise — skip by length, retain, never error. The projection now mirrors

@@ -647,12 +647,15 @@ gives the **coverage guarantee**: in a decode stage's output, every region of an
 participant stream is either covered by a decoded record's `spans` *or* marked
 Undecoded — never silently dropped, never both. Both sides name the input
 stream in the input's own id namespace, so the guarantee is checkable stream
-by stream. A consumer can thus distinguish
-"a message we could not parse" (`reason` = `undecodable`, bytes recoverable
-upstream) from "no data here" (`reason` = `tcp-gap`/`truncated`, the offset range
-is a hole with no bytes anywhere), and a re-derivation can target just the
+by stream. A consumer can thus distinguish bytes that exist upstream — "a
+message we could not parse" (`reason` = `undecodable`) or "bytes we chose not to
+interpret" (`skipped`) — from "no data here" (`tcp-gap`/`truncated`, the offset
+range is a hole with no bytes anywhere), and a re-derivation can target just the
 undecoded ranges. A plain **gap** is simply the no-data case of an Undecoded
-block. (The `undecoded` line in the example below shows one.)
+block. (The `undecoded` line in the example below shows one.) The `reason`
+vocabulary is open, but every value sits in one of those two recoverability
+classes; that classification, not the word itself, is what a consumer acts on
+(see [Undecoded](#undecoded-0x21)).
 
 ### A decoded file, end to end
 
@@ -1030,18 +1033,41 @@ parses both. Offsets are logical 0-based stream offsets in the `source_id`
 input, the same convention used by `spans` (*not* absolute sequence numbers),
 and follow the hole-inclusive contiguity rule (see
 [Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
-Options: `reason` (string, e.g. `undecodable` / `tcp-gap` / `truncated`),
-`decoder_id` (u16, which decoder declined the region).
+Options: `reason` (string, e.g. `undecodable` / `skipped` / `tcp-gap` /
+`truncated`), `decoder_id` (u16, which decoder declined the region).
 
-`reason` signals whether the bytes are recoverable: `undecodable` means the bytes
-exist at that span in `source_id` (the decoder simply could not parse them) and a
-consumer MAY follow the reference to fetch them; `tcp-gap` / `truncated` mean the
-range is a **hole** with no bytes anywhere upstream (a plain *gap*). Either way
-the bytes are not in this file. To recover `undecodable` bytes a consumer walks
-the provenance chain one level at a time — if the referenced span is itself
-Undecoded in `source_id`, it recurses — until it reaches the capture-sourced raw
-file that holds the actual bytes; a missing intermediate file stops recovery
-there. Crossing a **pass-through** file costs nothing extra: its participants'
+`reason` says *why* the region is undecoded. The vocabulary is **open**, but
+every value falls in one of two **recoverability classes**, and the class is the
+only part of it a consumer acts on:
+
+| Class           | Meaning                                                                                   | Values                    |
+|-----------------|-------------------------------------------------------------------------------------------|---------------------------|
+| **bytes exist** | the bytes are present at that span in `source_id`; a consumer MAY follow the reference to fetch them | `undecodable`, `skipped`  |
+| **hole**        | the range has no bytes anywhere upstream — a plain *gap*                                    | `tcp-gap`, `truncated`    |
+
+Either way the bytes are not in *this* file.
+
+The two bytes-exist values differ in **intent**, not in recoverability.
+`undecodable` means the decoder tried and failed. `skipped` means it declined on
+purpose — data it does not care about, or data carrying no information: a
+byte-order mark, a padding or reserved field. That distinction is needed because
+the [coverage guarantee](#coverage-honesty-undecoded-blocks) leaves a decoder no
+honest third option: without `skipped`, a decoder that ignores a BOM must either
+stretch a record's `spans` across bytes it never interpreted or report them
+`undecodable`, asserting a failure that did not occur. Keeping them apart also
+keeps `undecodable` usable as a decoder-quality signal — a consumer counting
+unparsed bytes should not have deliberate skips folded into the total.
+
+**An unrecognised `reason`** — a later version's value, or another tool's — has
+**unknown** recoverability, and a consumer MUST NOT assume a class. In
+particular it MUST NOT treat the range as a hole, which would discard bytes that
+may well exist. It follows the reference as it would for the bytes-exist class,
+and reports the region as empty only if nothing is found there.
+
+To recover bytes of the bytes-exist class a consumer walks the provenance chain
+one level at a time — if the referenced span is itself Undecoded in `source_id`,
+it recurses — until it reaches the capture-sourced raw file that holds the actual
+bytes; a missing intermediate file stops recovery there. Crossing a **pass-through** file costs nothing extra: its participants'
 [`origin`](#participant-descriptor-0x11) options map each stream to the
 corresponding input stream, and offsets are preserved, so the same
 `[off_start, off_end)` range resolves unchanged one level further down.
@@ -1172,7 +1198,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes were built from (see below)          |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which Decoder Descriptor produced/declined this record/region |
 | `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
-| `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded (`undecodable`/`tcp-gap`/`truncated`/…) |
+| `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`tcp-gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 | `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
