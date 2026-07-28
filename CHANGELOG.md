@@ -88,6 +88,24 @@ below and still accepted on read.
   *bytes exist* (`undecodable`, `skipped`) and *hole* (`tcp-gap`, `truncated`).
   The class, not the word, is what a consumer acts on. 1.0 described the split
   in prose without naming it as the actionable part.
+- **Each layer has its own offset space, and a decoded stream's is now defined**
+  (#13): the concatenation of a participant's decoded record payloads in stored
+  order, byte 0 being the first byte of the first such record. Undecoded regions
+  contribute nothing, so unlike a transport stream's space it is *not*
+  hole-inclusive. 1.0 defined offsets only for reassembled transport streams,
+  which left `raw → tls-records → http` — a pipeline 1.0 explicitly invites —
+  with no defined offset space for its second stage to reference.
+  *Implementers doing multi-stage decode: this is the rule you were missing.*
+- **`spans` versus `origin`, not `decoder_id`, discriminates what a file's own
+  stage produced** (#13). A record carrying `spans` was built by this stage; a
+  record without them, whose participant carries `origin`, was re-emitted from
+  the input. `decoder_id` says which decoder's layer a record belongs to, and a
+  pass-through carries inherited ones forward, so it no longer implies the
+  decoder ran in this stage.
+- **A one-participant or single-sender session is trivially sequenceable** (#14).
+  It has no cross-participant order to get wrong, so it needs no basis at all.
+  Vacuous under 1.0's rule, but worth stating, since the clock precondition
+  appeared to bite exactly the one-way UDP case it cannot apply to.
 - **An unrecognised `reason` has unknown recoverability** (#12). A consumer MUST
   NOT assume a class, and in particular MUST NOT treat the range as a hole —
   that would discard bytes that may exist. It follows the reference as for the
@@ -96,6 +114,13 @@ below and still accepted on read.
 
 ### Added
 
+- **Session option `sequenced_basis`** (`0x0053`, string) (#14) — what a
+  `SEQUENCED` hint-less session's order rests on. Open vocabulary; suggested
+  `clock`, `transport`, `protocol`, `external`. A producer SHOULD set it when
+  sequencing a hint-less session. It is advisory: it does not make the order
+  checkable, it tells a consumer how far to trust it. A reader MUST NOT reject a
+  session for an unrecognised value, or for its absence. *Additive — a new
+  option id, skippable by 1.0 readers.*
 - **Canonical `Undecoded` reason `skipped`** (#12) — a region the decoder
   declined *on purpose*: data it does not care about, or data carrying no
   information, such as a byte-order mark, a padding or a reserved field. It sits
@@ -130,6 +155,36 @@ below and still accepted on read.
 
 ### Changed
 
+- **A pass-through transform preserves its input's *layer*, not just its bytes**
+  (#13) **[strict-reader]**. 1.0 defined pass-through as carrying no
+  `decoder_id`, which silently confined it to raw input and left any transform
+  over a decoded file — an annotator, a filter, a re-merge — unexpressible. A
+  pass-through now re-emits its input's records with bytes, logical offsets,
+  `decoder_id`s, `content_type`s and Undecoded blocks unchanged, whatever layer
+  the input was at, and re-declares the Decoder Descriptors they reference. The
+  input's coverage guarantee then holds of the output without the output
+  carrying any `spans`. Decoder Descriptors and Undecoded blocks are no longer
+  restricted to decode-stage files. *A strict 1.0 reader may refuse a file that
+  carries `decoder_id`s alongside `origin`; the [annotator example](docs/payload-format.md)
+  shows the shape.*
+- **A transform that only adds metadata is a pass-through** (#13), and its
+  output is a *derived* file. Annotating a raw file therefore moves capture-level
+  provenance (`link_type`, the capture's `uri`/`digest`) one level away, reached
+  through the input Source rather than directly. Nothing is lost, but a consumer
+  reading it must take the extra hop.
+- **A pass-through carrying inherited Undecoded blocks MUST also declare the
+  file those blocks name** (#13) and make their `source_id` resolve to it. This
+  is the one case where a derived file names something other than its immediate
+  input — because the statement being carried forward was always about that
+  further-up file. Keeping the inherited ids and numbering the immediate input
+  around them lets the blocks be copied verbatim.
+- **`SEQUENCED` on a hint-less session requires a sound basis, not specifically
+  a clock** (#14) **[strict-reader]**. A single trustworthy clock remains the
+  common basis; ordering knowledge the format does not model — a server-assigned
+  order, an application sequence number, an out-of-band record — now also
+  qualifies, with `sequenced_basis` to say which. The producer owns the
+  soundness; a reader could never verify the clock claim either. *This permits
+  sequenced multi-party UDP and chat sessions that 1.0 forbade.*
 - **A converter MUST NOT invent an option id** for an unrecognised JSON key on a
   known block (#9). There is no id to write, and guessing manufactures data.
   Such a key cannot arise from a binary source, only from hand-written or
@@ -156,6 +211,9 @@ below and still accepted on read.
 - **The example of an *unregistered* option id was `0x0091`** (#8), which is
   registered — it is `content_type`. Changed to `0x0200`, which is outside the
   registry.
+- **The decoded-file example's two `record` lines omitted `source_id`** (#13), a
+  mandatory body field that the projection's own rule says always projects. Every
+  other example in the document includes it. Added.
 
 ---
 

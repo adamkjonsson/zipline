@@ -735,36 +735,47 @@ Closes #8, #9a and #9c.
 what a decoded file looks like as somebody else's input — and must be drafted
 together.
 
-- [ ] **§4.1 first** — define the logical offset space of a *decoded* participant
-      stream (presumably the concatenation of that participant's decoded record
-      payloads in stored order), at
-      [payload-format.md:514-526](docs/payload-format.md#L514-L526). This
-      currently blocks any two-stage decode and #13 case B depends on it
-- [ ] **#13 case A** — state that an annotator of a raw/pass-through file *is* a
-      pass-through transform, and that provenance names the **immediate** input,
-      never the grandparent
-- [ ] **#13 case A consequence** — note explicitly that the output is no longer a
-      *raw* file, so capture-level provenance (`link_type`, capture byte offsets)
-      moves one level away
-- [ ] **#13 case B** — implement **option 2** (layer-preserving): relax the two
-      "decode-stage files only" sentences
-      ([payload-format.md:788](docs/payload-format.md#L788),
-      [payload-format.md:980](docs/payload-format.md#L980)), restate the
-      trichotomy as *decode stage creates a layer / pass-through preserves one*
-      ([payload-format.md:1278-1318](docs/payload-format.md#L1278-L1318)), and add
-      the preservation obligation (bytes, offsets, `decoder_id`s, `spans` all
-      unchanged)
-- [ ] Re-check the coverage guarantee still reads correctly for a pass-through
-      file that carries Undecoded blocks forward
-- [ ] **#14a** — relax the precondition to "a sound basis" in *Sequenced files*
-      and *Conformance*; state plainly that the N = 1 / single-sender case is
-      trivially sequenceable and the clock precondition adds nothing there
-- [ ] **#14a option** — register `sequenced_basis` (string, Session) in the
-      option-id registry; decide free string vs open vocabulary
-      (`clock`/`transport`/`protocol`/`external`), and give it a JSONL key and a
-      row in the mapping table
-- [ ] Add a worked example for the annotator pipeline — it is the one case where
-      the taxonomy is now subtle enough to warrant one
+- [x] **§4.1 first** — *Each layer has its own offset space* added to
+      *Referencing the source by stream offset*: a decoded stream's space is the
+      concatenation of that participant's decoded record payloads in stored
+      order, explicitly **not** hole-inclusive (Undecoded regions name ranges in
+      the input's space, never the output's), and a pass-through defines no space
+      of its own. Noted the consequence that reordering or re-chunking a decoded
+      participant's records changes its offsets, and so is not a pass-through
+- [x] **#13 case A** — *Transforms that change no data* added to *Layers*; an
+      annotator is a pass-through, and `origin` names the **immediate** input,
+      stated at the `origin` definition too
+- [x] **#13 case A consequence** — stated: the output is a *derived* file, so
+      capture-level provenance sits one level away, reached through the Source
+- [x] **#13 case B** — option 2 implemented. Trichotomy restated as *creates a
+      layer / preserves one*, with the preservation obligation total (bytes,
+      offsets, `decoder_id`s, `content_type`s, Undecoded blocks) and the four
+      "decode-stage only" sites relaxed
+- [x] **Discriminator found during drafting** — with `decoder_id` no longer
+      implying "this stage decoded it", the taxonomy needed a new machine-checkable
+      test. It is **`spans` vs `origin`**: `spans` means this stage built the
+      record, `origin` means it re-emitted one. This recovers most of what option
+      3 was going to buy, without a third file kind
+- [x] Coverage guarantee re-checked — it binds decode stages; for a
+      layer-preserving pass-through, total preservation makes the *input's*
+      guarantee hold of the output, with no `spans` in the output at all
+- [x] **Namespace problem found during drafting** — an inherited Undecoded block
+      names a stream in the *grandparent*, so "re-emit unchanged" is unsatisfiable
+      unless the pass-through can name that file. Resolved by requiring it to
+      declare that Source and make the reference resolve, with a SHOULD-style
+      note that keeping the inherited ids lets the blocks be copied verbatim.
+      This is the sole exception to "provenance names the immediate input", and
+      it is stated as such
+- [x] **#14a** — precondition relaxed to "a sound basis" in *Sequenced files* and
+      *Conformance*; N = 1 / single-sender stated as trivially sequenceable
+- [x] **#14a option** — `sequenced_basis` registered as `0x0053` (string,
+      Session). **Open vocabulary** (`clock`/`transport`/`protocol`/`external`),
+      matching how `reason` works; SHOULD be set on a hint-less SEQUENCED
+      session; unrecognised values and absence are both non-rejectable. No JSONL
+      mapping row needed — the general rule covers it, since the key equals the
+      option name
+- [x] Worked example added: *Annotating a decoded file*, which also demonstrates
+      the two-Source shape the namespace rule requires
 
 ### Phase 5 — Consistency pass and release
 
@@ -802,6 +813,15 @@ together.
       note) to a `Custom` block or a registered option
 - [ ] Reply on **#12** noting the `truncated` spelling
 - [ ] Close #8, #9, #10, #12, #14, #15, #16 against the landed sections
+- [ ] **Strip the issue references from [CHANGELOG.md](../CHANGELOG.md)** — 23 of
+      them at present (`(#13)` ×6, `(#9)` ×3, `(#10)` ×3, `(#12)` ×3, `(#14)` ×3,
+      and the rest). They are useful while drafting, to trace an entry back to
+      the feedback that prompted it, but the changelog's audience is an
+      implementer with no access to this repo's issue tracker, to whom a bare
+      `(#13)` is noise. Do this **after** the issues are closed, so the trail
+      survives in the git history and in this document's §3 rather than being
+      lost. Leave this document's own references alone — it is organised by
+      issue, so they are its structure
 - [ ] Feed the outcome back to the Python implementation — #10 and the Phase 2
       escapes are the items it must change
 
