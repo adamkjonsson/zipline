@@ -813,6 +813,15 @@ together.
       note) to a `Custom` block or a registered option
 - [ ] Reply on **#12** noting the `truncated` spelling
 - [ ] Close #8, #9, #10, #12, #14, #15, #16 against the landed sections
+- [ ] **Strip the issue references from [CHANGELOG.md](../CHANGELOG.md)** — 23 of
+      them at present (`(#13)` ×6, `(#9)` ×3, `(#10)` ×3, `(#12)` ×3, `(#14)` ×3,
+      and the rest). They are useful while drafting, to trace an entry back to
+      the feedback that prompted it, but the changelog's audience is an
+      implementer with no access to this repo's issue tracker, to whom a bare
+      `(#13)` is noise. Do this **after** the issues are closed, so the trail
+      survives in the git history and in this document's §3 rather than being
+      lost. Leave this document's own references alone — it is organised by
+      issue, so they are its structure
 - [ ] Feed the outcome back to the Python implementation — #10 and the Phase 2
       escapes are the items it must change
 
