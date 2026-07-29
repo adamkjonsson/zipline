@@ -495,14 +495,12 @@ described in.
       is discoverable
 - [x] Git tag `v0.9` created at `bc4bcfb`, annotated with why the renumbering
       happened
-- [ ] **Delete the `v1.0` tag, locally and on the remote** — not done, needs
-      confirmation. It currently points at the same commit as `v0.9`, so until it
-      goes there are two names for one release, one of them claiming a version
-      that no longer exists. `git tag -d v1.0 && git push origin :refs/tags/v1.0`
+- [x] **`v1.0` tag deleted**, locally and on the remote. `v0.9` is the only tag,
+      and the CHANGELOG's compare links point at it
 - [ ] Tag `v0.10` at the release commit — Phase 11, not now
 - [x] Add a note to [implementation-feedback-analysis.md](implementation-feedback-analysis.md)
-      recording that its "v1.0 → v1.1" framing was renumbered to "0.9 → 1.0", and
-      that its Phase 5 release steps are superseded
+      recording that its "v1.0 → v1.1" framing was renumbered to "0.9 → 0.10",
+      and that its Phase 5 release steps are superseded
 
 ### Phase 9 — The surviving review points
 

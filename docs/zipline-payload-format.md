@@ -1305,8 +1305,8 @@ Whether an id is *single-valued* or *repeatable* is a **semantic** property in t
 registry, consulted only by a consumer that actually interprets the id:
 
 - A **repeatable** id is an ordered list; its occurrences and their order are
-  significant. **The repeatable ids in v1.0 are `endpoint` and `spans`** (any
-  future repeatable id MUST be added to this closed list).
+  significant. **The repeatable ids are `endpoint` and `spans`** — a closed list;
+  any future repeatable id MUST be added to it.
 - A **single-valued** id (every other id) SHOULD appear at most once; a consumer
   that interprets it uses the **first** occurrence. If it nonetheless repeats, a
   faithful reader still preserves the extra occurrences for round-trip.
@@ -1650,7 +1650,7 @@ above are the normal, conformant path.
 
 **Unrecognised enum values.** An enum value with no defined label is likewise not
 a violation in itself; what follows from it depends on what the enum governs, and
-the two v1.0 enums differ:
+the two enums this document defines differ:
 
 - `tcp_role` is advisory, so an unrecognised value means simply "unknown",
   exactly as an omitted option does. A reader carries it and moves on.
