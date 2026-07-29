@@ -101,9 +101,9 @@ the round of work that preceded it is in
   point: unlike a new option id, a new `kind` value will be isolated by existing
   readers.*
 - **The `Undecoded` `reason` vocabulary has two recoverability classes**:
-  *bytes exist* (`undecodable`, `skipped`) and *hole* (`tcp-gap`, `truncated`).
-  The class, not the word, is what a consumer acts on. 0.9 described the split
-  in prose without naming it as the actionable part.
+  *bytes exist* (`undecodable`, `skipped`) and *hole* (`gap`, `truncated`). 0.9
+  described the split in prose without naming it as the part a consumer must get
+  right.
 - **Each layer has its own offset space, and a decoded stream's is now defined**:
   the concatenation of a participant's decoded record payloads in stored order,
   byte 0 being the first byte of the first such record. Undecoded regions
@@ -127,21 +127,46 @@ the round of work that preceded it is in
   It has no cross-participant order to get wrong, so it needs no basis at all.
   Vacuous under 0.9's rule, but worth stating, since the clock precondition
   appeared to bite exactly the one-way UDP case it cannot apply to.
-- **An unrecognised `reason` has unknown recoverability**. A consumer MUST
-  NOT assume a class, and in particular MUST NOT treat the range as a hole —
-  that would discard bytes that may exist. It follows the reference as for the
-  bytes-exist class and reports the region empty only if nothing is found. 0.9
-  made the vocabulary open but left this undefined.
+- **A decoded-layer filter is a decode stage, not a pass-through.** Dropping a
+  decoded record shifts every later offset in that participant's space, so the
+  output cannot claim to preserve it. Such a transform cites its input in `spans`
+  and marks the dropped regions `skipped`, which brings the coverage guarantee to
+  bear. It declares a Decoder Descriptor for itself despite decoding nothing —
+  the descriptor identifies whatever produced the records and pins its
+  configuration, which is what reproducing a filtered file needs.
+- **The class of an `Undecoded` `reason` governs recovery; the word carries
+  intent.** Both are usable, for different purposes — a consumer counting
+  genuinely unparsed bytes separates `undecodable` from `skipped`. `0.9`'s
+  "the class, not the word, is what a consumer acts on" contradicted `skipped`'s
+  own justification.
+- **A failed recovery walk has two outcomes and they MUST be reported
+  distinctly**: *no bytes exist* (the chain resolved; the region is genuinely
+  empty) versus *bytes unavailable* (the chain broke — an intermediate file is
+  missing, unreadable, or fails its `digest`). Collapsing the second into the
+  first asserts something the consumer never established, and is the exact
+  silent-data-loss the coverage guarantee exists to prevent.
+- **The recovery walk is explicitly conditional.** Nothing obliges a consumer
+  that is merely reading a file to walk any provenance chain; the walk is for a
+  consumer that actually wants the bytes.
+- **Session option `sequenced_basis`** (`0x0053`, string) — what a `SEQUENCED`
+  hint-less session's order rests on. A producer **MUST** set it on such a
+  session; omitting it is a semantic violation. Open vocabulary, defined values
+  `clock`, `protocol`, `external`; a reader MUST NOT reject a session for a value
+  it does not recognise.
 
-### Added
-
-- **Session option `sequenced_basis`** (`0x0053`, string) — what a
-  `SEQUENCED` hint-less session's order rests on. Open vocabulary; suggested
-  `clock`, `transport`, `protocol`, `external`. A producer SHOULD set it when
-  sequencing a hint-less session. It is advisory: it does not make the order
-  checkable, it tells a consumer how far to trust it. A reader MUST NOT reject a
-  session for an unrecognised value, or for its absence. *Additive — a new
-  option id, skippable by 0.9 readers.*
+  It is mostly *not* something a consumer branches on — it is an explanation kept
+  for when an order turns out to be wrong, in the family of `creator` and
+  `params_digest`: a nonsensical order is a different investigation under `clock`
+  (capture skew) than under `protocol` (the producer's assumptions). Requiring it
+  also puts the obligation where the knowledge is, since a producer that must name
+  a basis has to decide what it is at the moment it sets the bit. One mechanical
+  check does fall out: `basis = clock` on a file with several `capture` Sources
+  and no `SINGLE_CLOCK` is self-contradictory.
+- **Undecoded option `reason_class`** (`0x00A1`, string, `hole` or `bytes`) —
+  **required** with any `reason` outside the canonical four. The `reason`
+  vocabulary is open so producers can be specific; this keeps that freedom from
+  costing consumers the one fact they must act on. *Previously an unrecognised
+  reason had no discoverable class at all.*
 - **Canonical `Undecoded` reason `skipped`** — a region the decoder
   declined *on purpose*: data it does not care about, or data carrying no
   information, such as a byte-order mark, a padding or a reserved field. It sits
@@ -191,10 +216,18 @@ the round of work that preceded it is in
     precedes the content, and it would oblige a writer at, say, `1.67` to carry
     a feature-to-minor mapping forever — to buy a precision readers derive
     locally for free.
+- **The `Undecoded` reason `tcp-gap` is renamed `gap`.** It was the only
+  transport-specific token in the vocabulary, in a format that is
+  transport-neutral everywhere else — and loss detection is not a TCP privilege:
+  RTP has sequence numbers, SCTP has TSNs, an application protocol may carry its
+  own. Nothing is lost by dropping `tcp`, since the session's `proto` already
+  says what the transport was. *A canonical value should be the generic case;
+  saying precisely how a hole was found is what the open vocabulary and
+  `reason_class` are for.*
 - **A pass-through transform preserves its input's *layer*, not just its bytes**.
   0.9 defined pass-through as carrying no
   `decoder_id`, which silently confined it to raw input and left any transform
-  over a decoded file — an annotator, a filter, a re-merge — unexpressible. A
+  over a decoded file — an annotator or a re-merge — unexpressible. A
   pass-through now re-emits its input's records with bytes, logical offsets,
   `decoder_id`s, `content_type`s and Undecoded blocks unchanged, whatever layer
   the input was at, and re-declares the Decoder Descriptors they reference. The
@@ -236,11 +269,12 @@ the round of work that preceded it is in
   the projection's general naming rule now covers it and the alias table has one
   fewer exception. *Writers: emit `tick_hz`.*
 
-### Deprecated
+### Removed
 
-- **JSONL key `time_units`**, superseded by `tick_hz`. A reader MUST still
-  accept it carrying a number and treat it as `tick_hz`; a writer MUST NOT emit
-  it. Removal lands in a later version. *Readers: keep accepting it for now.*
+- **JSONL key `time_units`**, superseded by `tick_hz`. Removed outright rather
+  than deprecated: `0.10` claims no compatibility with `0.9`, so there is nothing
+  to keep accepting. *A converter that still emits or accepts `time_units` is
+  writing `0.9`.*
 
 ### Fixed
 
