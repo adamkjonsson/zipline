@@ -15,7 +15,7 @@ complete through Phase 6; its two remaining Phase 5 release steps are
 
 | # | Review point | Valid? | Disposition | Effort |
 |---|--------------|--------|-------------|--------|
-| 1 | `[strict-reader]` carve-out has no wire signal | **Yes — and understated** | **Dissolved** by the renumbering | — |
+| 1 | `[strict-reader]` carve-out has no wire signal | **Yes — and understated** | Resolved by the 0.x rule: a reader MUST reject a `version_minor` it does not implement while major is `0` | S |
 | 2 | Filter example contradicts the offset-space rule | **Yes** | Fix: a decoded-layer filter is a *decode stage* marking dropped ranges `skipped` | S |
 | 3 | `sequenced_basis` is unactionable | **Yes** on `transport`; substantially yes on MUST | Fix: MUST, and cut `transport` | S |
 | 4 | Unrecognised-`reason` rule buys a MUST with unbounded I/O | **Half** — the second half is the serious one | Fix: `reason_class`, conditional walk, distinct reporting | M |
@@ -60,7 +60,8 @@ The review frames this as "textually 1.1 is within its own rules". It is
 ### The decision
 
 **Retroactively designate the July 2026 release `0.9`, and release this work as
-`1.0`.**
+`0.10`.** The format stays in `0.x` until it has survived more than one round
+with an implementation; `1.0` is reserved for a specification that has earned it.
 
 Safe here because no `1/0`-stamped files exist outside development — confirmed
 2026-07-28. That condition is load-bearing: relabelling the *document* is not
@@ -72,16 +73,34 @@ discriminator at all. In that world the answer would have been **2.0**.
 **This is honest, not a dodge.** Semantic versioning reserves `0.y.z` for initial
 development, where anything may change at any time. Relabelling makes the
 incompatibility *contractually expected* rather than merely excused. The actual
-error was calling this work a minor bump; the renumbering corrects that error
-rather than hiding it.
+error was declaring 1.0 final after zero implementations, and then calling the
+fallout a minor bump; the renumbering corrects both rather than hiding them.
 
-### What it dissolves
+**Why `0.10` rather than `1.0`.** More breaking rounds with the implementation
+are expected. In `1.x` each would burn a major number — 2.0, 3.0, 4.0 — which
+misrepresents a format still being designed. In `0.x` the same sequence reads as
+what it is: `0.10`, `0.11`, `0.12`, until the design stops moving.
 
-**Review point 1, entirely.** The problem stops being "a minor bump that breaks
-readers" and becomes a **major** bump — a case the format already handles
-correctly, via a rule it has always had: *a reader MUST reject a `version_major`
-it does not implement*. No feature-flag bit, no `[strict-reader]` class, no new
-reader-guidance sentence. The existing mechanism does the work.
+Note `0.10` is **greater** than `0.9`: the components are independent integers,
+not a decimal fraction. See the parsing hazard in §3.
+
+### What it resolves, and how
+
+**Review point 1**, but not for free. Under a `1.0` release the discriminator
+would have been the major bump, handled by a rule the format already has — *a
+reader MUST reject a `version_major` it does not implement*. Staying in `0.x`
+means both files carry major `0`, so that rule never fires: a 0.9 reader meets a
+0.10 file, sees a major it implements, proceeds, and silently isolates every
+record. That is precisely the failure the review identified.
+
+Staying in `0.x` therefore requires a new rule, which is also what `0.x` honestly
+means: **while `version_major` is `0`, a reader MUST reject any `version_minor`
+it does not implement.** The pair `(0, minor)` is the compatibility identity, and
+nothing is guaranteed to survive a `0.x` minor bump.
+
+No feature-flag bit is needed, and the `[strict-reader]` class still goes: the
+signal is the minor itself, and in `0.x` checking it is normative rather than
+optional.
 
 ### Two notes
 
@@ -111,23 +130,46 @@ kill it, and the second is decisive:
 
 ### The replacement
 
-- **`version_minor` is the minor the writer implements.** No bookkeeping, no
-  table, satisfiable at header time by a streaming writer.
-- **Minors are strictly additive.** Old readers keep working, guaranteed by the
-  skip rules — unknown block skipped by frame `length`, unknown option by `len`,
-  reserved bits ignored, and the four JSONL escapes. A reader **MUST NOT** gate
-  parsing on `version_minor`.
-- **Anything not strictly additive is a major bump**, where a reader MUST reject
-  a `version_major` it does not implement.
+**`version_minor` is the minor the writer implements.** No bookkeeping, no table,
+satisfiable at header time by a streaming writer.
 
-That is the whole policy. There is deliberately **no** MUST floor tying the
-stamp to the features used: under strict additivity there is nothing for such a
-floor to signal. It would only have a job in a world where a minor could break
-readers, and the right answer is to forbid that world rather than instrument it.
+The rest of the policy has **two regimes**, because a format still being designed
+and one in service need opposite guarantees:
 
-**Consequence:** `version_minor` is advisory. A reader needs it for nothing,
-because the skip rules already guarantee the outcome. It remains useful to humans
-and diagnostics.
+**While `version_major` is `0` — the current regime.** Anything may change
+between minors, including things that break readers. The pair `(0, minor)` is the
+compatibility identity: a reader **MUST reject** any `version_minor` it does not
+implement. `version_minor` is therefore load-bearing, not advisory.
+
+**From `1.0` onward.** Minors are **strictly additive** — old readers keep
+working, guaranteed by the skip rules (unknown block skipped by frame `length`,
+unknown option by `len`, reserved bits ignored, and the four JSONL escapes). A
+reader **MUST NOT** gate parsing on `version_minor`; it discovers what it does
+not know locally, as it meets it. Anything not strictly additive is a **major**
+bump, where a reader MUST reject a `version_major` it does not implement.
+
+There is deliberately **no** MUST floor tying the stamp to the features a file
+uses. In `0.x` it would be redundant, since the reader rejects on the minor
+anyway. From `1.0` it would have nothing to signal, since additive changes are
+safe by construction. It would only earn its place in a world where a `1.x` minor
+could break readers — and the right answer is to forbid that world rather than
+instrument it.
+
+**Consequence for the eventual 1.0:** `version_minor` becomes advisory at exactly
+the moment the format stops breaking. That is the transition `1.0` should mean.
+
+### A parsing hazard `0.10` makes live
+
+The `format` string is `"zipline-payload/<major>[.<minor>]"`. An implementer who
+parses that tail as a decimal number gets `0.10 == 0.1`, which sorts **below**
+`0.9` — inverting the version order and silently accepting a file it must reject
+under the `0.x` rule above.
+
+Latent while the versions were `1.0` and `1.1`; live the moment `0.10` ships. The
+specification should say outright that `major` and `minor` are independent
+non-negative integers, compared componentwise, and never parsed as a single
+decimal number. Same for the binary fields, which are already two separate `u16`s
+— the hazard is specific to the JSONL spelling.
 
 The companion Phase 5 sentence — that the version describes the file rather than
 the rendering — survives and gets simpler: a file's minor is stamped once by
@@ -275,11 +317,12 @@ whose Phases 0–6 are complete.
 
 ### Phase 7 — Decisions
 
-- [ ] **Versioning** — confirm: July 2026 release becomes `0.9`; this work
-      releases as `1.0` *(recommended, and assumed by the rest of this plan)*
+- [x] **Versioning** — **decided**: the July 2026 release becomes `0.9`; this work
+      releases as `0.10`; the format stays in `0.x` until it has survived more
+      than one round with an implementation
 - [ ] **`sequenced_basis`** — MUST *(recommended)* vs drop the option and state
       that `SEQUENCED` is an unverifiable producer assertion
-- [ ] **Test vectors** — in scope for 1.0, or a follow-up release
+- [ ] **Test vectors** — in scope for `0.10`, or a follow-up release
 - [ ] **`SPEC-1.1-REVIEW.md`** — commit it (and probably move it to `docs/`) so
       this document's references resolve for anyone reading the repo
 
@@ -288,22 +331,32 @@ whose Phases 0–6 are complete.
 Do this first and in one commit: it changes the frame every other item is
 described in.
 
-- [ ] Spec title and status banner — drop the 1.1-beta language; this is `1.0`
-- [ ] *File Header* — `version_minor` row back to `0`; rewrite the minor/major
-      definition per §3; **delete** the lowest-minor paragraph added in Phase 5
+- [ ] Spec title and status banner — this is `0.10`; say plainly that `0.x` is a
+      design in progress, that any minor may break readers, and that `1.0` is
+      reserved for a specification that has survived implementation
+- [ ] *File Header* — `version_major` row becomes `0`, `version_minor` becomes
+      `10`; write the two-regime policy from §3; **delete** the lowest-minor
+      paragraph added in Phase 5
+- [ ] Add the `0.x` reader rule: while `version_major` is `0`, a reader MUST
+      reject a `version_minor` it does not implement. This is what replaces the
+      major-bump discriminator, and without it review point 1 is unfixed
+- [ ] Add the componentwise-comparison rule for the `format` string — `major` and
+      `minor` are independent integers, never a decimal number (§3). `0.10 > 0.9`
 - [ ] Keep and simplify the "describes the file, not the rendering" sentence
-- [ ] Examples — the annotator example's `zipline-payload/1.1` reverts to
-      `zipline-payload/1`, since it is no longer a later-minor construct
-- [ ] Byte-level worked example — confirm `version_minor = 0` still stands (it
-      should; it was 1.0 content all along)
-- [ ] CHANGELOG — `[Unreleased] — 1.1-beta` becomes `[1.0]` with a date; the
+- [ ] Examples — every `format` string becomes `"zipline-payload/0.10"`,
+      including the annotator example, since in `0.x` the stamp is the writer's
+      version rather than a per-file feature floor
+- [ ] Byte-level worked example — `version_major` and `version_minor` bytes both
+      change (`01 00`/`00 00` → `00 00`/`0A 00`); check the annotation text and
+      that no length or offset is affected (none should be — both are `u16`)
+- [ ] CHANGELOG — `[Unreleased] — 1.1-beta` becomes `[0.10]` with a date; the
       existing `[1.0] — 2026-07-09` becomes `[0.9]`; rewrite *Conventions*
-      (minor/major definitions, delete `[strict-reader]`), delete the
-      binary-container compatibility preamble, and state openly that 1.0 was
-      declared final too early
-- [ ] README status section
+      (two-regime policy, delete `[strict-reader]`), delete the binary-container
+      compatibility preamble, and state openly that 1.0 was declared final after
+      zero implementations
+- [ ] README status section — no production-readiness claim while in `0.x`
 - [ ] Git tags — add `v0.9` at `bc4bcfb`, delete the `v1.0` tag locally and on
-      the remote, and re-tag `v1.0` at the release commit. **Confirm before
+      the remote, and tag `v0.10` at the release commit. **Confirm before
       deleting the remote tag**
 - [ ] Add a note to [implementation-feedback-analysis.md](implementation-feedback-analysis.md)
       recording that its "v1.0 → v1.1" framing was renumbered to "0.9 → 1.0", and
@@ -335,6 +388,9 @@ described in.
 - [ ] Test vectors, if Phase 7 puts them in scope
 - [ ] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
       keeping — it found three broken anchors and 65 broken relative links)
-- [ ] Confirm the CHANGELOG's `[1.0]` section is the complete delta from 0.9
-- [ ] Cut the release: date, tag, drop any remaining beta language
+- [ ] Confirm the CHANGELOG's `[0.10]` section is the complete delta from `0.9`
+- [ ] Cut the release: date, `v0.10` tag, drop any remaining beta language —
+      "beta" is redundant now that the whole `0.x` line is provisional
 - [ ] Hand the result to `python-zipline`, and record what it finds
+- [ ] Expect a `0.11`. The point of staying in `0.x` is that the next round of
+      findings costs a minor bump rather than a major one

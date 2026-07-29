@@ -800,7 +800,8 @@ together.
 > this work is not a minor bump — its relaxations break conformant 1.0 readers,
 > which the specification's own definition of a minor forbids. The July 2026
 > release is being retroactively designated **0.9** and this work released as
-> **1.0**. See
+> **0.10**, keeping the format in `0.x` until it has survived more than one round
+> with an implementation. See
 > [implementation-review-response.md](implementation-review-response.md), whose
 > Phase 8 carries the renumbering and replaces both steps above.
 - [x] Byte-level worked example verified **unaffected**, as predicted — nothing
