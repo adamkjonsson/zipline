@@ -536,29 +536,29 @@ described in.
 Starts only after Phases 8 and 9 have landed: a vector built against text that is
 still moving has to be rebuilt.
 
-- [ ] Decide the layout — `vectors/` at the repo root, with a manifest naming
+- [x] Decide the layout — `vectors/` at the repo root, with a manifest naming
       what each vector exercises and which section it comes from
-- [ ] Write the manifest's ground rules first: vectors are conformance tests
+- [x] Write the manifest's ground rules first: vectors are conformance tests
       subordinate to the normative text, hand-built from it rather than generated
       by an implementation, and the JSONL comparison is line-ordered but
       object-compared per line (§6)
-- [ ] Build the tooling — a hex-dump generator so the annotated view cannot drift
+- [x] Build the tooling — a hex-dump generator so the annotated view cannot drift
       from the binary, and a checker that validates a vector against the manifest
-- [ ] Baseline vectors: minimal raw file (adapt the existing byte-annotated
+- [x] Baseline vectors: minimal raw file (adapt the existing byte-annotated
       example), decoded file, transport-layer pass-through
-- [ ] Escape vectors: unknown block type, unknown option id, unknown enum value,
+- [x] Escape vectors: unknown block type, unknown option id, unknown enum value,
       set reserved flag bit
-- [ ] `0.10` construct vectors: annotator (decoded layer preserved), `skipped`
+- [x] `0.10` construct vectors: annotator (decoded layer preserved), `skipped`
       region, unrecognised `reason` with `reason_class`, hint-less `SEQUENCED`
       with `sequenced_basis`
-- [ ] Negative vectors, **reject** tier: bad magic, `length` not a multiple of 4,
+- [x] Negative vectors, **reject** tier: bad magic, `length` not a multiple of 4,
       `payload_len` overrunning its block, unimplemented `version_major`, and a
       `0.11`-stamped file that a `0.10` reader must reject under the new `0.x`
       rule
-- [ ] Negative vectors, **isolate** tier: undeclared `session_id`, doubly-declared
+- [x] Negative vectors, **isolate** tier: undeclared `session_id`, doubly-declared
       id, coverage-guarantee failure — a reader that *rejects* these is as wrong
       as one that accepts them silently
-- [ ] Cross-check every vector against the specification by hand before
+- [x] Cross-check every vector against the specification by hand before
       committing. A vector that disagrees with the text is investigated, not
       quietly adjusted — the disagreement usually means the text is ambiguous
 
