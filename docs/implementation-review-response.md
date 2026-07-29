@@ -21,7 +21,7 @@ complete through Phase 6; its two remaining Phase 5 release steps are
 | 4 | Unrecognised-`reason` rule buys a MUST with unbounded I/O | **Half** — the second half is the serious one | Fix: `reason_class`, conditional walk, distinct reporting | M |
 | 4′ | *(not from the review)* `tcp-gap` is transport-specific | — | Rename to `gap`; other transports detect loss too | S |
 | 5 | Lowest-minor rule fights the streaming contract | **Yes** | **Dissolved**: the rule is deleted | — |
-| — | Machine-checkable test vectors | **Yes, strongly** | Decision pending (Phase 7) | M–L |
+| — | Machine-checkable test vectors | **Yes, strongly** | **In scope for `0.10`** — see §6 | **L** |
 
 **Five of five valid at least in part.** Two are silent-data-loss shaped — point 1,
 and the second half of point 4 — and should gate the release.
@@ -356,15 +356,80 @@ The CHANGELOG's own claim — that clarifications are "where two independent
 implementations most easily disagree" — is an argument for vectors, not against
 them.
 
-**Scope proposal:** a dozen `.zpf` / `.jsonl` pairs covering the annotator shape,
-the four escapes, an unrecognised `reason`, an unknown block type, and a sequenced
-hint-less session. Each pair is a binary file plus its exact projection, so a
-converter can be tested in both directions.
+**Decided: in scope for `0.10`.** Accepting that it is the largest remaining item
+and will dominate the schedule to release. Five design decisions follow, and they
+matter more than the count of vectors.
 
-**Open question for Phase 7:** in scope for this release, or immediately after?
-Arguments both ways — they would catch defects in the very text being written
-now, but they are the largest single item remaining and this release is already
-overdue for a cut.
+### They must be built from the specification, not dumped from the implementation
+
+This is the one that determines whether the exercise is worth anything. The
+entire value is catching the case where an implementation diverges from the text.
+Vectors generated *by* `python-zipline` would encode its current understanding,
+including whatever it has already got wrong — the `time_units` defect would have
+been faithfully baked into a vector and blessed.
+
+So they are hand-constructed from the normative text, byte by byte. Expensive,
+and unavoidable. The existing 196-byte
+[byte-annotated worked example](zipline-payload-format.md) is proof the method
+works and becomes the first vector nearly for free.
+
+### They are conformance tests, not a second normative source
+
+If a vector and the specification disagree, **the vector is wrong** and gets
+fixed. Saying so explicitly matters, because the failure mode being guarded
+against — an implementer copying an artifact instead of reading the text — is
+exactly what vectors could otherwise reintroduce in a new form.
+
+That said, every disagreement gets investigated before it is dismissed. A vector
+that contradicts the text usually means the text is ambiguous, which is the
+second thing vectors are for.
+
+### Negative vectors matter more than positive ones
+
+The review asked for valid-file/expected-projection pairs. Those are the easy
+half. The format has a **two-tier error model**, and the tiers are exactly where
+implementations will differ:
+
+- **Reject** — bad magic, `length` not a multiple of 4, a `payload_len` that
+  overruns its block, a `version_major` not implemented, and now a
+  `version_minor` not implemented while major is `0`.
+- **Isolate, not reject** — an undeclared `session_id`, a doubly-declared id, a
+  coverage-guarantee failure. A reader that rejects these is as wrong as one that
+  accepts them silently.
+- **Neither — the normal path** — an unknown block type, an unknown option id, a
+  set reserved bit. A vector here catches the implementation that treats
+  extension as corruption.
+
+The last group is where a naive implementation most often fails, and it is
+untestable without vectors that deliberately contain unknown constructs.
+
+### The JSONL side cannot be compared byte-for-byte
+
+The projection is *semantically* lossless, not byte-exact: key order within a
+line, number-versus-decimal-string encodings, and how a `spans` list is split
+across occurrences are all free. But **line order is significant** —
+declare-on-first-use and stored record order both carry meaning.
+
+So the comparison rule is: lines in order, each line parsed and compared as an
+object, with the documented encoding equivalences normalised first. Worth stating
+in the manifest, or every implementer writes a naive differ and gets false
+failures on their first run.
+
+### Reviewable in a diff
+
+A committed `.zpf` is an opaque blob; a change to one is unreviewable. Each vector
+therefore ships as three files — the binary, a byte-annotated hex dump in the
+style the specification already uses, and the `.jsonl` projection — with the hex
+dump generated from the binary so it cannot drift. The hex dump is what a human
+reads in a pull request.
+
+### Coverage for `0.10`
+
+Baseline: the minimal raw file, a decoded file, a transport-layer pass-through.
+Then one per `0.10` construct — each of the four escapes, the annotator shape
+(decoded layer preserved), an unrecognised `reason` with `reason_class`, a
+`skipped` region, a hint-less `SEQUENCED` session with `sequenced_basis`, and a
+`0.11`-stamped file that a `0.10` reader must reject. Roughly a dozen.
 
 ---
 
@@ -383,7 +448,9 @@ whose Phases 0–6 are complete.
       session. Justified as a forensic field (the `creator`/`produced_by` family)
       and as a speed bump that makes a producer confront the claim, not as a
       read-time signal — see §5
-- [ ] **Test vectors** — in scope for `0.10`, or a follow-up release
+- [x] **Test vectors** — **decided: in scope for `0.10`**, accepting that they are
+      the largest remaining item. Built from the specification rather than
+      generated by an implementation, or the exercise is worthless — see §6
 - [ ] **`SPEC-1.1-REVIEW.md`** — commit it (and probably move it to `docs/`) so
       this document's references resolve for anyone reading the repo
 
@@ -452,9 +519,39 @@ described in.
 - [ ] Re-check that `reason_class` does not disturb the two-class table or the
       coverage-guarantee narrative
 
-### Phase 10 — Vectors and release
+### Phase 10 — Test vectors
 
-- [ ] Test vectors, if Phase 7 puts them in scope
+Starts only after Phases 8 and 9 have landed: a vector built against text that is
+still moving has to be rebuilt.
+
+- [ ] Decide the layout — `vectors/` at the repo root, with a manifest naming
+      what each vector exercises and which section it comes from
+- [ ] Write the manifest's ground rules first: vectors are conformance tests
+      subordinate to the normative text, hand-built from it rather than generated
+      by an implementation, and the JSONL comparison is line-ordered but
+      object-compared per line (§6)
+- [ ] Build the tooling — a hex-dump generator so the annotated view cannot drift
+      from the binary, and a checker that validates a vector against the manifest
+- [ ] Baseline vectors: minimal raw file (adapt the existing byte-annotated
+      example), decoded file, transport-layer pass-through
+- [ ] Escape vectors: unknown block type, unknown option id, unknown enum value,
+      set reserved flag bit
+- [ ] `0.10` construct vectors: annotator (decoded layer preserved), `skipped`
+      region, unrecognised `reason` with `reason_class`, hint-less `SEQUENCED`
+      with `sequenced_basis`
+- [ ] Negative vectors, **reject** tier: bad magic, `length` not a multiple of 4,
+      `payload_len` overrunning its block, unimplemented `version_major`, and a
+      `0.11`-stamped file that a `0.10` reader must reject under the new `0.x`
+      rule
+- [ ] Negative vectors, **isolate** tier: undeclared `session_id`, doubly-declared
+      id, coverage-guarantee failure — a reader that *rejects* these is as wrong
+      as one that accepts them silently
+- [ ] Cross-check every vector against the specification by hand before
+      committing. A vector that disagrees with the text is investigated, not
+      quietly adjusted — the disagreement usually means the text is ambiguous
+
+### Phase 11 — Release
+
 - [ ] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
       keeping — it found three broken anchors and 65 broken relative links)
 - [ ] Confirm the CHANGELOG's `[0.10]` section is the complete delta from `0.9`
