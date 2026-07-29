@@ -19,6 +19,7 @@ complete through Phase 6; its two remaining Phase 5 release steps are
 | 2 | Filter example contradicts the offset-space rule | **Yes** | Fix: a decoded-layer filter is a *decode stage* marking dropped ranges `skipped` | S |
 | 3 | `sequenced_basis` is unactionable | **Yes** on `transport`; substantially yes on MUST | Fix: MUST, and cut `transport` | S |
 | 4 | Unrecognised-`reason` rule buys a MUST with unbounded I/O | **Half** — the second half is the serious one | Fix: `reason_class`, conditional walk, distinct reporting | M |
+| 4′ | *(not from the review)* `tcp-gap` is transport-specific | — | Rename to `gap`; other transports detect loss too | S |
 | 5 | Lowest-minor rule fights the streaming contract | **Yes** | **Dissolved**: the rule is deleted | — |
 | — | Machine-checkable test vectors | **Yes, strongly** | Decision pending (Phase 7) | M–L |
 
@@ -306,6 +307,40 @@ on" contradicts `skipped`'s own justification, which is that a consumer counting
 unparsed bytes acts on the word. Reword: the *class* governs recovery, the *word*
 carries intent, and consumers use both for different purposes.
 
+### Point 4, extended — rename `tcp-gap` to `gap`
+
+Not from the review; raised separately while considering it, and it belongs with
+the same edit.
+
+`tcp-gap` is the **only transport-specific token in the vocabulary**, in a format
+that is deliberately transport-neutral everywhere else: logical offsets are
+defined without reference to TCP, the merge carries a transport-neutrality note,
+and *Possible future extensions* already contemplates SCTP. Loss detection is not
+a TCP privilege — RTP has sequence numbers, SCTP has TSNs, and an application
+protocol may carry its own. A hole found by any of them is the same object.
+
+**`gap` rather than `data-gap`.** The specification's own narrative already calls
+it that: *"A plain **gap** is simply the no-data case of an Undecoded block."*
+Matching the word the prose already uses beats coining a compound, and everything
+in this vocabulary concerns data, so the qualifier adds nothing.
+
+**Nothing is lost by dropping `tcp`.** The transport is already recoverable from
+context — the Session's `proto`, and the stream the block references — so the
+token was duplicating information the file carries anyway.
+
+**It also fixes a layering mistake.** A *canonical* value should be the generic
+case; a producer needing to say precisely how a hole was detected has the open
+vocabulary plus the new `reason_class` for exactly that. As a canonical token,
+`tcp-gap` was doing the open vocabulary's job.
+
+**Free now, expensive later** — the same argument that returns `time_units` to
+hard removal (§4). In `0.x` a rename costs one string; after `1.0` it costs a
+deprecation cycle. The vocabulary is already being opened for `skipped` and
+`reason_class`, so this is the moment.
+
+Cost to `python-zipline`: one string constant. Four sites in the specification,
+one in the CHANGELOG.
+
 ---
 
 ## 6. The test-vector ask
@@ -405,6 +440,10 @@ described in.
       the same objection
 - [ ] **Point 4a** — register `reason_class` (`hole` / `bytes`), required whenever
       `reason` is outside the canonical four
+- [ ] **Rename `tcp-gap` → `gap`** — four sites in the spec, one in the CHANGELOG.
+      Do it in the same edit as `reason_class`, since both change what the
+      canonical vocabulary is, and state the rationale (a canonical value is the
+      generic case; specificity belongs to the open vocabulary)
 - [ ] **Point 4b** — make the provenance walk explicitly conditional
 - [ ] **Point 4c** — require "no bytes exist" and "chain broken" to be reported
       distinctly
