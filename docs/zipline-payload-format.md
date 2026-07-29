@@ -199,9 +199,9 @@ that line.
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
-{"type":"participant","session_id":8,"pid":0,"endpoint":"alice"}
-{"type":"participant","session_id":8,"pid":1,"endpoint":"bob"}
-{"type":"participant","session_id":8,"pid":2,"endpoint":"carol"}
+{"type":"participant","session_id":8,"pid":0,"endpoint":["alice"]}
+{"type":"participant","session_id":8,"pid":1,"endpoint":["bob"]}
+{"type":"participant","session_id":8,"pid":2,"endpoint":["carol"]}
 
 {"type":"record","session_id":8,"sender_pid":0,"source_id":1,"ts":2000,
  "payload":"aGksIGFsbCE="}
@@ -210,7 +210,7 @@ that line.
 {"type":"record","session_id":8,"sender_pid":1,"source_id":1,"ts":2150,
  "payload":"bW9ybmluZw=="}
 
-{"type":"participant","session_id":8,"pid":3,"endpoint":"dave"}
+{"type":"participant","session_id":8,"pid":3,"endpoint":["dave"]}
 {"type":"record","session_id":8,"sender_pid":3,"source_id":1,"ts":2300,
  "payload":"YW0gSSBsYXRlPw=="}
 
@@ -367,8 +367,8 @@ The canonical case for seq/ack ordering — the two directions captured to
 
 {"type":"session","session_id":7,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":"10.0.0.1:51000","isn":1000}
-{"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80","isn":5000}
+{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000}
+{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
  "seq_start":1001,"ack":5001,
@@ -445,9 +445,9 @@ causal order despite the inverted timestamps:
 
 {"type":"session","session_id":1,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80","sequenced":true}
-{"type":"participant","session_id":1,"pid":0,"endpoint":"10.0.0.1:51000","isn":1000,
+{"type":"participant","session_id":1,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000,
  "origin":{"source_id":1,"session_id":7,"pid":0}}
-{"type":"participant","session_id":1,"pid":1,"endpoint":"93.184.216.34:80","isn":5000,
+{"type":"participant","session_id":1,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000,
  "origin":{"source_id":2,"session_id":3,"pid":0}}
 
 {"type":"record","session_id":1,"sender_pid":0,"source_id":1,"ts":1000,
@@ -781,8 +781,8 @@ equal to the output's here — not copying them):
  "params_digest":"sha256:00ab…"}
 
 {"type":"session","session_id":7,"proto":"http"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":"10.0.0.1:51000"}
-{"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80"}
+{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"]}
+{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"]}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
  "decoder_id":1,
@@ -821,9 +821,9 @@ the input lets the block be copied verbatim:
  "params_digest":"sha256:00ab…"}
 
 {"type":"session","session_id":7,"proto":"http"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":"10.0.0.1:51000",
+{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"],
  "origin":{"source_id":2,"session_id":7,"pid":0}}
-{"type":"participant","session_id":7,"pid":1,"endpoint":"93.184.216.34:80",
+{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"],
  "origin":{"source_id":2,"session_id":7,"pid":1}}
 
 {"type":"name","session_id":7,"pid":1,"label":"example.com","kind":"tls-sni"}
@@ -1840,8 +1840,11 @@ general naming rule covers it.
   `"flags":["psh","fin"]`). A set bit with **no token** renders as a hex token
   (see [the escapes](#unrecognised-data-the-four-escapes)). A zero/unset
   bitfield is omitted.
-- **Repeatable options** (`endpoint`) → a JSON **array**, order preserved
-  (`spans`, whose repetition is chunking, has its own rule below).
+- **Repeatable options** (`endpoint`) → a JSON **array**, order preserved —
+  **always an array, even for a single occurrence** (`["10.0.0.1:51000"]`), so a
+  reader never has to branch on the JSON type of a key. (`spans`, whose
+  repetition is chunking rather than listing, has its own rule below, and is
+  likewise always an array.)
 - **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
   objects; repeated binary occurrences merge into this one array, and a
   converter back to binary MAY split it into several occurrences.
