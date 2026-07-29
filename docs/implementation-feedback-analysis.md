@@ -8,6 +8,13 @@ next step.
 All line references are to [docs/zipline-payload-format.md](zipline-payload-format.md) as of
 commit `bc4bcfb`.
 
+> **Versions were renumbered after this document was written.** It speaks of
+> "v1.0" and "v1.1" throughout. The release it calls v1.0 is now **`0.9`**, and
+> the work it plans as v1.1 shipped as **`0.10`** — the changes proved to be
+> breaking, which a minor bump may not be. See
+> [implementation-review-response.md](implementation-review-response.md) §2. The
+> text below is left as written, since it records the reasoning at the time.
+
 ---
 
 ## 1. Verdict at a glance

@@ -12,13 +12,23 @@ with two adaptations noted under [Conventions](#conventions).
 **Versions are `major.minor`**, matching the `version_major` / `version_minor`
 fields in the [File Header](docs/zipline-payload-format.md#file-header-0x01) — there is
 no patch component, because a version that is not on the wire cannot be
-communicated to a reader. The meanings are the format's own:
+communicated to a reader. Both components are independent integers compared
+componentwise: **`0.10` follows `0.9`** and is greater than it.
 
-- **major** — may change the block frame, a block body, or the meaning of an
-  existing field. A reader MUST reject a `version_major` it does not implement.
-- **minor** — adds blocks and options that old readers safely skip, pins down
-  behaviour an earlier version left undefined, and may relax writer
-  restrictions. Every file valid under `1.n` stays valid under `1.n+1`.
+The compatibility rules have two regimes, and the format is currently in the
+first:
+
+- **`0.x` — a design in progress.** Any minor release may change anything,
+  including in ways that break existing readers. A reader MUST reject a
+  `version_minor` it does not implement. Nothing is guaranteed to survive a
+  `0.x` bump, and no file written against one `0.x` version should be expected
+  to read under another.
+- **`1.0` and later.** A **minor** bump only adds blocks and options that old
+  readers safely skip, and pins down behaviour an earlier version left
+  undefined; every file valid under `1.n` stays valid under `1.n+1`, and readers
+  do not consult the minor at all. A **major** bump may change the frame, a
+  block body, or the meaning of an existing field, and a reader MUST reject a
+  `version_major` it does not implement.
 
 **Change categories.** Keep a Changelog's six types, plus one:
 
@@ -31,30 +41,36 @@ communicated to a reader. The meanings are the format's own:
 Entries state the delta only; the specification itself remains the normative
 text.
 
-**Reading across versions.** A `1.0` reader meeting a `1.1` file skips what it
-does not recognise and reads the rest — with one exception class, flagged
-per-entry as **[strict-reader]**: a relaxation that permits a file `1.0`
-forbade may be refused by a `1.0` reader that enforces the old restriction
-(a conformant choice under the format's error-handling tiers). Writers needing
-maximum reach should avoid those constructs until readers have caught up.
+**Reading across versions.** While in `0.x`, don't: a reader rejects a minor it
+does not implement, and that is the intended behaviour. The entries below still
+distinguish *Clarified* from *Changed*, because the distinction tells an
+implementer whether their existing code was wrong or merely incomplete — but
+neither is safe to skip within `0.x`.
 
 ---
 
-## [Unreleased] — 1.1-beta
+## [Unreleased] — 0.10
 
-**In development.** Version 1.0 remains final and unchanged.
+**In development.**
 
-Version 1.1 collects clarifications and additions arising from the first
-implementation of the standard (issues #8–#16). The analysis behind it, the
-open decisions, and the phased plan are in
+### A note on the numbering
+
+A release was designated `1.0` on 2026-07-09, before any implementation of the
+format existed. That was premature. The first implementation surfaced enough
+genuine problems — and their resolutions broke enough existing behaviour — that
+calling the result a minor bump would have been false: a conformant reader of the
+July release silently isolates every record in some files this version permits.
+
+So the July release is retroactively designated **`0.9`**, and this one is
+**`0.10`**. The format stays in `0.x` until it has survived implementation, and
+`1.0` is reserved for a version that has. More `0.x` rounds are expected.
+
+This is not a compatibility-preserving release, and does not pretend to be:
+`0.10` changes existing behaviour, removes a key, and renames a value. The
+reasoning is in
+[docs/implementation-review-response.md](docs/implementation-review-response.md);
+the round of work that preceded it is in
 [docs/implementation-feedback-analysis.md](docs/implementation-feedback-analysis.md).
-Entries appear here as each change lands, so this section is the precise
-1.0 → 1.1 delta for implementers.
-
-No change in 1.1 alters the **binary** container: not the block frame, not an
-existing block body, not an existing option id, and not the meaning of any field
-a 1.0 file already carries. The JSONL projection has one deprecated key, listed
-below and still accepted on read.
 
 ### Clarified
 
@@ -62,19 +78,19 @@ below and still accepted on read.
   reject a file or discard a session because stored timestamps run backwards,
   and MUST NOT re-sort a `SEQUENCED` session by timestamp — its stored order is
   authoritative. Timestamps order records in exactly one place: as the tie-break
-  between causally concurrent records during a merge. 1.0 demonstrated a
+  between causally concurrent records during a merge. 0.9 demonstrated a
   legitimate inversion in a worked example but never stated the reader's side of
   it. *A reader that validates monotonic timestamps must drop that check.*
 - **The single-trustworthy-clock precondition for `SEQUENCED` binds hint-less
   sessions only**. A session carrying TCP `seq`/`ack` may be sequenced
   however badly its capture clocks disagree; sequencing means "stored in a valid
-  causal order", never "sorted by timestamp". 1.0 said this, but rested the
+  causal order", never "sorted by timestamp". 0.9 said this, but rested the
   scope on a single adjective and was misread.
 - **Reserved bits of the Record `flags` field are ignored on read**, now
   stated as it already was for the File Header and Session `flags` fields. The
   global reserved-fields rule always required this; only the wording differed.
   A bit nonetheless set is *preserved* through a round-trip without being
-  interpreted — the same split between retaining and interpreting that 1.0
+  interpreted — the same split between retaining and interpreting that 0.9
   already applied to unknown option ids.
 - **Unknown Source `kind` values are an isolatable semantic condition**. A
   reader that cannot classify a Source cannot interpret any record or span
@@ -86,14 +102,14 @@ below and still accepted on read.
   readers.*
 - **The `Undecoded` `reason` vocabulary has two recoverability classes**:
   *bytes exist* (`undecodable`, `skipped`) and *hole* (`tcp-gap`, `truncated`).
-  The class, not the word, is what a consumer acts on. 1.0 described the split
+  The class, not the word, is what a consumer acts on. 0.9 described the split
   in prose without naming it as the actionable part.
 - **Each layer has its own offset space, and a decoded stream's is now defined**:
   the concatenation of a participant's decoded record payloads in stored order,
   byte 0 being the first byte of the first such record. Undecoded regions
   contribute nothing, so unlike a transport stream's space it is *not*
-  hole-inclusive. 1.0 defined offsets only for reassembled transport streams,
-  which left `raw → tls-records → http` — a pipeline 1.0 explicitly invites —
+  hole-inclusive. 0.9 defined offsets only for reassembled transport streams,
+  which left `raw → tls-records → http` — a pipeline 0.9 explicitly invites —
   with no defined offset space for its second stage to reference.
   *Implementers doing multi-stage decode: this is the rule you were missing.*
 - **`spans` versus `origin`, not `decoder_id`, discriminates what a file's own
@@ -103,19 +119,18 @@ below and still accepted on read.
   pass-through carries inherited ones forward, so it no longer implies the
   decoder ran in this stage.
 - **`version_minor` describes the file, not the rendering.** A converter
-  projects any file into whichever version of the JSONL face it implements, so a
-  1.0 file rendered by a 1.1 converter still reports `"zipline-payload/1"` while
-  using 1.1 key spellings such as `tick_hz`. A writer stamps the *lowest* minor
-  whose features the file actually uses. *Do not raise a file's version because
-  your tool is newer — the field answers "what does this file contain".*
+  projects any file into whichever version of the JSONL face it implements, so
+  the `format` string reports what the file says rather than what the tool is.
+  *The field answers "what does this file contain", never "which tool wrote this
+  line".*
 - **A one-participant or single-sender session is trivially sequenceable**.
   It has no cross-participant order to get wrong, so it needs no basis at all.
-  Vacuous under 1.0's rule, but worth stating, since the clock precondition
+  Vacuous under 0.9's rule, but worth stating, since the clock precondition
   appeared to bite exactly the one-way UDP case it cannot apply to.
 - **An unrecognised `reason` has unknown recoverability**. A consumer MUST
   NOT assume a class, and in particular MUST NOT treat the range as a hole —
   that would discard bytes that may exist. It follows the reference as for the
-  bytes-exist class and reports the region empty only if nothing is found. 1.0
+  bytes-exist class and reports the region empty only if nothing is found. 0.9
   made the vocabulary open but left this undefined.
 
 ### Added
@@ -126,7 +141,7 @@ below and still accepted on read.
   sequencing a hint-less session. It is advisory: it does not make the order
   checkable, it tells a consumer how far to trust it. A reader MUST NOT reject a
   session for an unrecognised value, or for its absence. *Additive — a new
-  option id, skippable by 1.0 readers.*
+  option id, skippable by 0.9 readers.*
 - **Canonical `Undecoded` reason `skipped`** — a region the decoder
   declined *on purpose*: data it does not care about, or data carrying no
   information, such as a byte-order mark, a padding or a reserved field. It sits
@@ -137,7 +152,7 @@ below and still accepted on read.
   interpreted or call them `undecodable`, asserting a failure that did not
   happen. It also keeps `undecodable` usable as a decoder-quality signal.
   *The vocabulary was already open, so this canonicalises an existing
-  possibility rather than adding a capability; 1.0 readers treat `skipped` as
+  possibility rather than adding a capability; 0.9 readers treat `skipped` as
   any unrecognised reason.*
 - **The JSONL projection's four escapes for unrecognised data**. The
   binary face has always had one universal rule for what a reader does not
@@ -147,7 +162,7 @@ below and still accepted on read.
 
   | Unrecognised | JSONL form |
   |---|---|
-  | option id | `options` array entry *(already in 1.0)* |
+  | option id | `options` array entry *(already in 0.9)* |
   | block type | `"type":"0x0042"` + base64 `"content"` |
   | enum value | the raw number |
   | flag bit | a hex token, e.g. `["psh","0x0020"]` |
@@ -161,8 +176,23 @@ below and still accepted on read.
 
 ### Changed
 
-- **A pass-through transform preserves its input's *layer*, not just its bytes**
-  **[strict-reader]**. 1.0 defined pass-through as carrying no
+- **Version numbering, and what a reader does with it.** Three parts:
+  - **`major` and `minor` are independent integers, compared componentwise** —
+    never one decimal number. `0.10` is the tenth minor and is **greater** than
+    `0.9`. *A parser that reads the `format` string's tail as a float sorts
+    `0.10` below `0.9` and silently accepts a file it must reject.*
+  - **While `version_major` is `0`, a reader MUST reject a `version_minor` it
+    does not implement** — joining the structural-corruption tier alongside an
+    unimplemented `version_major`. This is what makes a breaking `0.x` release
+    detectable instead of silently destructive.
+  - **A writer stamps the version it implements.** The rule that it should
+    compute the *lowest* version whose features a file happens to use is
+    **withdrawn**: a streaming writer cannot satisfy it, since the File Header
+    precedes the content, and it would oblige a writer at, say, `1.67` to carry
+    a feature-to-minor mapping forever — to buy a precision readers derive
+    locally for free.
+- **A pass-through transform preserves its input's *layer*, not just its bytes**.
+  0.9 defined pass-through as carrying no
   `decoder_id`, which silently confined it to raw input and left any transform
   over a decoded file — an annotator, a filter, a re-merge — unexpressible. A
   pass-through now re-emits its input's records with bytes, logical offsets,
@@ -170,7 +200,7 @@ below and still accepted on read.
   the input was at, and re-declares the Decoder Descriptors they reference. The
   input's coverage guarantee then holds of the output without the output
   carrying any `spans`. Decoder Descriptors and Undecoded blocks are no longer
-  restricted to decode-stage files. *A strict 1.0 reader may refuse a file that
+  restricted to decode-stage files. *A strict 0.9 reader may refuse a file that
   carries `decoder_id`s alongside `origin`; the [annotator example](docs/zipline-payload-format.md)
   shows the shape.*
 - **A transform that only adds metadata is a pass-through**, and its
@@ -185,12 +215,12 @@ below and still accepted on read.
   further-up file. Keeping the inherited ids and numbering the immediate input
   around them lets the blocks be copied verbatim.
 - **`SEQUENCED` on a hint-less session requires a sound basis, not specifically
-  a clock** **[strict-reader]**. A single trustworthy clock remains the
+  a clock**. A single trustworthy clock remains the
   common basis; ordering knowledge the format does not model — a server-assigned
   order, an application sequence number, an out-of-band record — now also
   qualifies, with `sequenced_basis` to say which. The producer owns the
   soundness; a reader could never verify the clock claim either. *This permits
-  sequenced multi-party UDP and chat sessions that 1.0 forbade.*
+  sequenced multi-party UDP and chat sessions that 0.9 forbade.*
 - **The specification file is now `docs/zipline-payload-format.md`**,
   renamed from `docs/payload-format.md`: kebab-case, project name included, and
   no version in the filename so the path survives future versions. *A
@@ -215,7 +245,7 @@ below and still accepted on read.
 ### Fixed
 
 - **Four JSONL examples wrote `"time_units":"us"`** — a unit label, where
-  1.0's normative text defines the value as a rate in ticks per second and
+  0.9's normative text defines the value as a rate in ticks per second and
   permits only a number or a decimal string. The examples were non-conformant
   against their own specification, so anything written by copying them was too.
   Corrected to `"tick_hz":1000000`.
@@ -232,9 +262,12 @@ below and still accepted on read.
 
 ---
 
-## [1.0] — 2026-07-09
+## [0.9] — 2026-07-09
 
-The initial specification. Final and stable for implementation and interchange.
+The initial specification, published at the time as **`1.0`** and designated
+final. It was neither: no implementation existed yet, and the first one found
+enough to force a breaking revision. Retroactively renumbered — see the note
+under `0.10` above.
 
 ### Added
 
@@ -268,5 +301,5 @@ The initial specification. Final and stable for implementation and interchange.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v1.0...HEAD
-[1.0]: https://github.com/adamkjonsson/zipline/releases/tag/v1.0
+[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.9...HEAD
+[0.9]: https://github.com/adamkjonsson/zipline/releases/tag/v0.9
