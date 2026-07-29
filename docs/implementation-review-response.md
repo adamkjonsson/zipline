@@ -240,12 +240,36 @@ That said, the review's core point stands and is the reason to act: with SHOULD,
 **absence is meaningless** — "no sound basis" is indistinguishable from "producer
 did not bother".
 
-**Decision: MUST**, justified two-thirds on producer discipline (it forces the
-producer to articulate a basis, which catches the case where there is none) and
-one-third on the `clock` cross-check. The alternative the review offers — drop
-the option and state plainly that `SEQUENCED` is an unverifiable producer
-assertion — is clean and now costs nothing, so it stays on the table as the
-simplicity option.
+**Decision: MUST**, on three grounds, of which the review's own test covers only
+the weakest.
+
+**It is a forensic field, not a runtime signal.** The review asks whether a
+consumer can branch on it, and mostly the answer is no. But the format already
+carries fields that fail that test deliberately — `creator`, `produced_by`,
+`params_digest`. Nobody branches on those either; they exist so that when
+something turns out to be wrong later, it can be explained. `sequenced_basis` is
+in that family. Records in an order that makes no sense are a very different
+investigation depending on whether the producer claimed `clock` (look at capture
+skew) or `protocol` (look at the producer's protocol assumptions) or `external`
+(look outside the file entirely). Judging it as a read-time signal measured it
+against the wrong contract.
+
+**The MUST is a speed bump on the producer.** A writer obliged to fill the field
+in has to decide what the basis *is* at the moment it sets the bit. That is the
+mechanism by which the requirement catches a `SEQUENCED` claim with nothing
+behind it, and it works whether or not any consumer ever reads the value. It also
+states, in the only way a format can, that marking a session `SEQUENCED` is a
+strong assertion rather than a default.
+
+**Absence becomes meaningful**, which is the review's own point and the reason
+SHOULD was not enough: under SHOULD, "no sound basis" and "producer did not
+bother" are the same file.
+
+The `clock` / `SINGLE_CLOCK` cross-check remains as a bonus rather than the
+justification. The alternative the review offers — drop the option and call
+`SEQUENCED` an unverifiable assertion — is rejected: it discards the forensic
+value and removes the speed bump, keeping only the bare bit that prompted the
+complaint.
 
 ### Point 4 — unrecognised `reason`
 
@@ -320,8 +344,10 @@ whose Phases 0–6 are complete.
 - [x] **Versioning** — **decided**: the July 2026 release becomes `0.9`; this work
       releases as `0.10`; the format stays in `0.x` until it has survived more
       than one round with an implementation
-- [ ] **`sequenced_basis`** — MUST *(recommended)* vs drop the option and state
-      that `SEQUENCED` is an unverifiable producer assertion
+- [x] **`sequenced_basis`** — **decided: MUST** on a hint-less `SEQUENCED`
+      session. Justified as a forensic field (the `creator`/`produced_by` family)
+      and as a speed bump that makes a producer confront the claim, not as a
+      read-time signal — see §5
 - [ ] **Test vectors** — in scope for `0.10`, or a follow-up release
 - [ ] **`SPEC-1.1-REVIEW.md`** — commit it (and probably move it to `docs/`) so
       this document's references resolve for anyone reading the repo
@@ -373,6 +399,10 @@ described in.
 - [ ] **Point 3** — `sequenced_basis` becomes MUST for a hint-less `SEQUENCED`
       session; cut `transport` from the vocabulary; state the `clock` /
       `SINGLE_CLOCK` cross-check as the one mechanical check a consumer can run
+- [ ] Say in the spec what the field is *for* — explaining a suspect order after
+      the fact, alongside `creator` and `produced_by` — so it is not read as
+      something a consumer must branch on. Absent that, the next reviewer files
+      the same objection
 - [ ] **Point 4a** — register `reason_class` (`hole` / `bytes`), required whenever
       `reason` is outside the canonical four
 - [ ] **Point 4b** — make the provenance walk explicitly conditional
