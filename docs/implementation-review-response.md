@@ -504,31 +504,31 @@ described in.
 
 ### Phase 9 — The surviving review points
 
-- [ ] **§4 first** — `time_units` hard removal, now that nothing requires the
+- [x] **§4 first** — `time_units` hard removal, now that nothing requires the
       alias; delete the *Deprecated keys* note added in Phase 1 and the
       CHANGELOG's *Deprecated* section
-- [ ] **Point 2** — state that a decoded-layer filter is a decode stage citing its
+- [x] **Point 2** — state that a decoded-layer filter is a decode stage citing its
       input with dropped ranges marked `skipped`, including the note that it
       declares a Decoder Descriptor naming itself; fix the CHANGELOG motivation
-- [ ] **Point 3** — `sequenced_basis` becomes MUST for a hint-less `SEQUENCED`
+- [x] **Point 3** — `sequenced_basis` becomes MUST for a hint-less `SEQUENCED`
       session; cut `transport` from the vocabulary; state the `clock` /
       `SINGLE_CLOCK` cross-check as the one mechanical check a consumer can run
-- [ ] Say in the spec what the field is *for* — explaining a suspect order after
+- [x] Say in the spec what the field is *for* — explaining a suspect order after
       the fact, alongside `creator` and `produced_by` — so it is not read as
       something a consumer must branch on. Absent that, the next reviewer files
       the same objection
-- [ ] **Point 4a** — register `reason_class` (`hole` / `bytes`), required whenever
+- [x] **Point 4a** — register `reason_class` (`hole` / `bytes`), required whenever
       `reason` is outside the canonical four
-- [ ] **Rename `tcp-gap` → `gap`** — four sites in the spec, one in the CHANGELOG.
+- [x] **Rename `tcp-gap` → `gap`** — four sites in the spec, one in the CHANGELOG.
       Do it in the same edit as `reason_class`, since both change what the
       canonical vocabulary is, and state the rationale (a canonical value is the
       generic case; specificity belongs to the open vocabulary)
-- [ ] **Point 4b** — make the provenance walk explicitly conditional
-- [ ] **Point 4c** — require "no bytes exist" and "chain broken" to be reported
+- [x] **Point 4b** — make the provenance walk explicitly conditional
+- [x] **Point 4c** — require "no bytes exist" and "chain broken" to be reported
       distinctly
-- [ ] **Point 4d** — reword the class-versus-word sentence so it stops
+- [x] **Point 4d** — reword the class-versus-word sentence so it stops
       contradicting `skipped`'s justification
-- [ ] Re-check that `reason_class` does not disturb the two-class table or the
+- [x] Re-check that `reason_class` does not disturb the two-class table or the
       coverage-guarantee narrative
 
 ### Phase 10 — Test vectors

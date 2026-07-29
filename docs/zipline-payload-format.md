@@ -496,18 +496,35 @@ causes it. Sequencing never means "sorted by timestamp"; it means "stored in a
 valid causal order", and only a hint-less session is reduced to using timestamps
 to find one.
 
-**Recording the basis.** Because a reader cannot verify the claim, a producer
-that sets `SEQUENCED` on a hint-less session SHOULD also set
-**`sequenced_basis`** (string, Session Descriptor) saying what the order rests
-on. The vocabulary is open; the suggested values are `clock` (one trustworthy
-clock, the `SINGLE_CLOCK` case), `transport` (ordering hints the format models —
-never needed, since such a session is not hint-less), `protocol` (ordering
-carried by the application protocol itself, e.g. a server-assigned sequence),
-and `external` (an order the producer knows out of band). The option is
-advisory: it does not make the order checkable, it tells a consumer how much to
-trust it and what to re-derive if it disagrees. An unrecognised value is simply
-an unknown basis, and a reader MUST NOT treat one as grounds to reject the
-session.
+**Recording the basis.** A producer that sets `SEQUENCED` on a hint-less session
+**MUST** also set **`sequenced_basis`** (string, Session Descriptor), saying what
+the order rests on. The vocabulary is open; the defined values are:
+
+| Value      | The order rests on                                                  |
+|------------|---------------------------------------------------------------------|
+| `clock`    | one trustworthy clock shared by every record — the `SINGLE_CLOCK` case |
+| `protocol` | ordering carried by the application protocol itself, e.g. a server-assigned sequence |
+| `external` | an order the producer knows out of band, recorded nowhere in the file |
+
+The requirement is on the producer, not the consumer: a reader **MUST NOT**
+reject a session for an unrecognised value, and a value it does not know simply
+means an unknown basis.
+
+**What the field is for.** Mostly *not* something a consumer branches on — it is
+an explanation kept for when something turns out to be wrong, in the same family
+as `creator`, `produced_by` and `params_digest`. Records in an order that makes
+no sense are a different investigation depending on whether the producer claimed
+`clock` (look at capture skew), `protocol` (look at the producer's protocol
+assumptions) or `external` (look outside the file entirely). Requiring it also
+puts the obligation where the knowledge is: a producer that must name a basis has
+to decide what the basis *is* at the moment it sets the bit, which is the point —
+`SEQUENCED` is a strong assertion, not a default.
+
+There is one mechanical check it enables. A hint-less session claiming
+`basis = clock` in a file that draws on several `capture` Sources and does **not**
+set [`SINGLE_CLOCK`](#file-header-0x01) is self-contradictory: the session asserts
+one trustworthy clock while the file declines to. A consumer MAY report that, and
+`clock` being the common basis makes it worth checking.
 
 **File-level `SINGLE_CLOCK`.** That clock precondition has a file-wide form, the
 `SINGLE_CLOCK` flag on the [File Header](#file-header-0x01): it asserts that
@@ -639,9 +656,25 @@ This is the space a second decode stage references when it decodes a decoded
 file — `raw → tls-records → http` is two stages, and the second one's `spans`
 name offsets in the first one's output — and the space a layer-preserving
 pass-through is obliged to preserve. Note the consequence: because stored order
-*defines* a decoded stream's offsets, a transform that reorders or re-chunks a
-decoded participant's records changes them, and is therefore not a pass-through
-(see [Conformance](#conformance)).
+*defines* a decoded stream's offsets, a transform that reorders, re-chunks or
+**drops** a decoded participant's records changes them, and is therefore not a
+pass-through (see [Conformance](#conformance)).
+
+**Filtering a decoded stream is a decode stage, not a pass-through.** Dropping
+one decoded record shifts every later offset in that participant's space, so the
+output cannot claim to preserve it. Such a transform instead *creates* a layer:
+its records carry `spans` naming the input ranges they came from, and every
+region it dropped is marked [Undecoded](#undecoded-0x21) with
+`reason = skipped` — a deliberate decision not to carry data forward, which is
+exactly what that reason is for. The coverage guarantee then applies as it does
+to any decode stage, and the filter is answerable for the whole input.
+
+Such a transform declares a [Decoder Descriptor](#decoder-descriptor-0x03) for
+itself, even though it decodes nothing. That reads oddly, and is deliberate: the
+descriptor identifies **whatever produced these records** and pins its
+configuration with `params_digest`, which is precisely what a consumer needs to
+reproduce a filtered file. A filter that names itself `filter/…` is using the
+block as intended.
 
 ### Source Descriptor (which input)
 
@@ -716,13 +749,16 @@ Undecoded — never silently dropped, never both. Both sides name the input
 stream in the input's own id namespace, so the guarantee is checkable stream
 by stream. A consumer can thus distinguish bytes that exist upstream — "a
 message we could not parse" (`reason` = `undecodable`) or "bytes we chose not to
-interpret" (`skipped`) — from "no data here" (`tcp-gap`/`truncated`, the offset
+interpret" (`skipped`) — from "no data here" (`gap`/`truncated`, the offset
 range is a hole with no bytes anywhere), and a re-derivation can target just the
 undecoded ranges. A plain **gap** is simply the no-data case of an Undecoded
 block. (The `undecoded` line in the example below shows one.) The `reason`
 vocabulary is open, but every value sits in one of those two recoverability
-classes; that classification, not the word itself, is what a consumer acts on
-(see [Undecoded](#undecoded-0x21)).
+classes. The **class** determines what a consumer can do about the region —
+whether the bytes are fetchable at all — and is the part it must get right; the
+**word** carries the producer's intent, which a consumer is free to use for its
+own ends, as one counting genuinely unparsed bytes does when it separates
+`undecodable` from `skipped` (see [Undecoded](#undecoded-0x21)).
 
 ### A decoded file, end to end
 
@@ -1179,19 +1215,28 @@ parses both. Offsets are logical 0-based stream offsets in the `source_id`
 input, the same convention used by `spans` (*not* absolute sequence numbers),
 and follow the hole-inclusive contiguity rule (see
 [Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
-Options: `reason` (string, e.g. `undecodable` / `skipped` / `tcp-gap` /
-`truncated`), `decoder_id` (u16, which decoder declined the region).
+Options: `reason` (string, e.g. `undecodable` / `skipped` / `gap` /
+`truncated`), `reason_class` (string, `hole` or `bytes` — required with a
+non-canonical `reason`), `decoder_id` (u16, which decoder declined the region).
 
 `reason` says *why* the region is undecoded. The vocabulary is **open**, but
-every value falls in one of two **recoverability classes**, and the class is the
-only part of it a consumer acts on:
+every value belongs to one of two **recoverability classes**. The class governs
+what a consumer can *do* about the region; the word carries the producer's
+intent, which some consumers use for their own purposes:
 
-| Class           | Meaning                                                                                   | Values                    |
+| Class           | Meaning                                                                                   | Canonical values          |
 |-----------------|-------------------------------------------------------------------------------------------|---------------------------|
 | **bytes exist** | the bytes are present at that span in `source_id`; a consumer MAY follow the reference to fetch them | `undecodable`, `skipped`  |
-| **hole**        | the range has no bytes anywhere upstream — a plain *gap*                                    | `tcp-gap`, `truncated`    |
+| **hole**        | the range has no bytes anywhere upstream — a plain *gap*                                    | `gap`, `truncated`        |
 
 Either way the bytes are not in *this* file.
+
+None of these names a transport. A hole is the same object whether it was found
+from TCP sequence numbers, an SCTP TSN, an RTP sequence number, or an application
+protocol's own counter — so the canonical value is plain **`gap`**, and the
+transport is read from the session's `proto` where it matters. A producer wanting
+to say precisely *how* a hole was detected uses the open vocabulary, which is
+what it is for.
 
 The two bytes-exist values differ in **intent**, not in recoverability.
 `undecodable` means the decoder tried and failed. `skipped` means it declined on
@@ -1204,16 +1249,37 @@ stretch a record's `spans` across bytes it never interpreted or report them
 keeps `undecodable` usable as a decoder-quality signal — a consumer counting
 unparsed bytes should not have deliberate skips folded into the total.
 
-**An unrecognised `reason`** — a later version's value, or another tool's — has
-**unknown** recoverability, and a consumer MUST NOT assume a class. In
-particular it MUST NOT treat the range as a hole, which would discard bytes that
-may well exist. It follows the reference as it would for the bytes-exist class,
-and reports the region as empty only if nothing is found there.
+**A non-canonical `reason` MUST carry `reason_class`** (string, `hole` or
+`bytes`) naming its class. The vocabulary is open precisely so a producer can be
+more specific than the four canonical words; `reason_class` is what keeps that
+freedom from costing the consumer its one actionable fact. The canonical four
+imply their class and need no `reason_class`; if one carries it anyway, it MUST
+agree with the table above.
 
-To recover bytes of the bytes-exist class a consumer walks the provenance chain
-one level at a time — if the referenced span is itself Undecoded in `source_id`,
-it recurses — until it reaches the capture-sourced raw file that holds the actual
-bytes; a missing intermediate file stops recovery there. Crossing a **pass-through** file costs nothing extra: its participants'
+**An unrecognised `reason` with no `reason_class`** is a writer error, and its
+recoverability is **unknown**. A consumer MUST NOT guess a class — in particular
+it MUST NOT assume `hole`, which would silently discard bytes that may well
+exist. It MAY treat the region as bytes-exist and attempt recovery, and it SHOULD
+report the missing `reason_class`.
+
+**Recovering the bytes** — for the bytes-exist class, and only when a consumer
+actually wants them; nothing here obliges a consumer that is merely reading the
+file to walk anything. It walks the provenance chain one level at a time — if the
+referenced span is itself Undecoded in `source_id`, it recurses — until it reaches
+the capture-sourced raw file that holds the actual bytes.
+
+A walk can fail for two reasons, and a consumer **MUST NOT** report them
+identically:
+
+- **No bytes exist.** The chain resolved completely and the region is genuinely
+  empty — a hole, correctly described.
+- **The bytes are unavailable.** The chain broke: an intermediate file named by a
+  `zpf-input` Source is missing, unreadable, or fails its `digest`. Nothing is
+  known about the region's content, and reporting it as empty would assert
+  something the consumer did not establish.
+
+Collapsing the second into the first is the exact silent-data-loss the
+[coverage guarantee](#coverage-honesty-undecoded-blocks) exists to prevent. Crossing a **pass-through** file costs nothing extra: its participants'
 [`origin`](#participant-descriptor-0x11) options map each stream to the
 corresponding input stream, and offsets are preserved, so the same
 `[off_start, off_end)` range resolves unchanged one level further down.
@@ -1335,7 +1401,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0050` | proto            | string     | Session                  | session protocol; well-known values `tcp`/`udp`/`http`/`tls`/`irc`/`dns`, other lowercase values permitted (unrecognized = opaque) |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
-| `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; open vocabulary, suggested `clock`/`transport`/`protocol`/`external` (see [Sequenced files](#sequenced-files-precomputed-order)) |
+| `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; **MUST** be present on such a session; open vocabulary, defined values `clock`/`protocol`/`external` (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick (recommended spellings: see [Participant Descriptor](#participant-descriptor-0x11)); **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
@@ -1347,7 +1413,8 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes were built from (see below)          |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which Decoder Descriptor produced/declined this record/region |
 | `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
-| `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`tcp-gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
+| `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
+| `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical four, and MUST agree with the class if it accompanies one of them |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 | `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
@@ -1569,15 +1636,19 @@ a session with no causal hints (no TCP `seq`/`ack` — e.g. chat or one-way UDP)
 the producer MUST NOT set SEQUENCED without a **sound basis** for the order it
 stores: a single trustworthy clock shared by every record in the session, or
 ordering knowledge this format does not model (see
-[Sequenced files](#sequenced-files-precomputed-order)), and it SHOULD record
+[Sequenced files](#sequenced-files-precomputed-order)), and it **MUST** record
 which via `sequenced_basis`. A session with one participant, or with only one
 sender, meets this trivially. The File Header `flags` **SINGLE_CLOCK** bit is the
 file-wide assertion of the clock property (timestamps globally comparable, no
 inter-source skew); when set it supplies that basis for every hint-less session,
 and a downstream tool may rely on it to sequence streams it regroups. The basis
 requirement binds **hint-less sessions only** — a session carrying `seq`/`ack`
-may be sequenced whatever its timestamps do. A reader MUST NOT reject a session
-for carrying an unrecognised `sequenced_basis`, or for carrying none.
+may be sequenced whatever its timestamps do, and needs no `sequenced_basis`.
+
+A **missing** `sequenced_basis` on a hint-less `SEQUENCED` session is a semantic
+violation, isolatable like any other. A reader MUST NOT reject a session merely
+for carrying a `sequenced_basis` value it does not recognise — the vocabulary is
+open, and an unknown value means an unknown basis, not an invalid one.
 
 **Timestamps are not an ordering invariant.** Record timestamps are **not**
 required to be non-decreasing in stored order, in any session, sequenced or not.
@@ -1743,15 +1814,9 @@ binary name (one further key, deprecated, is listed below):
 
 (`proto` is **not** an alias — its JSON key equals its option name.)
 
-**Deprecated keys.** The File Header rate is the key **`tick_hz`**, carrying the
-same number as the binary field — the general rule, with no alias. Version 1.0
-also defined the alias `time_units` for it, which is **deprecated**: a reader
-MUST accept `time_units` carrying a number and treat it as `tick_hz`, and a
-writer MUST NOT emit it. (A `time_units` carrying a *unit name* such as `"us"`
-was never valid — the value is a rate in ticks per second, not a unit label.
-Some 1.0-era examples showed that form in error.) The key is removed in a later
-version; until then it is the one deprecated key, and nothing else in the
-projection has ever changed name.
+The File Header rate is the key **`tick_hz`**, carrying the same number as the
+binary field. It is not an alias and never appears in the table above: the
+general naming rule covers it.
 
 **Value encoding.**
 
