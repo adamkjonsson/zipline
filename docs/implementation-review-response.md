@@ -465,38 +465,42 @@ whose Phases 0–6 are complete.
 Do this first and in one commit: it changes the frame every other item is
 described in.
 
-- [ ] Spec title and status banner — this is `0.10`; say plainly that `0.x` is a
+- [x] Spec title and status banner — this is `0.10`; say plainly that `0.x` is a
       design in progress, that any minor may break readers, and that `1.0` is
       reserved for a specification that has survived implementation
-- [ ] *File Header* — `version_major` row becomes `0`, `version_minor` becomes
+- [x] *File Header* — `version_major` row becomes `0`, `version_minor` becomes
       `10`; write the two-regime policy from §3; **delete** the lowest-minor
       paragraph added in Phase 5
-- [ ] Add the `0.x` reader rule: while `version_major` is `0`, a reader MUST
+- [x] Add the `0.x` reader rule: while `version_major` is `0`, a reader MUST
       reject a `version_minor` it does not implement. This is what replaces the
       major-bump discriminator, and without it review point 1 is unfixed
-- [ ] Add the componentwise-comparison rule for the `format` string — `major` and
+- [x] Add the componentwise-comparison rule for the `format` string — `major` and
       `minor` are independent integers, never a decimal number (§3). `0.10 > 0.9`
-- [ ] Keep and simplify the "describes the file, not the rendering" sentence
-- [ ] Examples — every `format` string becomes `"zipline-payload/0.10"`,
+- [x] Keep and simplify the "describes the file, not the rendering" sentence
+- [x] Examples — every `format` string becomes `"zipline-payload/0.10"`,
       including the annotator example, since in `0.x` the stamp is the writer's
       version rather than a per-file feature floor
-- [ ] Byte-level worked example — `version_major` and `version_minor` bytes both
+- [x] Byte-level worked example — `version_major` and `version_minor` bytes both
       change (`01 00`/`00 00` → `00 00`/`0A 00`); check the annotation text and
       that no length or offset is affected (none should be — both are `u16`)
-- [ ] CHANGELOG — `[Unreleased] — 1.1-beta` becomes `[0.10]` with a date; the
+- [x] CHANGELOG — `[Unreleased] — 1.1-beta` becomes `[0.10]` with a date; the
       existing `[1.0] — 2026-07-09` becomes `[0.9]`; rewrite *Conventions*
       (two-regime policy, delete `[strict-reader]`), delete the binary-container
       compatibility preamble, and state openly that 1.0 was declared final after
       zero implementations
-- [ ] README status section — no production-readiness claim while in `0.x`; its
+- [x] README status section — no production-readiness claim while in `0.x`; its
       current text still says 1.0 is final and 1.1 is in beta, both now wrong
-- [ ] README *Documentation* list — add the review and this response alongside
+- [x] README *Documentation* list — add the review and this response alongside
       the specification and CHANGELOG, so the record of how `0.10` was arrived at
       is discoverable
-- [ ] Git tags — add `v0.9` at `bc4bcfb`, delete the `v1.0` tag locally and on
-      the remote, and tag `v0.10` at the release commit. **Confirm before
-      deleting the remote tag**
-- [ ] Add a note to [implementation-feedback-analysis.md](implementation-feedback-analysis.md)
+- [x] Git tag `v0.9` created at `bc4bcfb`, annotated with why the renumbering
+      happened
+- [ ] **Delete the `v1.0` tag, locally and on the remote** — not done, needs
+      confirmation. It currently points at the same commit as `v0.9`, so until it
+      goes there are two names for one release, one of them claiming a version
+      that no longer exists. `git tag -d v1.0 && git push origin :refs/tags/v1.0`
+- [ ] Tag `v0.10` at the release commit — Phase 11, not now
+- [x] Add a note to [implementation-feedback-analysis.md](implementation-feedback-analysis.md)
       recording that its "v1.0 → v1.1" framing was renumbered to "0.9 → 1.0", and
       that its Phase 5 release steps are superseded
 

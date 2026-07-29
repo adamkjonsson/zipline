@@ -1,23 +1,26 @@
-# Zipline Payload Format (v1.1-beta)
+# Zipline Payload Format (v0.10)
 
-> Status: **version 1.1-beta** — in development. **Version 1.0 remains final and
-> unchanged**; every conformant 1.0 file stays valid under 1.1 and always will.
-> 1.1 collects clarifications and additions arising from the first
-> implementation (see [CHANGELOG.md](../CHANGELOG.md) for the precise list, and
-> [implementation-feedback-analysis.md](implementation-feedback-analysis.md) for
-> the reasoning). It is a **minor** bump: it adds blocks/options that old readers
-> safely skip, pins down behaviour 1.0 left undefined, and relaxes some writer
-> restrictions — it never changes the frame, an existing block body, or the
-> meaning of a field a 1.0 file already carries (see
+> Status: **version 0.10** — a design in progress. **`0.x` means exactly what it
+> says**: any minor release may change anything, including in ways that break
+> existing readers. Do not build production on it. `1.0` is reserved for a
+> specification that has survived implementation, and this one has not yet: `0.10`
+> is the first revision informed by a real implementation, and more are expected.
+>
+> **On the renumbering.** A release was designated `1.0` in July 2026, before any
+> implementation existed. That was premature, and the work that followed —
+> collected here — breaks it. Rather than disguise that as a minor bump, the July
+> release is retroactively designated **`0.9`** and this one is **`0.10`**. Note
+> `0.10` is *greater* than `0.9`: the components are independent integers, never a
+> decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
+> [implementation-review-response.md](implementation-review-response.md) for the
+> reasoning.
+>
+> While `version_major` is `0`, a reader **MUST reject** a `version_minor` it does
+> not implement — nothing is guaranteed to survive a `0.x` bump (see
 > [File Header](#file-header-0x01)).
 >
-> **What beta means.** The wording here may still change; do not treat
-> 1.1-specific text as settled for interchange. Implement 1.0 for production and
-> track this document for what is coming. Beta status lives in this document
-> only — it is not representable on the wire, so a file claiming minor `1`
-> asserts 1.1, beta or not. This
-> document specifies the **Zipline Payload Format** (`.zpf`), a file format for
-> the *payload* output of a network sessionizer: the bytes that flow between
+> This document specifies the **Zipline Payload Format** (`.zpf`), a file format
+> for the *payload* output of a network sessionizer: the bytes that flow between
 > endpoints once packets have been reassembled into sessions, plus the metadata
 > needed to consume them. The format is tool-independent — any program can read or
 > write it.
@@ -192,7 +195,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.10","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -358,7 +361,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.10","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -435,7 +438,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.10","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -734,7 +737,7 @@ bytes it could not parse — its ids read in `raw.zpf`'s namespace, coincidental
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.10","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -765,11 +768,6 @@ layer** — records keep their `decoder_id` and `content_type` but carry no `spa
 of their own, provenance is the participants' `origin`, and the Undecoded block
 rides along unchanged.
 
-This is the one example in this document that declares `1.1`: a pass-through
-carrying a decoded layer is a 1.1 construct, so the file cannot claim `1.0`. The
-others use nothing beyond 1.0 and say so, even though they are rendered with 1.1
-key spellings.
-
 Note the two Sources. `decoded.zpf` is the immediate input, which `origin` names
 and the records reference. `raw.zpf` is declared as well — not as a second input,
 but because the inherited `undecoded` line has always been a statement about
@@ -777,7 +775,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/1.1","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.10","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -867,8 +865,8 @@ MUST be the first block in the file. Body:
 | Field           | Type | Value                                                        |
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
-| `version_major` | u16  | `1` for this document                                        |
-| `version_minor` | u16  | `1` for this document; `0` is version 1.0, and a reader of this version MUST still accept it |
+| `version_major` | u16  | `0` for this document                                        |
+| `version_minor` | u16  | `10` for this document                                       |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -878,23 +876,37 @@ byte-order probe: the container is little-endian by definition and nothing in a
 file can change that. Tools sniff a ZPF file by the same four bytes. (The
 byte-swapped pattern `5A 49 50 46` marks a byte-swapped — invalid — file, and
 recognising it makes for a useful diagnostic message.)
-Suggested file extension `.zpf`. A **minor** version bump only adds
-blocks/options (old readers keep working); a **major** bump may break frame/body
-layout.
+Suggested file extension `.zpf`.
 
-**Which minor a writer stamps.** `version_minor` describes the *file*, not the
-writer: a writer SHOULD emit the **lowest** minor whose features the file
-actually uses — a file using nothing beyond 1.0 carries `0` even if written by a
-1.1 tool. This keeps the field a useful hint about what a reader must understand.
-It is only ever a hint: a reader MUST NOT gate parsing on it, because the
-skip-what-you-don't-know rules already make an unknown block or option safe (see
-[Conformance](#conformance)).
+**Version numbering.** `version_major` and `version_minor` are independent
+non-negative integers, compared **componentwise**. They are never a decimal
+number: `0.10` is the tenth minor and is **greater** than `0.9`. A writer stamps
+the version it implements — there is no obligation to compute the lowest version
+whose features the file happens to use, which a streaming writer could not do
+anyway, since the File Header is written before the file's content is known.
 
-It describes the file, not the *rendering*: a converter projects any file into
-whichever version of the [JSONL face](#jsonl--binary-field-mapping) it
-implements, so a 1.0 file rendered by a 1.1 converter still reports
-`"zipline-payload/1"` while using 1.1 key spellings. The version answers "what
-does this file contain", never "which tool wrote this line".
+The compatibility rules have **two regimes**:
+
+- **While `version_major` is `0`** — the current regime — anything may change
+  between minors, including in ways that break readers. The pair `(0, minor)` is
+  the compatibility identity: a reader **MUST reject** a file whose
+  `version_minor` it does not implement, exactly as it rejects an unknown
+  `version_major`. Nothing is guaranteed to survive a `0.x` bump.
+- **From `1.0` onward**, a **minor** bump only adds blocks and options, and old
+  readers keep working — guaranteed by the skip rules, not by inspection. A
+  reader **MUST NOT** gate parsing on `version_minor`; it discovers what it does
+  not know locally, as it meets it. Anything that would break a reader requires a
+  **major** bump, which may also change frame or body layout, and which a reader
+  MUST reject if it does not implement it.
+
+`version_minor` therefore stops mattering to readers at `1.0`. That transition is
+what `1.0` is *for*.
+
+**The version describes the file, not the rendering.** A converter projects any
+file into whichever version of the [JSONL face](#jsonl--binary-field-mapping) it
+implements, so the `format` string reports what the file says, not what the tool
+is. The version answers "what does this file contain", never "which tool wrote
+this line".
 
 **Reconstructing wall time.** A record's `timestamp` is in `tick_hz` ticks from
 the origin `time_epoch` (itself ticks since the Unix epoch, default 0). The
@@ -1602,7 +1614,9 @@ readers in two tiers, split by what the violation poisons:
 - **Structural corruption — the reader MUST reject the file.** When the byte
   stream itself can no longer be trusted, isolating a smaller unit is unsound.
   This tier: a bad or missing [magic](#file-header-0x01); a File Header absent
-  or not first; a `version_major` the reader does not implement;
+  or not first; a `version_major` the reader does not implement, **or — while
+  `version_major` is `0` — a `version_minor` it does not implement** (see
+  [File Header](#file-header-0x01));
   `tick_hz = 0`; a block `length` that is not a multiple of 4; a `payload_len`
   or TLV `len` that overruns its block. One condition that looks structural is not:
   running out of bytes at the **end of the stream** is *truncation*, an
@@ -1720,7 +1734,7 @@ binary name (one further key, deprecated, is listed below):
 
 | JSONL key    | Binary field / option                                            |
 |--------------|------------------------------------------------------------------|
-| `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/1"` ⇒ major 1, minor 0) |
+| `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/1"` ⇒ major 1, minor 0). Each component is an independent integer — parse them separately and compare componentwise, **never** as one decimal number, or `0.10` sorts below `0.9` |
 | `ts`         | `timestamp` (Record)                                            |
 | `pid`        | `participant_id` (block body, each `spans` entry, and `origin`)  |
 | `key`        | `flow_key` (Session)                                            |
@@ -1849,8 +1863,8 @@ Offsets are hex; each line is annotated.
 0002  00 00                    reserved
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
-000C  01 00                    version_major = 1
-000E  00 00                    version_minor = 0
+000C  00 00                    version_major = 0
+000E  0A 00                    version_minor = 10   (0.10, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────

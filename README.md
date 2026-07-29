@@ -51,15 +51,18 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 1.0 is final.** The format is stable for implementation and
-interchange; future changes arrive only as version bumps (minor bumps add
-blocks/options that old readers safely skip). Implement 1.0 for production.
+**Version 0.10 — a design in progress. Not ready for production.**
 
-**Version 1.1 is in beta**, collecting clarifications and additions from the
-first implementation. It is a minor bump — every conformant 1.0 file stays valid
-— but its wording is not yet settled. See [CHANGELOG.md](CHANGELOG.md) for what
-changes and [docs/implementation-feedback-analysis.md](docs/implementation-feedback-analysis.md)
-for why.
+`0.x` means what it says: any minor release may change anything, including in
+ways that break existing readers. A reader must reject a `version_minor` it does
+not implement.
+
+A release was designated `1.0` in July 2026, before any implementation existed.
+That was premature — the first implementation found enough to force a breaking
+revision — so it is retroactively designated `0.9`, and this work is `0.10`.
+(`0.10` follows `0.9`; the components are integers, not decimals.) `1.0` is
+reserved for a specification that has survived implementation. More `0.x` rounds
+are expected.
 
 ## Documentation
 
@@ -68,6 +71,17 @@ for why.
   ordering, and the raw → decoded derivation workflow.
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version, and what an
   implementer has to do about it.
+
+How the current version was arrived at, for anyone wanting the reasoning behind
+a rule rather than the rule itself:
+
+- [docs/implementation-feedback-analysis.md](docs/implementation-feedback-analysis.md)
+  — assessment of the first implementation's findings, and the plan that
+  followed.
+- [docs/SPEC-1.1-REVIEW.md](docs/SPEC-1.1-REVIEW.md) — a review of that work from
+  the implementation project, kept verbatim.
+- [docs/implementation-review-response.md](docs/implementation-review-response.md)
+  — the response, including the decision to renumber.
 
 ## License
 
