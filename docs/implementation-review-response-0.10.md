@@ -21,7 +21,7 @@ three into §4, since `0.11` takes no new features.
 | D6 | Alias table illustrates with the retracted `"zipline-payload/1"` | **Yes** | Swap the example | XS |
 | — | Positional decoded offsets are O(k) for random access | **Yes** | Add the note; recommend prefix sums on a first pass | XS |
 | D2 | The merge has no defined behaviour on a hint-less session | **Half** — the k-way structure determines it; it is never *stated*, and step 4's skew clause is unactionable | State the stability invariant; fix step 4 | S |
-| D3 | A version transcode is not expressible | **Half** — a re-stamp *is* a pass-through; a *normalising* transcode is not, and the guidance is missing | Permit normalisation; state `0.x` disposability; **reject** a third derivation kind | M |
+| D3 | A version transcode is not expressible | **Half** — a re-stamp *is* a pass-through; a *normalising* transcode is not, and the guidance is missing | `0.11`: state `0.x` disposability. `0.12`: the normalisation permission. **Reject** a third derivation kind | M |
 | D5 | `zpf-input` conflates two relationships | **Diagnosis yes, remedy no** | Fix the *Conformance* sentence rather than add an option | XS |
 | — | Coverage unverifiable for a decoded pass-through | **Yes** | Confirms the input-extents item — deferred to `0.12`, since it is a new option | (deferred) |
 
@@ -206,16 +206,31 @@ Phases 0–11 are complete. Absorbs that document's *Carried to `0.11`* items.
       the carried items it is a feature and waits. `transform_params_digest` goes
       with it.
 
-- [ ] **Transcode: one judgment call inside that rule.** Two halves, and only the
-      first is clearly corrective:
-      - *Stating that `0.x` files are disposable and no upgrade path is
-        guaranteed* is pure documentation. **In `0.11`.**
-      - *Permitting a pass-through to normalise constructs the new version
-        renamed* adds no surface — it lifts a restriction rather than adding a
-        construct — but it is a normative relaxation, so it sits on the line.
-        **Recommended for `0.11`**, because without it every `0.9` file is
-        permanently stranded and reject-unknown-minor makes that worse at each
-        bump. Easy to pull out if you would rather hold it
+- [x] **Transcode** — **decided: only the documentation half lands in `0.11`.**
+      The CHANGELOG states that `0.x` files are disposable and no upgrade path is
+      guaranteed. The *permission* — letting a pass-through performing a version
+      upgrade normalise what the new version changed — is a normative relaxation
+      and moves to `0.12` with the other deferred work.
+
+      Consequence, stated plainly rather than left implicit: **`0.11` ships
+      having identified that every `0.9` file is stranded and having fixed only
+      the silence, not the stranding.** That is the deliberate cost of holding
+      the line at corrections.
+
+      *Finding to carry into `0.12`, which reshapes the permission.* Working out
+      what a `0.9` → `0.10` transcode must actually do shows it is not only
+      renames. Three changes are needed: `tcp-gap` → `gap`; or keeping
+      `tcp-gap` and adding `reason_class: hole`, since it is no longer canonical;
+      and **supplying `sequenced_basis` on a hint-less `SEQUENCED` session**,
+      which `0.10` requires and `0.9` never recorded. The third is resolvable —
+      the transcoder may honestly write `clock`, because `0.9`'s own rule
+      required a single trustworthy clock for exactly that case — but it means
+      *adding* a required option, not just renaming one. So the permission must
+      read something like: *may supply an option the new version requires, where
+      the old version's own rules determine its value*. That clause is what keeps
+      it from becoming a licence to invent data. Scoping it "to renames only", as
+      §3 previously said, would have left those sessions untranscodable and the
+      guidance half-useless
 
 ### Phase 13 — The review's contradictions and omissions
 
@@ -244,19 +259,14 @@ Small, independent, and all safe to land together.
       run backwards across participants, which a merge must interleave without
       reordering either participant
 
-### Phase 14 — Transcode guidance
+### Phase 14 — The disposability statement
 
-Corrective, per the Phase 12 judgment call. Nothing here adds surface.
+Reduced to one item by the Phase 12 decision; the rest moved to §4.
 
-- [ ] State that a version upgrade **is** a pass-through — the mechanism already
-      exists and only the guidance was missing
-- [ ] The licensed exception to "unchanged": a pass-through performing a version
-      upgrade MAY normalise constructs the new version renamed. Scope it tightly,
-      to renames only, or it becomes a hole in the preservation obligation
-- [ ] Note the id-reminting cost explicitly — a pass-through mints fresh ids and
-      maps them with `origin`, so external references to the old file's session
-      ids break. That is the real price of this route and it is currently unsaid
-- [ ] CHANGELOG: `0.x` files are disposable and no upgrade path is guaranteed
+- [ ] CHANGELOG: `0.x` files are disposable and no upgrade path between `0.x`
+      versions is guaranteed — regenerate from the capture instead. Say it in
+      *Conventions*, beside the rule that a reader rejects a `version_minor` it
+      does not implement, since that rule is what makes it true
 
 ### Phase 15 — Vectors and release
 
@@ -284,6 +294,15 @@ Everything that adds surface. Each is recorded with its reasoning above or in th
   is inherited by assertion. A new option, so it waits.
 - **`transform_params_digest`** on the File Header, so a filter, reordering stage
   or merge can pin its own configuration. A new option, so it waits.
+- **The version-upgrade permission.** A pass-through performing a version upgrade
+  MAY normalise what the new version changed. It must cover more than renames —
+  see the Phase 12 finding: a `0.9` → `0.10` transcode also has to *supply*
+  `sequenced_basis` on a hint-less `SEQUENCED` session, so the rule needs a
+  clause like *may supply an option the new version requires, where the old
+  version's own rules determine its value*. Also record the id-reminting cost,
+  which is currently unsaid: a pass-through mints fresh ids and maps them with
+  `origin`, so external references to the old file's session ids break. A
+  normative relaxation, so it waits.
 - **Decrypted tunnels** — the offset space keyed on what a stream *is* rather
   than which stage produced it. Needs its three open questions settled before any
   wording: whether a decode stage may mint sessions unrelated to its input's;
