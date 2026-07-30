@@ -649,7 +649,66 @@ vector(
     ],
 )
 
+vector(
+    "hintless-merge-backwards-ts", "accept",
+    "A hint-less session with no seq/ack, whose timestamps run backwards "
+    "ACROSS participants. Every record is concurrent, so the whole order is "
+    "the merge's timestamp tie-break -- but each participant's own records "
+    "keep their stored order. A reader that rejects on the inversion, or that "
+    "re-sorts one participant's records, fails.",
+    "Merge algorithm -- stability",
+    [
+        file_header(),
+        source(1, 0, [o_uri("chat.pcap")]),
+        session(8, [o_proto("irc")]),
+        participant(8, 0, [o_endpoint("alice")]),
+        participant(8, 1, [o_endpoint("bob")]),
+        # alice: ts 2000 then 2100 (in order). bob: ts 1900 -- earlier than
+        # alice's first, so the interleaving is not stored order.
+        record(8, 0, 1, 2000, b"a1"),
+        record(8, 1, 1, 1900, b"b1"),
+        record(8, 0, 1, 2100, b"a2"),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
+        {"type": "session", "session_id": 8, "proto": "irc"},
+        {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["alice"]},
+        {"type": "participant", "session_id": 8, "pid": 1, "endpoint": ["bob"]},
+        {"type": "record", "session_id": 8, "sender_pid": 0, "source_id": 1,
+         "ts": 2000, "payload": b64(b"a1")},
+        {"type": "record", "session_id": 8, "sender_pid": 1, "source_id": 1,
+         "ts": 1900, "payload": b64(b"b1")},
+        {"type": "record", "session_id": 8, "sender_pid": 0, "source_id": 1,
+         "ts": 2100, "payload": b64(b"a2")},
+        {"type": "end"},
+    ],
+)
+
 # --- negative: the reject tier --------------------------------------------
+
+vector(
+    "isolate-sequenced-no-basis", "isolate",
+    "A hint-less session marked SEQUENCED with no sequenced_basis. Recording "
+    "the basis is unconditional -- the trivially-sound cases write `trivial` "
+    "rather than omitting it -- so this file is semantically invalid.",
+    "Sequenced files (precomputed order)",
+    [
+        file_header(),
+        source(1, 0, [o_uri("chat.pcap")]),
+        session(8, [o_proto("irc"), o_sess_flags(0x0001)]),
+        participant(8, 0, [o_endpoint("alice")]),
+        record(8, 0, 1, 2000, b"hi"),
+        end_block(),
+    ],
+    expect="MAY reject the file, or isolate the session. The check cannot fire "
+           "at the Session Descriptor alone in the general case, but it can "
+           "here: SEQUENCED is set, the session carries no seq/ack, and no "
+           "sequenced_basis accompanies the flag.",
+)
+
+
 
 vector(
     "reject-bad-magic", "reject",

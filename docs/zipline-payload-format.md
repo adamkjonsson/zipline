@@ -294,12 +294,30 @@ OUTPUT: one interleaved, causally-consistent sequence
 3. Topologically sort the resulting DAG.
 
 4. Where the topo order is free (concurrent records with no causal edge
-   between them), break ties by timestamp; if clocks are known-skewed,
-   fall back to round-robin / source order.
+   between them), break ties by timestamp.
 ```
 
 Step 2 is the payoff — it stitches the two separately-captured directions
 together on causality rather than the skew-prone clock.
+
+**The merge never reorders one participant's records against each other.** Step
+1 takes each participant's records in file order and nothing later disturbs it:
+the merge is a k-way interleaving of already-sorted streams, so step 4's
+timestamp tie-break chooses only *between* participants. This matters most where
+there is least to go on — a **hint-less** session has no causal edges at all, so
+every record is concurrent and the whole order is step 4. Even there, a
+participant's own records keep their stored order, and a timestamp that runs
+backwards within one participant changes nothing. The merge is *stable* with
+respect to stored order.
+
+**A producer computing a sequenced order MAY choose a different tie-break** —
+round-robin, source order, anything deterministic — if it knows the clocks are
+unreliable, and it says so with
+[`sequenced_basis`](#sequenced-files-precomputed-order). That choice belongs to
+the producer, which knows how the capture was taken. A **reader** cannot make
+it: skew is not a property a file asserts, and the absence of
+[`SINGLE_CLOCK`](#file-header-0x01) says nothing either way. So a reader
+breaking ties always uses the timestamp.
 
 **Cost, and why a reader rarely pays it in full.** Stated naively, step 2 is
 O(N·M) per session — every record weighed against every peer record — plus the
@@ -478,12 +496,14 @@ has a **sound basis** for the order it stores. A single trustworthy clock is the
 common basis, but not the only one: a producer may hold ordering knowledge this
 format does not model — a chat server that assigns its own total order, an
 application-layer sequence number, an ordering recorded out of band. Two cases
-are sound trivially, with no basis needed at all: a session with **one
-participant** (a one-way UDP feed), and one where **only one participant ever
-sends**, since neither has a cross-participant order to get wrong. The producer
-owns the soundness of its claim; a reader cannot check it, which is why the
-producer SHOULD say what the basis was — see
-[`sequenced_basis`](#tlv-option-framing--id-registry) below.
+meet the soundness bar **trivially**: a session with **one participant** (a
+one-way UDP feed), and one where **only one participant ever sends**, since
+neither has a cross-participant order to get wrong.
+
+Trivially sound is still a basis, and it is still recorded. The producer owns
+the soundness of its claim and a reader cannot check it, so the producer
+**MUST** say what the claim rests on — including when the answer is "nothing to
+get wrong". See [`sequenced_basis`](#tlv-option-framing--id-registry) below.
 
 **The basis requirement applies to hint-less sessions only.** A session *with*
 causal hints has **no** timestamp requirement whatsoever: its sequenced order is
@@ -505,6 +525,20 @@ the order rests on. The vocabulary is open; the defined values are:
 | `clock`    | one trustworthy clock shared by every record — the `SINGLE_CLOCK` case |
 | `protocol` | ordering carried by the application protocol itself, e.g. a server-assigned sequence |
 | `external` | an order the producer knows out of band, recorded nowhere in the file |
+| `trivial`  | nothing to get wrong — one participant, or only one that ever sends |
+
+**Recording is unconditional; soundness may be trivial.** These are two
+requirements and they are easy to conflate. A hint-less `SEQUENCED` session
+always carries `sequenced_basis`, whatever the order rests on; `trivial` is what
+a producer writes when the answer is that there was never anything to get wrong.
+
+Keeping the recording unconditional is what makes the rule decidable at the
+moment it must be applied. `SEQUENCED` is written on the Session Descriptor,
+which [declare-on-first-use](#declaration-order-declare-on-first-use) places
+*before* the session's records — so a streaming producer cannot yet know whether
+only one participant will ever send. It can always know what it is relying on.
+A producer that cannot justify triviality yet simply is not relying on it, and
+records the basis it *is* relying on.
 
 The requirement is on the producer, not the consumer: a reader **MUST NOT**
 reject a session for an unrecognised value, and a value it does not know simply
@@ -659,6 +693,14 @@ Record *k* of a participant occupies
 participant's records in stored order. Nothing else states this, so a consumer
 resolving a decoded record — to a range in its own file, or one level down —
 computes it that way.
+
+*Cost.* Forward reading pays nothing: one running counter per participant. But
+resolving a single record's range **without** reading from the start costs O(k)
+in that participant's preceding records, and since records interleave across
+participants there is no shortcut. A reader that needs random access should build
+the per-participant prefix sums on a first pass and keep them. A
+[random-access index](#possible-future-extensions) would make that cheaper, and
+is not part of this version.
 
 This is the space a second decode stage references when it decodes a decoded
 file — `raw → tls-records → http` is two stages, and the second one's `spans`
@@ -1445,7 +1487,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0050` | proto            | string     | Session                  | session protocol; well-known values `tcp`/`udp`/`http`/`tls`/`irc`/`dns`, other lowercase values permitted (unrecognized = opaque) |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
-| `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; **MUST** be present on such a session; open vocabulary, defined values `clock`/`protocol`/`external` (see [Sequenced files](#sequenced-files-precomputed-order)) |
+| `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; **MUST** be present on such a session; open vocabulary, defined values `clock`/`protocol`/`external`/`trivial` (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick (recommended spellings: see [Participant Descriptor](#participant-descriptor-0x11)); **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
@@ -1621,6 +1663,15 @@ session, TLS-then-HTTP on another). Every **derived** file (either kind) MUST
 declare each of its input `.zpf`s as a `zpf-input` Source and set the File Header
 `produced_by`/`produced_at`.
 
+**Not every `zpf-input` Source is an input.** A file may also declare one so that
+an *inherited* reference still resolves — a pass-through carrying Undecoded
+blocks that name a file further up the chain does exactly this (see the
+[annotator example](#annotating-a-decoded-file)). The two are told apart by what
+points at them: a file's **immediate inputs** are the Sources its participants'
+`origin` options name, for a pass-through, or its records' `spans` name, for a
+decode stage. Anything else declared as `zpf-input` is there to resolve a
+reference, not because this file was derived from it.
+
 - A **raw** record carries no `decoder_id`, and its `source_id`/`spans` reference
   a `capture` Source; it appears only in a raw file. TCP raw records SHOULD carry
   `seq_start` (and `ack` where known); TCP participants **MUST** carry
@@ -1682,7 +1733,8 @@ stores: a single trustworthy clock shared by every record in the session, or
 ordering knowledge this format does not model (see
 [Sequenced files](#sequenced-files-precomputed-order)), and it **MUST** record
 which via `sequenced_basis`. A session with one participant, or with only one
-sender, meets this trivially. The File Header `flags` **SINGLE_CLOCK** bit is the
+sender, meets the *soundness* bar trivially and records `trivial`; the recording
+requirement itself has no exemption. The File Header `flags` **SINGLE_CLOCK** bit is the
 file-wide assertion of the clock property (timestamps globally comparable, no
 inter-source skew); when set it supplies that basis for every hint-less session,
 and a downstream tool may rely on it to sequence streams it regroups. The basis
@@ -1849,7 +1901,7 @@ binary name (one further key, deprecated, is listed below):
 
 | JSONL key    | Binary field / option                                            |
 |--------------|------------------------------------------------------------------|
-| `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/1"` ⇒ major 1, minor 0). Each component is an independent integer — parse them separately and compare componentwise, **never** as one decimal number, or `0.10` sorts below `0.9` |
+| `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/2"` would be major 2, minor 0). Each component is an independent integer — parse them separately and compare componentwise, **never** as one decimal number, or `0.10` sorts below `0.9` |
 | `ts`         | `timestamp` (Record)                                            |
 | `pid`        | `participant_id` (block body, each `spans` entry, and `origin`)  |
 | `key`        | `flow_key` (Session)                                            |

@@ -104,6 +104,7 @@ naive implementation most often fails by treating extension as corruption.
 | `undecoded-skipped` | `reason = skipped` for a deliberately-declined region (a BOM). |
 | `undecoded-reason-class` | A non-canonical `reason` carrying the required `reason_class`. |
 | `sequenced-basis` | A hint-less `SEQUENCED` session with its mandatory `sequenced_basis`. |
+| `hintless-merge-backwards-ts` | A hint-less session whose timestamps run backwards *across* participants. Every record is concurrent, so the whole order is the merge's tie-break — but each participant's own records keep stored order. A reader that rejects, or re-sorts within a participant, fails. |
 | `reordered-decoded` | A stage that reorders decoded records without decoding them — a decode stage, since stored order defines the offsets. **Its `spans` run downward against stored order**, which a reader assuming they ascend will fail. |
 
 ### Reject tier
@@ -123,6 +124,7 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-undeclared-session` | A record naming a session that was never declared. |
 | `isolate-duplicate-id` | A `source_id` declared twice. |
 | `isolate-coverage-gap` | A decode stage leaving an input range neither covered by `spans` nor marked Undecoded. |
+| `isolate-sequenced-no-basis` | A hint-less `SEQUENCED` session with no `sequenced_basis`. Recording is unconditional — the trivially-sound cases write `trivial` rather than omitting it. |
 | `isolate-unknown-source-kind` | An undefined Source `kind` — load-bearing, unlike `tcp_role`, because it decides how span offsets are read. |
 
 ## Coverage this does not have
