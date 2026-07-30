@@ -657,6 +657,48 @@ own. Recorded here so they are not rediscovered from scratch.
       reproducible from what it records. Already true of a merge today, so `0.10`
       is no worse — but the gap is now named.
 
+- [ ] **Decrypted tunnels: an offset space keyed on what a stream *is*, not on
+      which stage produced it.** **Needs design work before any wording is
+      drafted** — it generalises a rule the rest of the document leans on, so it
+      should not be done in a hurry.
+
+      *The case.* Stateless tunnels are already handled: `endpoint` repeats,
+      outermost carrier first, and the specification names VPNs in that list. A
+      sessionizer decapsulates VXLAN or GRE inline and emits **one raw file**.
+      Decryption cannot work that way — IPsec, WireGuard and TLS-VPNs need a
+      separate stage, so the inner traffic arrives `zpf-input`-sourced and is
+      therefore *derived*, never `raw`, even though it is transport traffic in
+      every meaningful sense.
+
+      *What already works.* The chain expresses as two decode stages: decrypt
+      (records whose payload is a stream of IP packets, `spans` into the tunnel
+      stream), then re-sessionize (inner sessions with byte-run records, `spans`
+      into the decrypted stream). Coverage applies cleanly at the second stage,
+      and the inner IP/TCP **headers** are a better fit for `skipped` than the
+      BOM case that motivated it.
+
+      *What breaks.* §4.1 keys the offset space on how a file was produced: a
+      transport stream is "one reassembled from a capture", hole-inclusive and
+      `isn`-anchored, while a decode stage's output is a concatenation of payloads
+      and explicitly *not* hole-inclusive. The inner streams have `isn`,
+      `seq_start` and real gaps from lost inner packets — transport streams by
+      every test — but a decode stage made them, so the rule gives them the wrong
+      semantics and an inner gap has nowhere to live.
+
+      *Shape of the fix, to be confirmed rather than assumed.* Key the rule on
+      the stream: transport semantics when the participant carries `isn` and its
+      records carry `seq_start`, message semantics otherwise. The existing raw and
+      decoded cases then fall out as the two special cases they already are, and
+      no new file kind or block is needed.
+
+      *Open questions to settle first.* Whether a decode stage may mint sessions
+      that do not correspond to its input's sessions — stage 2 turns one tunnel
+      session into many, and nothing forbids it, but nothing permits it either.
+      Whether keying on `isn`/`seq_start` misclassifies a transport stream that
+      has neither (a hint-less inner UDP flow). And whether the two-stage split is
+      the right decomposition at all, or whether decrypt-and-resessionize should
+      be one stage.
+
 **Two production costs to keep in view rather than fix.** Both are consequences
 of the layering working as designed, not faults:
 
