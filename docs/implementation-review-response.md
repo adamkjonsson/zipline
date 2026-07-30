@@ -568,14 +568,14 @@ Two content fixes first, both raised by reading the annotator example and asking
 where a *record's* source bytes are. Neither is a design change; the design
 answers the question, the document just never says so.
 
-- [ ] **State that a record's offset range is positional.** §4.1 defines a
+- [x] **State that a record's offset range is positional.** §4.1 defines a
       decoded stream's offset space as the concatenation of that participant's
       decoded payloads in stored order, which *implies* that record *k* occupies
       `[sum of preceding payload lengths, + its own length)` — but never says it.
       A record carries no offset field, so an implementer has to derive the rule
       before it can resolve anything. One sentence beside the offset-space
       definition
-- [ ] **Explain the resolution asymmetry in a decoded-layer pass-through.** Its
+- [x] **Explain the resolution asymmetry in a decoded-layer pass-through.** Its
       records resolve through the **immediate** input — participant `origin`,
       then the same offset range in that file, whose records carry the `spans`
       that name the grandparent — while an inherited Undecoded block names the
@@ -588,7 +588,7 @@ answers the question, the document just never says so.
       breaking the test that spared us a third file kind. The Undecoded block is
       exempt because its statement was always *about* the grandparent — it is
       not provenance for anything this file produced
-- [ ] **Fix a contradiction Phase 9 introduced about `decoder_id`.** Phase 4 says
+- [x] **Fix a contradiction Phase 9 introduced about `decoder_id`.** Phase 4 says
       it names *which decoder's layer a record belongs to*, which is what lets a
       pass-through carry inherited ids forward. Phase 9's filter paragraph says
       the transform "declares a Decoder Descriptor **for itself**… the descriptor
@@ -611,16 +611,16 @@ answers the question, the document just never says so.
       no regression, but reproducing a filtered file is then unpinned. A
       `transform_params_digest` on the File Header is the obvious future answer —
       record it under *Possible future extensions*, do not add it to `0.10`
-- [ ] Add a vector for the two-hop case if it is cheap — the suite's stated gaps
+- [x] Add a vector for the two-hop case if it is cheap — the suite's stated gaps
       already include multi-file provenance chains, and this is the shape a
       consumer most needs to get right. A record-reordering stage would make a
       good second one, since its `spans` run non-monotonically against stored
       order and a naive implementation may assume they ascend
 
-- [ ] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
+- [x] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
       keeping — it found three broken anchors and 65 broken relative links)
-- [ ] Confirm the CHANGELOG's `[0.10]` section is the complete delta from `0.9`
-- [ ] Cut the release: date, `v0.10` tag, drop any remaining beta language —
+- [x] Confirm the CHANGELOG's `[0.10]` section is the complete delta from `0.9`
+- [x] Cut the release: date, `v0.10` tag, drop any remaining beta language —
       "beta" is redundant now that the whole `0.x` line is provisional
 - [ ] Hand the result to `python-zipline`, and record what it finds
 - [ ] Expect a `0.11`. The point of staying in `0.x` is that the next round of

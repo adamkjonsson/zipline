@@ -602,6 +602,53 @@ vector(
     ],
 )
 
+vector(
+    "reordered-decoded", "accept",
+    "A stage that reorders a participant's decoded records without decoding "
+    "them. It is a decode stage -- stored order defines the offsets, so "
+    "reordering changes them -- and its spans run DOWNWARD against stored "
+    "order. A reader that assumes spans ascend fails here.",
+    "Layers -- filtering and reordering a decoded stream",
+    [
+        file_header(options=[o_produced_by("zpf-reorder 0.1"),
+                             o_produced_at(1719530000)]),
+        source(1, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+        # Input pid 1 held A = [0,100) then B = [100,150). Emitted B first, so
+        # the output stream is B = [0,50), A = [50,150) and the spans descend.
+        record(7, 1, 1, 995, b"B" * 50, options=[
+            o_decoder_id(1), o_spans([(1, 1, 7, 100, 150)]),
+            o_content_type("dec:response")]),
+        record(7, 1, 1, 990, b"A" * 100, options=[
+            o_decoder_id(1), o_spans([(1, 1, 7, 0, 100)]),
+            o_content_type("dec:response")]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000,
+         "produced_by": "zpf-reorder 0.1", "produced_at": 1719530000},
+        {"type": "source", "source_id": 1, "kind": "zpf-input",
+         "uri": "decoded.zpf", "digest": "sha256:44dd"},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 7, "proto": "http"},
+        {"type": "participant", "session_id": 7, "pid": 1,
+         "endpoint": ["93.184.216.34:80"]},
+        {"type": "record", "session_id": 7, "sender_pid": 1, "source_id": 1,
+         "ts": 995, "payload": b64(b"B" * 50), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 1,
+                    "off_start": 100, "off_end": 150}],
+         "content_type": "dec:response"},
+        {"type": "record", "session_id": 7, "sender_pid": 1, "source_id": 1,
+         "ts": 990, "payload": b64(b"A" * 100), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 1,
+                    "off_start": 0, "off_end": 100}],
+         "content_type": "dec:response"},
+        {"type": "end"},
+    ],
+)
+
 # --- negative: the reject tier --------------------------------------------
 
 vector(

@@ -652,6 +652,14 @@ output's — so a decoded stream's offset space, unlike a transport stream's, is
 **not** hole-inclusive. A **pass-through** output defines no space of its own; it
 keeps its input's unchanged, whichever kind that was.
 
+**A decoded record's own range is therefore positional.** A Record block carries
+no offset field; its place in the stream is implied by the concatenation above.
+Record *k* of a participant occupies
+`[Σ payload_len of the preceding records, + its own payload_len)`, counting that
+participant's records in stored order. Nothing else states this, so a consumer
+resolving a decoded record — to a range in its own file, or one level down —
+computes it that way.
+
 This is the space a second decode stage references when it decodes a decoded
 file — `raw → tls-records → http` is two stages, and the second one's `spans`
 name offsets in the first one's output — and the space a layer-preserving
@@ -669,12 +677,26 @@ region it dropped is marked [Undecoded](#undecoded-0x21) with
 exactly what that reason is for. The coverage guarantee then applies as it does
 to any decode stage, and the filter is answerable for the whole input.
 
-Such a transform declares a [Decoder Descriptor](#decoder-descriptor-0x03) for
-itself, even though it decodes nothing. That reads oddly, and is deliberate: the
-descriptor identifies **whatever produced these records** and pins its
-configuration with `params_digest`, which is precisely what a consumer needs to
-reproduce a filtered file. A filter that names itself `filter/…` is using the
-block as intended.
+**`decoder_id` names a layer, not a stage**, so such a transform does *not*
+declare a decoder of its own. It **inherits** its input's `decoder_id`s and
+re-declares the Decoder Descriptors they reference, exactly as a pass-through
+does — a filtered or reordered HTTP message is still an HTTP message, and saying
+otherwise would misdescribe the payload. The transform identifies *itself* the
+way every derived file does, through `produced_by`/`produced_at` on the File
+Header.
+
+The same holds for any stage that rearranges records without decoding them. A
+transform that **reorders** a participant's decoded records is a decode stage for
+the same reason a filter is — stored order defines the offsets, so reordering
+changes them — and its records carry `spans` naming the input ranges they came
+from. Those spans will not ascend with stored order, which is expected: nothing
+requires them to, and coverage depends only on which ranges are covered, not on
+the order they appear in.
+
+One consequence is worth naming: such a transform's own configuration has no
+`params_digest` to live in, so a filtered file records *what* it was derived from
+but not *how*. A merge has the same gap today. See
+[Possible future extensions](#possible-future-extensions).
 
 ### Source Descriptor (which input)
 
@@ -841,6 +863,28 @@ input did not already have. Had the same tool annotated `raw.zpf` instead, the
 result would look like the merge's output: a pass-through preserving a
 *transport* layer, with byte-run records, no `decoder_id`s, and no Undecoded
 blocks.
+
+**Records and inherited Undecoded blocks resolve differently here, and the
+difference is easy to misread.** `raw.zpf` is declared in this file, which makes
+it look as though the records relate to it. They do not:
+
+- The **`undecoded` line names `raw.zpf` directly** and resolves in **one hop**.
+  Its offsets have always been in `raw.zpf`'s stream, which is why that Source
+  must be declared at all.
+- A **record** resolves through the **immediate** input. It carries `source_id 2`
+  (`decoded.zpf`) and no `spans`, so a consumer takes its participant's `origin`
+  to the corresponding stream in `decoded.zpf`, computes the record's
+  [positional range](#referencing-the-source-by-stream-offset) — offsets are
+  preserved, so it is the same range there — and reads the `spans` on the record
+  it finds, which name `raw.zpf`. Two hops, and **this file alone cannot say
+  which raw bytes a record came from**.
+
+That asymmetry is deliberate. `spans` is the discriminator between a stage that
+*built* a record and one that *re-emitted* it (see [Conformance](#conformance)),
+so a pass-through cannot carry its input's spans forward without destroying the
+test that tells the two apart. The Undecoded block is exempt because it is not
+provenance for anything this file produced — it is a statement *about* `raw.zpf`,
+carried along intact.
 
 ## Binary encoding (normative reference)
 
@@ -1411,7 +1455,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0072` | ack              | u32        | Record (TCP)             | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes were built from (see below)          |
-| `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which Decoder Descriptor produced/declined this record/region |
+| `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which decoder's **layer** this record or region belongs to — the decoder that produced or declined the content, not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it) |
 | `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
 | `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical four, and MUST agree with the class if it accompanies one of them |
@@ -2076,6 +2120,16 @@ declare-on-first-use contract holding in the byte stream.
   participant byte count) as TLVs on the [Session End](#session-end-0x12)
   block, as a truncation/loss tripwire. Deferred: they are pure additions, so
   they fit a later minor version without a format change.
+
+- **`transform_params_digest` on the File Header.** A derived file records *what*
+  it came from — `zpf-input` Sources with digests — and, for a decode stage, which
+  decoder ran. It does not record the configuration of a transform that produces
+  records **without** decoding them: a filter, a reordering stage, a merge. Those
+  inherit their input's `decoder_id`s (see
+  [Layers](#layers-raw-and-decoded-live-in-separate-files)), so no
+  `params_digest` applies to them, and the file is not reproducible from what it
+  states. A File Header option pinning the transform's own configuration would
+  close it, alongside the `produced_by` that already names the tool.
 
 - **Input stream extents, to make the coverage guarantee self-verifiable.**
   Today the [coverage guarantee](#coverage-honesty-undecoded-blocks) is checkable

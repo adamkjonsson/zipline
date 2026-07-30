@@ -104,6 +104,7 @@ naive implementation most often fails by treating extension as corruption.
 | `undecoded-skipped` | `reason = skipped` for a deliberately-declined region (a BOM). |
 | `undecoded-reason-class` | A non-canonical `reason` carrying the required `reason_class`. |
 | `sequenced-basis` | A hint-less `SEQUENCED` session with its mandatory `sequenced_basis`. |
+| `reordered-decoded` | A stage that reorders decoded records without decoding them — a decode stage, since stored order defines the offsets. **Its `spans` run downward against stored order**, which a reader assuming they ascend will fail. |
 
 ### Reject tier
 
@@ -128,8 +129,12 @@ naive implementation most often fails by treating extension as corruption.
 
 Stated so nobody mistakes the suite for complete:
 
-- No multi-file provenance chains, so the recovery walk and its two distinct
-  failure modes — *no bytes exist* versus *bytes unavailable* — are untested.
+- **No multi-file provenance chains** — every vector is a single file, so the
+  recovery walk is untested, along with its two distinct failure modes (*no bytes
+  exist* versus *bytes unavailable*) and the two-hop resolution a decoded-layer
+  pass-through requires. This is the **top candidate for the next round**: it
+  needs a consistent set of three files whose offsets and digests actually agree,
+  which is more than a vector and closer to a small fixture.
 - No causal-merge vectors: no skewed two-file capture, no tie-break case.
 - No truncation vectors, which need a file that ends mid-block.
 - No tunnelled `endpoint` list, no `spans` chunked across several occurrences,
