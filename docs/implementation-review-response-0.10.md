@@ -281,15 +281,19 @@ Reduced to one item by the Phase 12 decision; the rest moved to §4.
 
 ### Phase 15 — Vectors and release
 
-- [ ] Vectors for D1 and D2a (listed under Phase 13)
-- [ ] **A real multi-file provenance chain** — three files whose offsets and
+- [x] Vectors for D1 and D2a — landed with Phase 13
+- [x] **A real multi-file provenance chain** — three files whose offsets and
       digests actually agree. Already the vector suite's top stated gap, and the
       review's inability to verify decoded-pass-through coverage is a second
       argument for it. It adds no format surface, so it belongs in `0.11`
-- [ ] Full read-through, not only the mechanical anchor and link sweep. Every
+- [x] Full read-through, not only the mechanical anchor and link sweep. Every
       finding of the last two rounds came from reading the examples and asking
       concrete questions of them; the mechanical sweeps caught none of them
-- [ ] Cut `0.11`: date the CHANGELOG section, tag, hand back to `python-zipline`
+- [x] Cut `0.11`: CHANGELOG dated, and the **version fields bumped** — this plan
+      said only "date and tag", which was an omission. `version_minor` becomes
+      `11` in the File Header, the byte-level example, all five JSONL examples,
+      every vector, and the checker
+- [ ] Tag `v0.11` once merged, and hand back to `python-zipline`
 
 ---
 
@@ -314,6 +318,14 @@ Everything that adds surface. Each is recorded with its reasoning above or in th
   which is currently unsaid: a pass-through mints fresh ids and maps them with
   `origin`, so external references to the old file's session ids break. A
   normative relaxation, so it waits.
+- **A reader-side tie-break for equal timestamps.** Found during the Phase 15
+  read-through. Removing step 4's skew fallback made reader merges nearly
+  deterministic — every reader now breaks ties by timestamp — but two concurrent
+  records carrying the *same* timestamp remain a genuine tie this document does
+  not resolve, so independent readers can still produce different interleavings.
+  A fixed rule (sender `pid`, say) would close it. Not legislated in `0.11`,
+  which is corrective only and should not invent a rule at release time; the
+  situation is no worse than `0.10`, merely now visible.
 - **Decrypted tunnels** — the offset space keyed on what a stream *is* rather
   than which stage produced it. Needs its three open questions settled before any
   wording: whether a decode stage may mint sessions unrelated to its input's;

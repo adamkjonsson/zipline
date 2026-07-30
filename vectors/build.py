@@ -16,6 +16,7 @@ Usage:  python3 build.py          # regenerate every vector
 """
 
 import base64
+import hashlib
 import json
 import os
 import struct
@@ -94,7 +95,7 @@ def block(btype, name, body, options=()):
 
 # --------------------------------------------------------------- block kinds
 
-def file_header(tick_hz=1_000_000, major=0, minor=10, options=(), magic=0x5A495046):
+def file_header(tick_hz=1_000_000, major=0, minor=11, options=(), magic=0x5A495046):
     body = [
         P(u32(magic), f'magic  = 0x{magic:08X}  ("ZIPF")'),
         P(u16(major), f"version_major = {major}"),
@@ -261,7 +262,7 @@ vector(
                options=[o_seq_start(1001), o_ack(5001)]),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "sideA.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -295,7 +296,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000,
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000,
          "produced_by": "zpf-decode 0.4", "produced_at": 1719500000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
@@ -339,7 +340,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000,
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000,
          "produced_by": "zpf-merge 1.2", "produced_at": 1719510000},
         {"type": "source", "source_id": 1, "kind": "zpf-input",
          "uri": "sideA.zpf", "digest": "sha256:11aa"},
@@ -369,7 +370,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "0x0042", "content": b64(b"\xde\xad\xbe\xef\x01\x02\x03\x04")},
         {"type": "session", "session_id": 7, "proto": "tcp"},
@@ -391,7 +392,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -416,7 +417,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -439,7 +440,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -476,7 +477,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000,
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000,
          "produced_by": "zpf-annotate 0.2", "produced_at": 1719520000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
@@ -523,7 +524,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
         {"type": "decoder", "decoder_id": 1, "name": "text/utf8", "version": "1.0"},
@@ -557,7 +558,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
         {"type": "decoder", "decoder_id": 1, "name": "http/1.1"},
@@ -588,7 +589,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
         {"type": "session", "session_id": 8, "proto": "irc", "sequenced": True,
          "sequenced_basis": "protocol"},
@@ -627,7 +628,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000,
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000,
          "produced_by": "zpf-reorder 0.1", "produced_at": 1719530000},
         {"type": "source", "source_id": 1, "kind": "zpf-input",
          "uri": "decoded.zpf", "digest": "sha256:44dd"},
@@ -671,7 +672,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.10", "tick_hz": 1000000},
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
         {"type": "session", "session_id": 8, "proto": "irc"},
         {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["alice"]},
@@ -731,10 +732,10 @@ vector(
 
 vector(
     "reject-unknown-minor", "reject",
-    "version_minor is 11 while major is 0. In the 0.x regime the pair "
-    "(0, minor) is the compatibility identity, so a 0.10 reader MUST reject it.",
+    "version_minor is 12 while major is 0. In the 0.x regime the pair "
+    "(0, minor) is the compatibility identity, so a 0.11 reader MUST reject it.",
     "File Header -- version numbering",
-    [file_header(minor=11), source(1, 0, [o_uri("c.pcap")])],
+    [file_header(minor=12), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file. This is the vector that distinguishes a 0.x-aware "
            "reader from one that assumes minors are always skippable.",
 )
@@ -839,6 +840,175 @@ vector(
 )
 
 
+# ------------------------------------------------------------------- the chain
+#
+# Three files whose digests and offsets genuinely agree, so the provenance walk
+# can be exercised end to end:
+#
+#   cap.pcap --[sessionize]--> raw.zpf --[http decode]--> decoded.zpf
+#                                                             |
+#                                                     [annotate]--> annotated.zpf
+#
+# Byte budget, fixed here so every offset below is checkable by hand:
+#   session 7, pid 0 (client): "GET /\r\n\r\n"        9 bytes, offsets [0,9)
+#   session 7, pid 1 (server): "HTTP/1.1 200\r\n\r\n" 16 bytes, offsets [0,16)
+#                              4 opaque bytes           offsets [16,20)
+# The decoder parses the response head and cannot parse the 4-byte tail, so
+# decoded.zpf covers [0,16) with a record and [16,20) with an Undecoded block --
+# which is the whole of pid 1's 20-byte stream, and the coverage guarantee holds.
+
+REQ  = b"GET /\r\n\r\n"                 # 9
+RESP = b"HTTP/1.1 200\r\n\r\n"          # 16
+TAIL = b"\x00\x01\x02\x03"               # 4, undecodable
+DEC_REQ  = b"REQ:GET /"                  # 9  -> decoded pid 0 offsets [0,9)
+DEC_RESP = b"RESP:200"                   # 8  -> decoded pid 1 offsets [0,8)
+
+CHAIN = []
+
+def chain_file(name, summary, blocks, jsonl):
+    CHAIN.append(dict(name=name, summary=summary, blocks=blocks, jsonl=jsonl))
+    return to_bytes(assemble(blocks))
+
+
+def build_chain():
+    """Build the three files in order, hashing each so the next can cite it."""
+    raw_blocks = [
+        file_header(options=[o_creator("zpf-sessionize 1.0")]),
+        source(1, 0, [o_uri("cap.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+        record(7, 0, 1, 1000, REQ, flags=0x0001,
+               options=[o_seq_start(1001), o_ack(5001)]),
+        record(7, 1, 1, 1100, RESP, flags=0x0001,
+               options=[o_seq_start(5001), o_ack(1010)]),
+        record(7, 1, 1, 1200, TAIL,
+               options=[o_seq_start(5017), o_ack(1010)]),
+        end_block(),
+    ]
+    raw = chain_file("raw", "The capture-sourced file the chain starts from.",
+                     raw_blocks, [
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000,
+         "creator": "zpf-sessionize 1.0"},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "cap.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"], "isn": 1000},
+        {"type": "participant", "session_id": 7, "pid": 1,
+         "endpoint": ["93.184.216.34:80"], "isn": 5000},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "flags": ["psh"], "payload": b64(REQ),
+         "seq_start": 1001, "ack": 5001},
+        {"type": "record", "session_id": 7, "sender_pid": 1, "source_id": 1,
+         "ts": 1100, "flags": ["psh"], "payload": b64(RESP),
+         "seq_start": 5001, "ack": 1010},
+        {"type": "record", "session_id": 7, "sender_pid": 1, "source_id": 1,
+         "ts": 1200, "payload": b64(TAIL), "seq_start": 5017, "ack": 1010},
+        {"type": "end"},
+    ])
+    raw_dg = "sha256:" + hashlib.sha256(raw).hexdigest()
+
+    dec_blocks = [
+        file_header(options=[o_produced_by("zpf-decode 0.4"),
+                             o_produced_at(1719500000)]),
+        source(1, 1, [o_uri("raw.zpf"), o_digest(raw_dg)]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+        record(7, 0, 1, 1000, DEC_REQ, options=[
+            o_decoder_id(1), o_spans([(1, 0, 7, 0, 9)]),
+            o_content_type("dec:request")]),
+        record(7, 1, 1, 1100, DEC_RESP, options=[
+            o_decoder_id(1), o_spans([(1, 1, 7, 0, 16)]),
+            o_content_type("dec:response")]),
+        undecoded(1, 1, 7, 16, 20, [o_reason("undecodable"), o_decoder_id(1)]),
+        end_block(),
+    ]
+    dec = chain_file("decoded",
+                     "A decode stage over raw.zpf. Its spans and Undecoded "
+                     "block together cover every byte of both input streams.",
+                     dec_blocks, [
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000,
+         "produced_by": "zpf-decode 0.4", "produced_at": 1719500000},
+        {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
+         "digest": raw_dg},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 7, "proto": "http"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "participant", "session_id": 7, "pid": 1,
+         "endpoint": ["93.184.216.34:80"]},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "payload": b64(DEC_REQ), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 0,
+                    "off_start": 0, "off_end": 9}],
+         "content_type": "dec:request"},
+        {"type": "record", "session_id": 7, "sender_pid": 1, "source_id": 1,
+         "ts": 1100, "payload": b64(DEC_RESP), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 1,
+                    "off_start": 0, "off_end": 16}],
+         "content_type": "dec:response"},
+        {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 1,
+         "off_start": 16, "off_end": 20, "reason": "undecodable",
+         "decoder_id": 1},
+        {"type": "end"},
+    ])
+    dec_dg = "sha256:" + hashlib.sha256(dec).hexdigest()
+
+    ann_blocks = [
+        file_header(options=[o_produced_by("zpf-annotate 0.2"),
+                             o_produced_at(1719520000)]),
+        # Source 1 is the GRANDPARENT, declared only so the inherited Undecoded
+        # block still resolves. Source 2 is the immediate input.
+        source(1, 1, [o_uri("raw.zpf"), o_digest(raw_dg)]),
+        source(2, 1, [o_uri("decoded.zpf"), o_digest(dec_dg)]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_origin(2, 1, 7)]),
+        name_block(7, 1, [o_label("example.com"), o_name_kind("tls-sni")]),
+        record(7, 0, 2, 1000, DEC_REQ, options=[
+            o_decoder_id(1), o_content_type("dec:request")]),
+        record(7, 1, 2, 1100, DEC_RESP, options=[
+            o_decoder_id(1), o_content_type("dec:response")]),
+        undecoded(1, 1, 7, 16, 20, [o_reason("undecodable"), o_decoder_id(1)]),
+        end_block(),
+    ]
+    chain_file("annotated",
+               "A pass-through preserving decoded.zpf's layer, adding only a "
+               "label. Records carry no spans; the inherited Undecoded block "
+               "still names raw.zpf, so raw.zpf is declared too.",
+               ann_blocks, [
+        {"type": "file", "format": "zipline-payload/0.11", "tick_hz": 1000000,
+         "produced_by": "zpf-annotate 0.2", "produced_at": 1719520000},
+        {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
+         "digest": raw_dg},
+        {"type": "source", "source_id": 2, "kind": "zpf-input",
+         "uri": "decoded.zpf", "digest": dec_dg},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 7, "proto": "http"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"],
+         "origin": {"source_id": 2, "session_id": 7, "pid": 0}},
+        {"type": "participant", "session_id": 7, "pid": 1,
+         "endpoint": ["93.184.216.34:80"],
+         "origin": {"source_id": 2, "session_id": 7, "pid": 1}},
+        {"type": "name", "session_id": 7, "pid": 1, "label": "example.com",
+         "kind": "tls-sni"},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 2,
+         "ts": 1000, "payload": b64(DEC_REQ), "decoder_id": 1,
+         "content_type": "dec:request"},
+        {"type": "record", "session_id": 7, "sender_pid": 1, "source_id": 2,
+         "ts": 1100, "payload": b64(DEC_RESP), "decoder_id": 1,
+         "content_type": "dec:response"},
+        {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 1,
+         "off_start": 16, "off_end": 20, "reason": "undecodable",
+         "decoder_id": 1},
+        {"type": "end"},
+    ])
+
+
 # ------------------------------------------------------------------ emitters
 
 def assemble(blocks):
@@ -875,8 +1045,33 @@ def to_hexdump(pieces, title):
 
 def main():
     check = '--check' in sys.argv
+    build_chain()
     manifest = []
     problems = []
+
+    # The chain lives in one directory: its three files are a single fixture,
+    # and only together do the digests and offsets mean anything.
+    cdir = os.path.join(HERE, 'chain')
+    chain_files = {}
+    for c in CHAIN:
+        pieces = assemble(c['blocks'])
+        chain_files[f"{c['name']}.zpf"] = to_bytes(pieces)
+        chain_files[f"{c['name']}.hex"] = to_hexdump(pieces, f"chain/{c['name']}").encode()
+        chain_files[f"{c['name']}.jsonl"] = (
+            '\n'.join(json.dumps(o, separators=(',', ':')) for o in c['jsonl'])
+            + '\n').encode()
+    if check:
+        for fn, want in chain_files.items():
+            path = os.path.join(cdir, fn)
+            if not os.path.exists(path):
+                problems.append(f"missing chain/{fn}")
+            elif open(path, 'rb').read() != want:
+                problems.append(f"stale chain/{fn}")
+    else:
+        os.makedirs(cdir, exist_ok=True)
+        for fn, data in chain_files.items():
+            with open(os.path.join(cdir, fn), 'wb') as f:
+                f.write(data)
     for v in VECTORS:
         pieces = assemble(v['blocks'])
         raw = to_bytes(pieces)
@@ -909,7 +1104,22 @@ def main():
             'has_jsonl': v['jsonl'] is not None,
         })
 
-    mtext = json.dumps({'format': 'zipline-payload/0.10',
+    manifest.append({
+        'name': 'chain', 'tier': 'accept', 'bytes': sum(
+            len(v) for k, v in chain_files.items() if k.endswith('.zpf')),
+        'summary': 'A three-file provenance chain whose digests and offsets '
+                   'genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. '
+                   'The only fixture where the recovery walk, two-hop '
+                   'resolution and digest verification can be exercised.',
+        'spec_section': 'Layers; Coverage honesty; Annotating a decoded file',
+        'expect': 'Accept all three. Each .jsonl is the expected projection. '
+                  'Each declared digest is the real SHA-256 of the sibling '
+                  'file it names, so a reader can verify the chain.',
+        'has_jsonl': True,
+        'files': sorted(chain_files),
+    })
+
+    mtext = json.dumps({'format': 'zipline-payload/0.11',
                         'vectors': manifest}, indent=2) + '\n'
     mpath = os.path.join(HERE, 'manifest.json')
     if check:
@@ -918,11 +1128,11 @@ def main():
         if problems:
             print('\n'.join(problems))
             return 1
-        print(f"{len(VECTORS)} vectors up to date")
+        print(f"{len(VECTORS)} vectors + chain up to date")
         return 0
     with open(mpath, 'w') as f:
         f.write(mtext)
-    print(f"wrote {len(VECTORS)} vectors")
+    print(f"wrote {len(VECTORS)} vectors + a {len(CHAIN)}-file chain")
     return 0
 
 

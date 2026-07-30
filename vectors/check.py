@@ -9,6 +9,11 @@ implementation's test harness; nothing here adjudicates them, because a checker
 that ruled on semantics would become a second normative authority, which is
 exactly what the README says a vector must never be.
 
+The one exception is the `chain` fixture, where a little arithmetic is
+unavoidable: its entire value is that the digests and offsets agree, and a
+fixture whose numbers have silently drifted is worse than none. Those checks
+verify the fixture against itself, not the specification against anything.
+
 What it does verify:
   * every committed file matches what build.py produces (no drift)
   * accept/isolate vectors are well-framed: block walk lands exactly on EOF,
@@ -16,6 +21,9 @@ What it does verify:
     defines
   * reject vectors actually contain the structural defect they claim
   * each accept vector's .jsonl parses and has one line per block
+  * for the chain: every declared digest is the real SHA-256 of the sibling
+    file it names, and decoded.zpf's spans plus Undecoded blocks cover exactly
+    the streams raw.zpf actually contains
 
 Usage:  python3 check.py
 """
@@ -28,7 +36,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 10
+MAJOR, MINOR = 0, 11
 
 
 class Corrupt(Exception):
@@ -72,6 +80,65 @@ def walk(raw):
         raise Corrupt("trailing bytes")
 
 
+def check_chain():
+    """The chain's numbers must agree, or the fixture is worthless."""
+    import base64, hashlib
+    d = os.path.join(HERE, 'chain')
+    if not os.path.isdir(d):
+        return ["chain/ missing"]
+    out = []
+    real = {f"{n}.zpf": "sha256:" + hashlib.sha256(
+        open(os.path.join(d, f"{n}.zpf"), 'rb').read()).hexdigest()
+        for n in ('raw', 'decoded', 'annotated')}
+
+    def lines(n):
+        return [json.loads(l) for l in open(os.path.join(d, f"{n}.jsonl"))
+                if l.strip()]
+
+    for n in ('decoded', 'annotated'):
+        for o in lines(n):
+            if o.get('type') == 'source' and 'digest' in o:
+                want = real.get(o['uri'])
+                if want is None:
+                    out.append(f"chain/{n}: cites unknown file {o['uri']}")
+                elif o['digest'] != want:
+                    out.append(f"chain/{n}: digest for {o['uri']} is stale")
+
+    # Reconstruct raw.zpf's stream extents from seq_start - (isn + 1), then
+    # confirm decoded.zpf accounts for every byte of them.
+    isn, ext = {}, {}
+    for o in lines('raw'):
+        if o.get('type') == 'participant':
+            isn[o['pid']] = o['isn']
+        elif o.get('type') == 'record':
+            off = o['seq_start'] - (isn[o['sender_pid']] + 1)
+            end = off + len(base64.b64decode(o['payload']))
+            ext[o['sender_pid']] = max(ext.get(o['sender_pid'], 0), end)
+
+    cov = {}
+    for o in lines('decoded'):
+        for s in o.get('spans', []):
+            cov.setdefault(s['pid'], []).append((s['off_start'], s['off_end']))
+        if o.get('type') == 'undecoded':
+            cov.setdefault(o['pid'], []).append((o['off_start'], o['off_end']))
+
+    for pid, want_end in sorted(ext.items()):
+        rs = sorted(cov.get(pid, []))
+        merged = []
+        for a, b in rs:
+            if merged and a <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+            else:
+                merged.append((a, b))
+        if merged != [(0, want_end)]:
+            out.append(f"chain: pid {pid} covered {merged}, "
+                       f"raw stream is [0,{want_end})")
+    if not out:
+        print(f"  chain: 3 files, digests match, coverage complete "
+              f"({', '.join(f'pid {p} [0,{e})' for p, e in sorted(ext.items()))})")
+    return out
+
+
 def main():
     r = subprocess.run([sys.executable, os.path.join(HERE, 'build.py'), '--check'],
                        capture_output=True, text=True)
@@ -84,6 +151,8 @@ def main():
     failures = []
     for v in manifest['vectors']:
         name, tier = v['name'], v['tier']
+        if 'files' in v:          # the chain fixture; check_chain handles it
+            continue
         raw = open(os.path.join(HERE, name, f"{name}.zpf"), 'rb').read()
         if len(raw) != v['bytes']:
             failures.append(f"{name}: manifest says {v['bytes']} bytes, file has {len(raw)}")
@@ -115,6 +184,8 @@ def main():
                     failures.append(
                         f"{name}: {len(blocks)} blocks but {len(lines)} JSONL lines")
             print(f"  {name}: {len(blocks)} blocks, well-framed")
+
+    failures += check_chain()
 
     if failures:
         print("\nFAILURES:")

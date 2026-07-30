@@ -2,7 +2,7 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.10`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.11`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
@@ -127,16 +127,49 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-sequenced-no-basis` | A hint-less `SEQUENCED` session with no `sequenced_basis`. Recording is unconditional — the trivially-sound cases write `trivial` rather than omitting it. |
 | `isolate-unknown-source-kind` | An undefined Source `kind` — load-bearing, unlike `tcp_role`, because it decides how span offsets are read. |
 
+### The provenance chain
+
+`chain/` is not a vector but a **fixture**: three files whose digests and offsets
+genuinely agree, so the things a single file cannot exercise become testable.
+
+```
+cap.pcap ──[sessionize]──▶ raw.zpf ──[http decode]──▶ decoded.zpf
+                                                           │
+                                                   [annotate]──▶ annotated.zpf
+```
+
+The byte budget is fixed and small enough to check by hand: session 7 carries
+`pid 0` with a 9-byte request, and `pid 1` with a 16-byte response head plus a
+4-byte tail the decoder cannot parse. So `decoded.zpf` covers `[0,9)` of pid 0
+and `[0,16)` of pid 1 with records, and `[16,20)` with an Undecoded block —
+exactly the 20 bytes `raw.zpf` holds.
+
+What only this fixture can test:
+
+- **The recovery walk.** Following `decoded.zpf`'s Undecoded block back to real
+  bytes in `raw.zpf`, rather than to a `uri` that resolves to nothing.
+- **Two-hop resolution.** `annotated.zpf`'s records carry no `spans`, so
+  answering "which raw bytes is this?" means going through `decoded.zpf` —
+  while its inherited Undecoded block reaches `raw.zpf` in one hop. The
+  asymmetry is the point.
+- **Digest verification.** Each declared digest is the real SHA-256 of the
+  sibling file it names, so a reader can verify the chain instead of assuming it.
+- **The coverage guarantee, actually checked.** Coverage is stated against the
+  *input's* streams, and nothing in a decoded file records how long those were —
+  so a lone decoded file cannot be verified. Here the parent is present, so
+  `check.py` reconstructs `raw.zpf`'s extents from `seq_start - (isn + 1)` and
+  confirms `decoded.zpf` accounts for every byte. That is a concrete
+  demonstration of why *input stream extents* is on the list for a future
+  version.
+
 ## Coverage this does not have
 
 Stated so nobody mistakes the suite for complete:
 
-- **No multi-file provenance chains** — every vector is a single file, so the
-  recovery walk is untested, along with its two distinct failure modes (*no bytes
-  exist* versus *bytes unavailable*) and the two-hop resolution a decoded-layer
-  pass-through requires. This is the **top candidate for the next round**: it
-  needs a consistent set of three files whose offsets and digests actually agree,
-  which is more than a vector and closer to a small fixture.
+- **No broken chain.** `chain/` exercises a walk that succeeds; nothing
+  exercises one that fails, so the two distinct failure modes — *no bytes exist*
+  versus *bytes unavailable because an intermediate file is missing* — are
+  untested. A fourth fixture citing an absent file would cover it.
 - No causal-merge vectors: no skewed two-file capture, no tie-break case.
 - No truncation vectors, which need a file that ends mid-block.
 - No tunnelled `endpoint` list, no `spans` chunked across several occurrences,

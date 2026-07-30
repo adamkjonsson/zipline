@@ -1,5 +1,5 @@
 {
-  "format": "zipline-payload/0.10",
+  "format": "zipline-payload/0.11",
   "vectors": [
     {
       "name": "raw-minimal",
@@ -149,7 +149,7 @@
       "name": "reject-unknown-minor",
       "tier": "reject",
       "bytes": 48,
-      "summary": "version_minor is 11 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.10 reader MUST reject it.",
+      "summary": "version_minor is 12 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.11 reader MUST reject it.",
       "spec_section": "File Header -- version numbering",
       "expect": "Reject the file. This is the vector that distinguishes a 0.x-aware reader from one that assumes minors are always skippable.",
       "has_jsonl": false
@@ -207,6 +207,26 @@
       "spec_section": "Unrecognised enum values",
       "expect": "MAY reject the file, or discard the Source together with everything referencing it. MUST NOT guess a kind. Note this is the enum case that is NOT a free extension point.",
       "has_jsonl": false
+    },
+    {
+      "name": "chain",
+      "tier": "accept",
+      "bytes": 1648,
+      "summary": "A three-file provenance chain whose digests and offsets genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. The only fixture where the recovery walk, two-hop resolution and digest verification can be exercised.",
+      "spec_section": "Layers; Coverage honesty; Annotating a decoded file",
+      "expect": "Accept all three. Each .jsonl is the expected projection. Each declared digest is the real SHA-256 of the sibling file it names, so a reader can verify the chain.",
+      "has_jsonl": true,
+      "files": [
+        "annotated.hex",
+        "annotated.jsonl",
+        "annotated.zpf",
+        "decoded.hex",
+        "decoded.jsonl",
+        "decoded.zpf",
+        "raw.hex",
+        "raw.jsonl",
+        "raw.zpf"
+      ]
     }
   ]
 }
