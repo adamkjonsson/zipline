@@ -564,11 +564,148 @@ still moving has to be rebuilt.
 
 ### Phase 11 — Release
 
-- [ ] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
+Two content fixes first, both raised by reading the annotator example and asking
+where a *record's* source bytes are. Neither is a design change; the design
+answers the question, the document just never says so.
+
+- [x] **State that a record's offset range is positional.** §4.1 defines a
+      decoded stream's offset space as the concatenation of that participant's
+      decoded payloads in stored order, which *implies* that record *k* occupies
+      `[sum of preceding payload lengths, + its own length)` — but never says it.
+      A record carries no offset field, so an implementer has to derive the rule
+      before it can resolve anything. One sentence beside the offset-space
+      definition
+- [x] **Explain the resolution asymmetry in a decoded-layer pass-through.** Its
+      records resolve through the **immediate** input — participant `origin`,
+      then the same offset range in that file, whose records carry the `spans`
+      that name the grandparent — while an inherited Undecoded block names the
+      grandparent **directly** and resolves in one hop. So the annotated file
+      alone cannot say which raw bytes a record came from, even though it
+      declares `raw.zpf` as a Source, which makes the wrong reading look
+      plausible. Say this at the annotator example, with the reason: `spans` is
+      the discriminator between a stage that *built* a record and one that
+      *re-emitted* it, so a pass-through cannot carry spans forward without
+      breaking the test that spared us a third file kind. The Undecoded block is
+      exempt because its statement was always *about* the grandparent — it is
+      not provenance for anything this file produced
+- [x] **Fix a contradiction Phase 9 introduced about `decoder_id`.** Phase 4 says
+      it names *which decoder's layer a record belongs to*, which is what lets a
+      pass-through carry inherited ids forward. Phase 9's filter paragraph says
+      the transform "declares a Decoder Descriptor **for itself**… the descriptor
+      identifies whatever **produced** these records". For a filter or a
+      record-reordering transform these give different answers, and the Phase 4
+      reading is the load-bearing one — a reordered HTTP message is still an HTTP
+      message, so naming the reorderer misdescribes the payload.
+
+      Resolution: **`decoder_id` is layer identity, always.** A transform that
+      creates records without decoding them inherits the input's `decoder_id`s,
+      re-declares the Decoder Descriptors it references (as the annotator does),
+      and identifies *itself* via `produced_by`/`produced_at` on the File Header
+      like every other derived file. Delete the "declares a Decoder Descriptor
+      for itself" paragraph. Pass-throughs and such stages then treat
+      `decoder_id` identically, leaving `spans`-versus-`origin` as the only
+      difference — which is exactly the discriminator.
+
+      Note the cost, and do **not** fix it now: a filter's own configuration
+      loses its `params_digest` home. That is already true of a merge, so it is
+      no regression, but reproducing a filtered file is then unpinned. A
+      `transform_params_digest` on the File Header is the obvious future answer —
+      record it under *Possible future extensions*, do not add it to `0.10`
+- [x] Add a vector for the two-hop case if it is cheap — the suite's stated gaps
+      already include multi-file provenance chains, and this is the shape a
+      consumer most needs to get right. A record-reordering stage would make a
+      good second one, since its `spans` run non-monotonically against stored
+      order and a naive implementation may assume they ascend
+
+- [x] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
       keeping — it found three broken anchors and 65 broken relative links)
-- [ ] Confirm the CHANGELOG's `[0.10]` section is the complete delta from `0.9`
-- [ ] Cut the release: date, `v0.10` tag, drop any remaining beta language —
+- [x] Confirm the CHANGELOG's `[0.10]` section is the complete delta from `0.9`
+- [x] Cut the release: date, `v0.10` tag, drop any remaining beta language —
       "beta" is redundant now that the whole `0.x` line is provisional
 - [ ] Hand the result to `python-zipline`, and record what it finds
 - [ ] Expect a `0.11`. The point of staying in `0.x` is that the next round of
       findings costs a minor bump rather than a major one
+
+### Carried to `0.11`
+
+Not defects in `0.10`, and not blockers — additions that want a release of their
+own. Recorded here so they are not rediscovered from scratch.
+
+- [ ] **Input stream extents, so the coverage guarantee is self-verifiable.**
+      Raised while asking which normal-processing paths force a consumer back to
+      a parent file. The answer is: mostly none — a decoded file stands alone for
+      its decoded content, and provenance is for verification and re-derivation
+      rather than reading. But **validating coverage is the exception, and it is
+      structural.** Nothing records how long each *input* participant stream was,
+      so a decoder that silently stopped at offset 500 of a 900-byte stream
+      produces a file that looks internally complete, and only the parent
+      disproves it.
+
+      The fix is an addition on Session End, where the already-proposed
+      per-session integrity counts live — not the Participant Descriptor, which
+      declare-on-first-use puts before the records, so a live decode does not yet
+      know the extent. Written up under *Possible future extensions* in the
+      specification.
+
+      Worth doing because it changes the format's central honesty guarantee from
+      one a consumer must take on trust into one it can enforce.
+
+- [ ] **`transform_params_digest` on the File Header.** Falls out of the
+      `decoder_id` fix in Phase 11: once a filter or reordering stage inherits
+      the input's `decoder_id`s rather than declaring itself, its own
+      configuration has no `params_digest` home, so a filtered file is not
+      reproducible from what it records. Already true of a merge today, so `0.10`
+      is no worse — but the gap is now named.
+
+- [ ] **Decrypted tunnels: an offset space keyed on what a stream *is*, not on
+      which stage produced it.** **Needs design work before any wording is
+      drafted** — it generalises a rule the rest of the document leans on, so it
+      should not be done in a hurry.
+
+      *The case.* Stateless tunnels are already handled: `endpoint` repeats,
+      outermost carrier first, and the specification names VPNs in that list. A
+      sessionizer decapsulates VXLAN or GRE inline and emits **one raw file**.
+      Decryption cannot work that way — IPsec, WireGuard and TLS-VPNs need a
+      separate stage, so the inner traffic arrives `zpf-input`-sourced and is
+      therefore *derived*, never `raw`, even though it is transport traffic in
+      every meaningful sense.
+
+      *What already works.* The chain expresses as two decode stages: decrypt
+      (records whose payload is a stream of IP packets, `spans` into the tunnel
+      stream), then re-sessionize (inner sessions with byte-run records, `spans`
+      into the decrypted stream). Coverage applies cleanly at the second stage,
+      and the inner IP/TCP **headers** are a better fit for `skipped` than the
+      BOM case that motivated it.
+
+      *What breaks.* §4.1 keys the offset space on how a file was produced: a
+      transport stream is "one reassembled from a capture", hole-inclusive and
+      `isn`-anchored, while a decode stage's output is a concatenation of payloads
+      and explicitly *not* hole-inclusive. The inner streams have `isn`,
+      `seq_start` and real gaps from lost inner packets — transport streams by
+      every test — but a decode stage made them, so the rule gives them the wrong
+      semantics and an inner gap has nowhere to live.
+
+      *Shape of the fix, to be confirmed rather than assumed.* Key the rule on
+      the stream: transport semantics when the participant carries `isn` and its
+      records carry `seq_start`, message semantics otherwise. The existing raw and
+      decoded cases then fall out as the two special cases they already are, and
+      no new file kind or block is needed.
+
+      *Open questions to settle first.* Whether a decode stage may mint sessions
+      that do not correspond to its input's sessions — stage 2 turns one tunnel
+      session into many, and nothing forbids it, but nothing permits it either.
+      Whether keying on `isn`/`seq_start` misclassifies a transport stream that
+      has neither (a hint-less inner UDP flow). And whether the two-stage split is
+      the right decomposition at all, or whether decrypt-and-resessionize should
+      be one stage.
+
+**Two production costs to keep in view rather than fix.** Both are consequences
+of the layering working as designed, not faults:
+
+- A workload wanting *all* bytes — security scanning, archival — is two-file by
+  construction, since a decode stage accounts for unparsed regions by reference
+  and may never copy bytes forward, and a file cannot mix decoded and
+  pass-through records. On captures rich in encrypted or unknown protocols that
+  is most records, not a rare tail.
+- Correlating a decoded record back to a capture position costs a hop per record,
+  and two across a decoded-layer pass-through.
