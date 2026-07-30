@@ -2046,6 +2046,22 @@ declare-on-first-use contract holding in the byte stream.
   block, as a truncation/loss tripwire. Deferred: they are pure additions, so
   they fit a later minor version without a format change.
 
+- **Input stream extents, to make the coverage guarantee self-verifiable.**
+  Today the [coverage guarantee](#coverage-honesty-undecoded-blocks) is checkable
+  only *relative to* what a decoded file claims: nothing records how long each
+  **input** participant stream was. A decoder that silently stopped at offset 500
+  of a 900-byte stream produces a file that looks internally complete — `[0, 500)`
+  covered contiguously, no gaps — and the omission is invisible without opening
+  the parent. So the format's central honesty guarantee is, strictly, "verifiable
+  if you still have the input", not "verifiable from the file in front of you".
+  *The fix:* a decode stage records each input stream's extent. It cannot live on
+  the Participant Descriptor, which declare-on-first-use puts before the records —
+  a live decode does not yet know the extent — so it belongs on
+  [Session End](#session-end-0x12), alongside the integrity counts above and for
+  the same reason. Deferred rather than dismissed: it is a pure addition, and it
+  is the difference between a guarantee a consumer can enforce and one it must
+  take on trust.
+
 - **SCTP support.** The container needs no frame or block changes — SCTP is a
   minor-version addition of options: a per-record `stream_id` (u16, the SCTP
   stream an association multiplexes), `tsn` and `cum_tsn_ack` (u32 ordering

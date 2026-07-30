@@ -625,3 +625,45 @@ answers the question, the document just never says so.
 - [ ] Hand the result to `python-zipline`, and record what it finds
 - [ ] Expect a `0.11`. The point of staying in `0.x` is that the next round of
       findings costs a minor bump rather than a major one
+
+### Carried to `0.11`
+
+Not defects in `0.10`, and not blockers — additions that want a release of their
+own. Recorded here so they are not rediscovered from scratch.
+
+- [ ] **Input stream extents, so the coverage guarantee is self-verifiable.**
+      Raised while asking which normal-processing paths force a consumer back to
+      a parent file. The answer is: mostly none — a decoded file stands alone for
+      its decoded content, and provenance is for verification and re-derivation
+      rather than reading. But **validating coverage is the exception, and it is
+      structural.** Nothing records how long each *input* participant stream was,
+      so a decoder that silently stopped at offset 500 of a 900-byte stream
+      produces a file that looks internally complete, and only the parent
+      disproves it.
+
+      The fix is an addition on Session End, where the already-proposed
+      per-session integrity counts live — not the Participant Descriptor, which
+      declare-on-first-use puts before the records, so a live decode does not yet
+      know the extent. Written up under *Possible future extensions* in the
+      specification.
+
+      Worth doing because it changes the format's central honesty guarantee from
+      one a consumer must take on trust into one it can enforce.
+
+- [ ] **`transform_params_digest` on the File Header.** Falls out of the
+      `decoder_id` fix in Phase 11: once a filter or reordering stage inherits
+      the input's `decoder_id`s rather than declaring itself, its own
+      configuration has no `params_digest` home, so a filtered file is not
+      reproducible from what it records. Already true of a merge today, so `0.10`
+      is no worse — but the gap is now named.
+
+**Two production costs to keep in view rather than fix.** Both are consequences
+of the layering working as designed, not faults:
+
+- A workload wanting *all* bytes — security scanning, archival — is two-file by
+  construction, since a decode stage accounts for unparsed regions by reference
+  and may never copy bytes forward, and a file cannot mix decoded and
+  pass-through records. On captures rich in encrypted or unknown protocols that
+  is most records, not a rare tail.
+- Correlating a decoded record back to a capture position costs a hop per record,
+  and two across a decoded-layer pass-through.
