@@ -588,9 +588,34 @@ answers the question, the document just never says so.
       breaking the test that spared us a third file kind. The Undecoded block is
       exempt because its statement was always *about* the grandparent — it is
       not provenance for anything this file produced
+- [ ] **Fix a contradiction Phase 9 introduced about `decoder_id`.** Phase 4 says
+      it names *which decoder's layer a record belongs to*, which is what lets a
+      pass-through carry inherited ids forward. Phase 9's filter paragraph says
+      the transform "declares a Decoder Descriptor **for itself**… the descriptor
+      identifies whatever **produced** these records". For a filter or a
+      record-reordering transform these give different answers, and the Phase 4
+      reading is the load-bearing one — a reordered HTTP message is still an HTTP
+      message, so naming the reorderer misdescribes the payload.
+
+      Resolution: **`decoder_id` is layer identity, always.** A transform that
+      creates records without decoding them inherits the input's `decoder_id`s,
+      re-declares the Decoder Descriptors it references (as the annotator does),
+      and identifies *itself* via `produced_by`/`produced_at` on the File Header
+      like every other derived file. Delete the "declares a Decoder Descriptor
+      for itself" paragraph. Pass-throughs and such stages then treat
+      `decoder_id` identically, leaving `spans`-versus-`origin` as the only
+      difference — which is exactly the discriminator.
+
+      Note the cost, and do **not** fix it now: a filter's own configuration
+      loses its `params_digest` home. That is already true of a merge, so it is
+      no regression, but reproducing a filtered file is then unpinned. A
+      `transform_params_digest` on the File Header is the obvious future answer —
+      record it under *Possible future extensions*, do not add it to `0.10`
 - [ ] Add a vector for the two-hop case if it is cheap — the suite's stated gaps
       already include multi-file provenance chains, and this is the shape a
-      consumer most needs to get right
+      consumer most needs to get right. A record-reordering stage would make a
+      good second one, since its `spans` run non-monotonically against stored
+      order and a naive implementation may assume they ascend
 
 - [ ] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
       keeping — it found three broken anchors and 65 broken relative links)
