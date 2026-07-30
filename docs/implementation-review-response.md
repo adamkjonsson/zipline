@@ -564,6 +564,34 @@ still moving has to be rebuilt.
 
 ### Phase 11 — Release
 
+Two content fixes first, both raised by reading the annotator example and asking
+where a *record's* source bytes are. Neither is a design change; the design
+answers the question, the document just never says so.
+
+- [ ] **State that a record's offset range is positional.** §4.1 defines a
+      decoded stream's offset space as the concatenation of that participant's
+      decoded payloads in stored order, which *implies* that record *k* occupies
+      `[sum of preceding payload lengths, + its own length)` — but never says it.
+      A record carries no offset field, so an implementer has to derive the rule
+      before it can resolve anything. One sentence beside the offset-space
+      definition
+- [ ] **Explain the resolution asymmetry in a decoded-layer pass-through.** Its
+      records resolve through the **immediate** input — participant `origin`,
+      then the same offset range in that file, whose records carry the `spans`
+      that name the grandparent — while an inherited Undecoded block names the
+      grandparent **directly** and resolves in one hop. So the annotated file
+      alone cannot say which raw bytes a record came from, even though it
+      declares `raw.zpf` as a Source, which makes the wrong reading look
+      plausible. Say this at the annotator example, with the reason: `spans` is
+      the discriminator between a stage that *built* a record and one that
+      *re-emitted* it, so a pass-through cannot carry spans forward without
+      breaking the test that spared us a third file kind. The Undecoded block is
+      exempt because its statement was always *about* the grandparent — it is
+      not provenance for anything this file produced
+- [ ] Add a vector for the two-hop case if it is cheap — the suite's stated gaps
+      already include multi-file provenance chains, and this is the shape a
+      consumer most needs to get right
+
 - [ ] Full anchor and cross-reference sweep, as in Phase 5 (the script is worth
       keeping — it found three broken anchors and 65 broken relative links)
 - [ ] Confirm the CHANGELOG's `[0.10]` section is the complete delta from `0.9`
