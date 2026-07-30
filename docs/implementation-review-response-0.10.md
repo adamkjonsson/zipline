@@ -7,8 +7,8 @@ Second in a series. The first round (issues #8–#16) is in
 [implementation-feedback-analysis.md](implementation-feedback-analysis.md); the
 review that produced `0.10` and the renumbering is in
 [implementation-review-response.md](implementation-review-response.md), whose
-plan ran to Phase 11 and whose *Carried to `0.11`* items are absorbed into §5
-below.
+plan ran to Phase 11. Its *Carried to `0.11`* items are absorbed here — all
+three into §4, since `0.11` takes no new features.
 
 ---
 
@@ -23,7 +23,7 @@ below.
 | D2 | The merge has no defined behaviour on a hint-less session | **Half** — the k-way structure determines it; it is never *stated*, and step 4's skew clause is unactionable | State the stability invariant; fix step 4 | S |
 | D3 | A version transcode is not expressible | **Half** — a re-stamp *is* a pass-through; a *normalising* transcode is not, and the guidance is missing | Permit normalisation; state `0.x` disposability; **reject** a third derivation kind | M |
 | D5 | `zpf-input` conflates two relationships | **Diagnosis yes, remedy no** | Fix the *Conformance* sentence rather than add an option | XS |
-| — | Coverage unverifiable for a decoded pass-through | **Yes** | Already the carried input-extents item — independent confirmation | (carried) |
+| — | Coverage unverifiable for a decoded pass-through | **Yes** | Confirms the input-extents item — deferred to `0.12`, since it is a new option | (deferred) |
 
 **Six findings; four adopted as stated, two where the diagnosis stands and the
 remedy changes.** None reopens a `0.10` design decision — they are
@@ -189,7 +189,7 @@ inferable, in a rare case.
 
 ---
 
-## 3. Roll-out plan
+## 3. Roll-out plan — `0.11`
 
 Continues the numbering from
 [implementation-review-response.md](implementation-review-response.md) §7, whose
@@ -197,20 +197,25 @@ Phases 0–11 are complete. Absorbs that document's *Carried to `0.11`* items.
 
 ### Phase 12 — Decisions
 
-- [ ] **Transcode** — permit a pass-through to normalise renamed constructs
-      *(recommended)*, versus declaring `0.x` files simply disposable and
-      offering no upgrade path at all. The two are not exclusive; the question is
-      whether to do the first as well as the second
-- [ ] **Scope of `0.11`** — the three carried design items are *input stream
-      extents*, *`transform_params_digest`*, and *decrypted tunnels*. Tunnels are
-      the largest and least settled. Decide whether `0.11` is a small corrective
-      release (review fixes + extents) with tunnels held for `0.12`
-      *(recommended)*, or one larger release
-- [ ] **Decrypted tunnels** — if in scope, the three open questions from the
-      previous plan must be settled first: whether a decode stage may mint
-      sessions unrelated to its input's; whether keying the offset space on
-      `isn`/`seq_start` misclassifies a hint-less inner flow; and whether
-      decrypt-and-resessionize is one stage or two
+- [x] **Scope of `0.11`** — **decided: corrective only, no new features.**
+      `0.11` fixes what the review found and adds no option, block or capability.
+      Everything that introduces surface moves to `0.12` (below).
+
+      Note this defers one item further than first recommended: *input stream
+      extents* is a new Session End option, so despite being the most valuable of
+      the carried items it is a feature and waits. `transform_params_digest` goes
+      with it.
+
+- [ ] **Transcode: one judgment call inside that rule.** Two halves, and only the
+      first is clearly corrective:
+      - *Stating that `0.x` files are disposable and no upgrade path is
+        guaranteed* is pure documentation. **In `0.11`.**
+      - *Permitting a pass-through to normalise constructs the new version
+        renamed* adds no surface — it lifts a restriction rather than adding a
+        construct — but it is a normative relaxation, so it sits on the line.
+        **Recommended for `0.11`**, because without it every `0.9` file is
+        permanently stranded and reject-unknown-minor makes that worse at each
+        bump. Easy to pull out if you would rather hold it
 
 ### Phase 13 — The review's contradictions and omissions
 
@@ -239,28 +244,52 @@ Small, independent, and all safe to land together.
       run backwards across participants, which a merge must interleave without
       reordering either participant
 
-### Phase 14 — Design items
+### Phase 14 — Transcode guidance
 
-- [ ] **Transcode guidance** per the Phase 12 decision — the licensed exception
-      to "unchanged", plus the CHANGELOG statement on `0.x` disposability. Note
-      the id-reminting cost explicitly, since it breaks external references
-- [ ] **Input stream extents** on Session End, so the coverage guarantee is
-      verifiable without the parent. The review reached this independently:
-      `check_coverage` cannot verify a decoded pass-through at all, because the
-      output carries no `spans` and coverage is inherited by assertion
-- [ ] **`transform_params_digest`** on the File Header, so a filter, reordering
-      stage or merge can pin its own configuration
-- [ ] **Decrypted tunnels**, if Phase 12 puts them in scope — design first,
-      wording second
+Corrective, per the Phase 12 judgment call. Nothing here adds surface.
+
+- [ ] State that a version upgrade **is** a pass-through — the mechanism already
+      exists and only the guidance was missing
+- [ ] The licensed exception to "unchanged": a pass-through performing a version
+      upgrade MAY normalise constructs the new version renamed. Scope it tightly,
+      to renames only, or it becomes a hole in the preservation obligation
+- [ ] Note the id-reminting cost explicitly — a pass-through mints fresh ids and
+      maps them with `origin`, so external references to the old file's session
+      ids break. That is the real price of this route and it is currently unsaid
+- [ ] CHANGELOG: `0.x` files are disposable and no upgrade path is guaranteed
 
 ### Phase 15 — Vectors and release
 
-- [ ] Vectors for whatever Phase 14 lands
+- [ ] Vectors for D1 and D2a (listed under Phase 13)
 - [ ] **A real multi-file provenance chain** — three files whose offsets and
       digests actually agree. Already the vector suite's top stated gap, and the
       review's inability to verify decoded-pass-through coverage is a second
-      argument for it
+      argument for it. It adds no format surface, so it belongs in `0.11`
 - [ ] Full read-through, not only the mechanical anchor and link sweep. Every
       finding of the last two rounds came from reading the examples and asking
       concrete questions of them; the mechanical sweeps caught none of them
 - [ ] Cut `0.11`: date the CHANGELOG section, tag, hand back to `python-zipline`
+
+---
+
+## 4. Deferred to `0.12`
+
+Everything that adds surface. Each is recorded with its reasoning above or in the
+[previous response](implementation-review-response.md); none is a `0.10` defect.
+
+- **Input stream extents** on Session End, so the coverage guarantee is
+  verifiable without holding the parent. The most valuable of the three, and
+  independently confirmed by this review: `check_coverage` cannot verify a
+  decoded pass-through at all, since the output carries no `spans` and coverage
+  is inherited by assertion. A new option, so it waits.
+- **`transform_params_digest`** on the File Header, so a filter, reordering stage
+  or merge can pin its own configuration. A new option, so it waits.
+- **Decrypted tunnels** — the offset space keyed on what a stream *is* rather
+  than which stage produced it. Needs its three open questions settled before any
+  wording: whether a decode stage may mint sessions unrelated to its input's;
+  whether keying on `isn`/`seq_start` misclassifies a hint-less inner flow; and
+  whether decrypt-and-resessionize is one stage or two.
+
+Holding these together has a side benefit: `0.12` becomes a deliberate
+feature release, which is easier to review as a whole than three additions
+smuggled in beside corrections.

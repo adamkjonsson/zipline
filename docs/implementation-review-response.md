@@ -631,11 +631,13 @@ answers the question, the document just never says so.
 Not defects in `0.10`, and not blockers — additions that want a release of their
 own. Recorded here so they are not rediscovered from scratch.
 
-> **Superseded by the next round.** `0.10` shipped and was reviewed; these three
-> items are absorbed into the plan in
+> **Superseded by the next round, and all three deferred again.** `0.10` shipped
+> and was reviewed; `0.11` was then scoped as corrective only, taking no new
+> features. Since each of these adds an option or a rule, all three moved to
+> `0.12` — see
 > [implementation-review-response-0.10.md](implementation-review-response-0.10.md)
-> §3, which is where `0.11` is now tracked. They are left here as written because
-> the reasoning behind each is recorded above.
+> §4. They are left here as written because the reasoning behind each is recorded
+> above.
 
 - [ ] **Input stream extents, so the coverage guarantee is self-verifiable.**
       Raised while asking which normal-processing paths force a consumer back to
