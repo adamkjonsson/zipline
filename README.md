@@ -85,6 +85,9 @@ a rule rather than the rule itself:
   the implementation project, kept verbatim.
 - [docs/implementation-review-response.md](docs/implementation-review-response.md)
   — the response, including the decision to renumber.
+- [docs/SPEC-0.10-REVIEW.md](docs/SPEC-0.10-REVIEW.md) and
+  [docs/implementation-review-response-0.10.md](docs/implementation-review-response-0.10.md)
+  — the same exchange for `0.10`, and where `0.11` is being planned.
 
 ## License
 

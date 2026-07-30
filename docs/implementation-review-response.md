@@ -631,6 +631,12 @@ answers the question, the document just never says so.
 Not defects in `0.10`, and not blockers — additions that want a release of their
 own. Recorded here so they are not rediscovered from scratch.
 
+> **Superseded by the next round.** `0.10` shipped and was reviewed; these three
+> items are absorbed into the plan in
+> [implementation-review-response-0.10.md](implementation-review-response-0.10.md)
+> §3, which is where `0.11` is now tracked. They are left here as written because
+> the reasoning behind each is recorded above.
+
 - [ ] **Input stream extents, so the coverage guarantee is self-verifiable.**
       Raised while asking which normal-processing paths force a consumer back to
       a parent file. The answer is: mostly none — a decoded file stands alone for
