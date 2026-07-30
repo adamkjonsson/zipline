@@ -84,15 +84,26 @@ known when the flag must be written. That is the same class of problem the
 lowest-minor stamping rule was withdrawn for — the review is applying our own
 reasoning back to us, correctly.
 
+A **third** site turned up while fixing it, which the review did not catch: the
+narrative also said the producer *SHOULD* say what the basis was, contradicting
+the registry's MUST. The inconsistency spanned three passages, not two.
+
 **Fix, as proposed:** separate the two requirements. *Soundness* may be trivially
 met; *recording* is unconditional. A producer setting `SEQUENCED` on a hint-less
 session always writes `sequenced_basis`, and the trivial cases simply make the
 claim easy to justify. Decidable at Session Descriptor time, no deferred state on
 either side.
 
-Do **not** add a `trivial` vocabulary value: a writer that cannot yet know the
-session is single-sender cannot honestly claim it, and one that can is already
-free to say so. The existing values plus the open vocabulary cover it.
+**Reversed on `trivial`.** This document first argued against adding the value;
+that was wrong. If recording is unconditional, a trivially-sound session must
+write *something*, and none of `clock`/`protocol`/`external` is true of it —
+forcing a choice among them makes the producer state a falsehood. `trivial` says
+what is actually the case. The original objection (that a streaming writer cannot
+know the session is single-sender) does not apply: such a writer is not relying on
+triviality and records what it *is* relying on, while one decoding a known
+one-way feed can say so honestly at Session Descriptor time. Adding a defined
+value to an already-open vocabulary documents an existing possibility rather than
+adding surface, exactly as `skipped` did in `0.10`.
 
 ### D6 — the alias table illustrates with a retired version
 
@@ -236,25 +247,25 @@ Phases 0–11 are complete. Absorbs that document's *Carried to `0.11`* items.
 
 Small, independent, and all safe to land together.
 
-- [ ] **D4** — state in *Conventions* that a `0.9` file stamps `1`/`0`, with a
+- [x] **D4** — state in *Conventions* that a `0.9` file stamps `1`/`0`, with a
       matching note in the `[0.9]` section. Do this first; it is the one that
       actively misleads
-- [ ] **D1** — separate soundness from recording: `sequenced_basis` is written
+- [x] **D1** — separate soundness from recording: `sequenced_basis` is written
       unconditionally on a hint-less `SEQUENCED` session, and the trivial cases
       make the claim easy rather than unnecessary. Reword *Sequenced files*
       (drop "no basis needed at all"), the registry row, and *Conformance*'s
       "meets this trivially"
-- [ ] **D2a** — state the merge's stability invariant: it never reorders one
+- [x] **D2a** — state the merge's stability invariant: it never reorders one
       participant's records against each other; timestamps choose only between
       frontiers
-- [ ] **D2b** — remove or rewrite step 4's "if clocks are known-skewed" clause,
+- [x] **D2b** — remove or rewrite step 4's "if clocks are known-skewed" clause,
       which asks a reader for a determination it cannot make
-- [ ] **D5** — reword the *Conformance* sentence about declaring inputs, and say
+- [x] **D5** — reword the *Conformance* sentence about declaring inputs, and say
       that the immediate input is the one `origin`/`spans` reference
-- [ ] **D6** — illustrate the omitted-minor rule with `"zipline-payload/2"`
-- [ ] **O(k) note** — record the random-access cost and the prefix-sum
+- [x] **D6** — illustrate the omitted-minor rule with `"zipline-payload/2"`
+- [x] **O(k) note** — record the random-access cost and the prefix-sum
       recommendation, cross-referencing the index under future extensions
-- [ ] Vectors for D1 and D2a: a hint-less `SEQUENCED` session missing
+- [x] Vectors for D1 and D2a: a hint-less `SEQUENCED` session missing
       `sequenced_basis` (isolate tier), and a hint-less session whose timestamps
       run backwards across participants, which a merge must interleave without
       reordering either participant
@@ -263,7 +274,7 @@ Small, independent, and all safe to land together.
 
 Reduced to one item by the Phase 12 decision; the rest moved to §4.
 
-- [ ] CHANGELOG: `0.x` files are disposable and no upgrade path between `0.x`
+- [x] CHANGELOG: `0.x` files are disposable and no upgrade path between `0.x`
       versions is guaranteed — regenerate from the capture instead. Say it in
       *Conventions*, beside the rule that a reader rejects a `version_minor` it
       does not implement, since that rule is what makes it true

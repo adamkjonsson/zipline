@@ -110,6 +110,24 @@
       "has_jsonl": true
     },
     {
+      "name": "hintless-merge-backwards-ts",
+      "tier": "accept",
+      "bytes": 268,
+      "summary": "A hint-less session with no seq/ack, whose timestamps run backwards ACROSS participants. Every record is concurrent, so the whole order is the merge's timestamp tie-break -- but each participant's own records keep their stored order. A reader that rejects on the inversion, or that re-sorts one participant's records, fails.",
+      "spec_section": "Merge algorithm -- stability",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
+      "name": "isolate-sequenced-no-basis",
+      "tier": "isolate",
+      "bytes": 168,
+      "summary": "A hint-less session marked SEQUENCED with no sequenced_basis. Recording the basis is unconditional -- the trivially-sound cases write `trivial` rather than omitting it -- so this file is semantically invalid.",
+      "spec_section": "Sequenced files (precomputed order)",
+      "expect": "MAY reject the file, or isolate the session. The check cannot fire at the Session Descriptor alone in the general case, but it can here: SEQUENCED is set, the session carries no seq/ack, and no sequenced_basis accompanies the flag.",
+      "has_jsonl": false
+    },
+    {
       "name": "reject-bad-magic",
       "tier": "reject",
       "bytes": 48,

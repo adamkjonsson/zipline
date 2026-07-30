@@ -15,6 +15,17 @@ no patch component, because a version that is not on the wire cannot be
 communicated to a reader. Both components are independent integers compared
 componentwise: **`0.10` follows `0.9`** and is greater than it.
 
+**One exception, and it matters if you are writing a `0.9` reader.** A real
+`0.9` file stamps `version_major = 1`, `version_minor = 0`. The renumbering
+re-designated the July 2026 text; it did not rewrite any bytes, and no file has
+ever stamped `0`/`9`. `0.9` is the one version where the name and the header
+disagree — every version from `0.10` on stamps what it is called.
+
+`0.x` files are also **disposable**: a reader rejects a `version_minor` it does
+not implement, and no upgrade path between `0.x` versions is guaranteed. Where
+a `0.9` file still matters, regenerate it from the capture rather than
+transcoding it.
+
 The compatibility rules have two regimes, and the format is currently in the
 first:
 
@@ -46,6 +57,71 @@ does not implement, and that is the intended behaviour. The entries below still
 distinguish *Clarified* from *Changed*, because the distinction tells an
 implementer whether their existing code was wrong or merely incomplete — but
 neither is safe to skip within `0.x`.
+
+---
+
+## [Unreleased] — 0.11
+
+**In development.** A corrective release: it fixes what the first review of
+`0.10` found and adds no option, block or capability. Everything that would add
+surface is held for `0.12`. Reasoning in
+[docs/implementation-review-response-0.10.md](docs/implementation-review-response-0.10.md).
+
+### Clarified
+
+- **A `0.9` file stamps `1`/`0` in its header**, not `0`/`9` — stated in
+  *Conventions* above and in the `[0.9]` section. The renumbering re-designated
+  the July 2026 text without rewriting bytes, so `0.9` is the one version whose
+  name and header disagree. *Anyone building a `0.9` reader from the CHANGELOG
+  alone would otherwise look for `0`/`9` and reject every real `0.9` file.*
+- **`0.x` files are disposable**, stated plainly for the first time: no upgrade
+  path between `0.x` versions is guaranteed, and a `0.9` file that still matters
+  should be regenerated from its capture. *A version-upgrade transform is being
+  considered for `0.12`; until then there is none.*
+- **Recording `sequenced_basis` is unconditional; soundness may be trivial.**
+  `0.10` required the option in the registry while the narrative exempted the
+  trivially-sound cases and a third passage still said SHOULD — three statements,
+  no consistent reading. The exemption was also undecidable for a streaming
+  writer, since `SEQUENCED` is written before the records that would settle
+  whether only one participant sends. A hint-less `SEQUENCED` session now always
+  carries the option.
+- **The merge never reorders one participant's records against each other.** It
+  is a k-way interleaving of already-sorted streams, so the timestamp tie-break
+  chooses only *between* participants — including on a hint-less session, where
+  every record is concurrent and the whole order is that tie-break. The property
+  followed from the algorithm's shape and was stated nowhere.
+- **Not every `zpf-input` Source is an input.** A file may declare one so an
+  inherited reference resolves — a pass-through carrying Undecoded blocks that
+  name a file further up the chain. The immediate inputs are the Sources that
+  `origin` or `spans` point at.
+- **A decoded record's positional range costs O(k) for random access**, with the
+  recommendation to build per-participant prefix sums on a first pass. Free for
+  forward reading, which is the design's primary case.
+
+### Added
+
+- **`sequenced_basis` value `trivial`** — for a session with one participant, or
+  only one that ever sends. Without it, making the recording unconditional would
+  force a producer to claim `clock`, `protocol` or `external` when none is true.
+  *A defined value in an already-open vocabulary, so this documents an existing
+  possibility rather than adding surface — as `skipped` did in `0.10`.*
+- **Two conformance vectors**: `hintless-merge-backwards-ts` (accept) and
+  `isolate-sequenced-no-basis` (isolate). 23 in total.
+
+### Changed
+
+- **The merge's step 4 no longer asks a reader to detect clock skew.** "If
+  clocks are known-skewed, fall back to round-robin / source order" required a
+  determination a reader cannot make — skew is not a property a file asserts, and
+  the absence of `SINGLE_CLOCK` says nothing either way. A **producer** computing
+  a sequenced order may still choose any deterministic tie-break and record it via
+  `sequenced_basis`; a reader always uses the timestamp.
+
+### Fixed
+
+- **The brevity-alias table illustrated the omitted-minor rule with
+  `"zipline-payload/1"`** — the retracted version, in the table a reader consults
+  while working out what the renumbering did. Now `"zipline-payload/2"`.
 
 ---
 
@@ -331,6 +407,9 @@ final. It was neither: no implementation existed yet, and the first one found
 enough to force a breaking revision. Retroactively renumbered — see the note
 under `0.10` above.
 
+**Files of this version stamp `1`/`0` in the File Header**, not `0`/`9`. Only
+the designation changed; the bytes never did.
+
 ### Added
 
 - **Container.** Length-prefixed typed blocks with an 8-byte frame, little-endian
@@ -364,5 +443,6 @@ under `0.10` above.
   byte-annotated worked example of a complete 196-byte raw file.
 
 [Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.10...HEAD
+[0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...HEAD
 [0.10]: https://github.com/adamkjonsson/zipline/compare/v0.9...v0.10
 [0.9]: https://github.com/adamkjonsson/zipline/releases/tag/v0.9
