@@ -2041,6 +2041,37 @@ declare-on-first-use contract holding in the byte stream.
   wanted, the `id` high bit (dropping ids to a 15-bit space) is the place — *not*
   the `len` bit, which would halve the 64 KB option-value cap.
 
+- **Promoting frequent options into block bodies.** A TLV costs a 4-byte header
+  plus padding, so an option carried by nearly every block of its type is paying
+  framing for nothing. *Considered and not adopted*, and the reasoning is worth
+  keeping because the question recurs.
+
+  There is no option to promote on correctness grounds: **every mandatory option
+  in this document is *conditionally* mandatory** — `isn` when the handshake was
+  seen, `decoder_id` when the record is decoded, `spans` when the file is a decode
+  stage, `origin` when it is a pass-through, `sequenced_basis` on a hint-less
+  `SEQUENCED` session, `reason_class` on a non-canonical reason. A body field is
+  always present, so each would need a sentinel for "absent" — and absence here
+  *carries meaning*: no `isn` means the capture began mid-stream and the origin is
+  unknowable, no `decoder_id` means the record is a byte run, no `tcp_role` means
+  unknown rather than responder. A sentinel would also collide with a legal value
+  (`isn = 0` is a real ISN). The same block type additionally serves several file
+  kinds — `origin` is required in a pass-through and forbidden in a raw file — and
+  a body cannot vary by file kind.
+
+  The strongest *efficiency* candidates are therefore not the mandatory options
+  but `seq_start` and `ack`, near-universal in a TCP file and costing 8 bytes each
+  as a TLV against 4 inline. In the [worked example](#worked-example-a-minimal-raw-file)
+  that is 16 of the record block's 64 bytes spent framing 8 bytes of ordering
+  data; on a pure-ACK record it is 16 bytes of framing in 44. Still not adopted:
+  inlining taxes every UDP, chat and decoded record with 8 unused bytes, needs a
+  sentinel (`seq_start = 0` is legal), and saves around an eighth of a TCP record
+  carrying payload.
+
+  Timing matters if this is ever revisited. Moving an option into a body is a
+  **body-layout change**, so it is free while the format is in `0.x` and costs a
+  major bump afterwards.
+
 - **Per-session integrity counts.** Optional totals (record count, per-
   participant byte count) as TLVs on the [Session End](#session-end-0x12)
   block, as a truncation/loss tripwire. Deferred: they are pure additions, so
