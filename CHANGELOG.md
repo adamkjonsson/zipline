@@ -60,9 +60,9 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [Unreleased] — 0.11
+## [0.11] — 2026-07-30
 
-**In development.** A corrective release: it fixes what the first review of
+A corrective release: it fixes what the first review of
 `0.10` found and adds no option, block or capability. Everything that would add
 surface is held for `0.12`. Reasoning in
 [docs/implementation-review-response-0.10.md](docs/implementation-review-response-0.10.md).
@@ -98,6 +98,15 @@ surface is held for `0.12`. Reasoning in
   recommendation to build per-participant prefix sums on a first pass. Free for
   forward reading, which is the design's primary case.
 
+### Changed
+
+- **The specification is version `0.11`**, so a `0.11` file stamps
+  `version_major = 0`, `version_minor = 11`, and renders as
+  `"zipline-payload/0.11"`. A `0.10` reader MUST reject it — that is the `0.x`
+  regime working as intended, not a defect. *Nothing in this release changes the
+  frame, a block body, or an option's meaning; the bump is required because the
+  version is how a reader tells the two apart.*
+
 ### Added
 
 - **`sequenced_basis` value `trivial`** — for a session with one participant, or
@@ -107,6 +116,14 @@ surface is held for `0.12`. Reasoning in
   possibility rather than adding surface — as `skipped` did in `0.10`.*
 - **Two conformance vectors**: `hintless-merge-backwards-ts` (accept) and
   `isolate-sequenced-no-basis` (isolate). 23 in total.
+- **A three-file provenance chain** in [`vectors/chain/`](vectors/), whose
+  digests and offsets genuinely agree: `raw.zpf` → `decoded.zpf` →
+  `annotated.zpf`. It is the only fixture that can exercise the recovery walk,
+  two-hop resolution through a decoded-layer pass-through, and digest
+  verification — and the only place the **coverage guarantee is actually
+  checked**, since verifying it requires the input's stream extents, which live
+  in the parent. *That is also a concrete demonstration of why recording those
+  extents is on the list for a future version.*
 
 ### Changed
 
@@ -122,6 +139,10 @@ surface is held for `0.12`. Reasoning in
 - **The brevity-alias table illustrated the omitted-minor rule with
   `"zipline-payload/1"`** — the retracted version, in the table a reader consults
   while working out what the renumbering did. Now `"zipline-payload/2"`.
+- **A stale cross-reference to the merge's removed skew fallback.** One passage
+  still cited "step 4's clock/round-robin tie-break" as the reason independent
+  reader merges may disagree. With the fallback gone, readers agree except on an
+  exact timestamp tie — which this version does not resolve, and now says so.
 
 ---
 
@@ -442,7 +463,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.10...HEAD
-[0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...HEAD
+[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.11...HEAD
+[0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...v0.11
 [0.10]: https://github.com/adamkjonsson/zipline/compare/v0.9...v0.10
 [0.9]: https://github.com/adamkjonsson/zipline/releases/tag/v0.9
