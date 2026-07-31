@@ -297,10 +297,18 @@ Reduced to one item by the Phase 12 decision; the rest moved to §4.
 
 ---
 
-## 4. Deferred to `0.12`
+## 4. Deferred — now scoped to `0.13`
 
 Everything that adds surface. Each is recorded with its reasoning above or in the
 [previous response](implementation-review-response.md); none is a `0.10` defect.
+
+> **Deferred once more, and now scoped.** `0.11` shipped corrective-only, and the
+> review of it found three further corrections, so `0.12` is corrective too.
+> These items are committed to **`0.13`**, whose contents are fixed in
+> [implementation-review-response-0.11.md](implementation-review-response-0.11.md)
+> §3 — including a rule stopping the release sliding wholesale, since this is the
+> second deferral. Note the version re-stamp design changed there: it becomes a
+> File Header option rather than a pass-through.
 
 - **Input stream extents** on Session End, so the coverage guarantee is
   verifiable without holding the parent. The most valuable of the three, and

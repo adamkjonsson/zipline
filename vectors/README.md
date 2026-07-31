@@ -2,7 +2,7 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.11`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.12`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
@@ -96,7 +96,7 @@ naive implementation most often fails by treating extension as corruption.
 | `escape-unknown-enum` | An undefined `tcp_role`. Advisory, so it renders as the raw number. |
 | `escape-reserved-flag-bit` | A set reserved bit in a record's `flags` — ignored semantically, preserved as a hex token. |
 
-### `0.10` constructs
+### Ordering and sequencing
 
 | Vector | What it exercises |
 |--------|-------------------|
@@ -106,6 +106,8 @@ naive implementation most often fails by treating extension as corruption.
 | `sequenced-basis` | A hint-less `SEQUENCED` session with its mandatory `sequenced_basis`. |
 | `hintless-merge-backwards-ts` | A hint-less session whose timestamps run backwards *across* participants. Every record is concurrent, so the whole order is the merge's tie-break — but each participant's own records keep stored order. A reader that rejects, or re-sorts within a participant, fails. |
 | `reordered-decoded` | A stage that reorders decoded records without decoding them — a decode stage, since stored order defines the offsets. **Its `spans` run downward against stored order**, which a reader assuming they ascend will fail. |
+| `merge-timestamp-tie` | Two concurrent records from different participants with **identical timestamps**, stored in the *opposite* order to the one the merge must produce. Before `0.12` this tie was unresolved and two conformant readers could disagree; the tie-break is now ascending `participant_id`. |
+| `partially-hinted-sequenced` | A `SEQUENCED` session where **one** record carries `seq_start` and the rest carry nothing. A single hint anywhere means the session is not hint-less, so no `sequenced_basis` is required — even though most of the order rests on timestamps. Pins the answer to the question that took longest to settle. |
 
 ### Reject tier
 
@@ -113,7 +115,7 @@ naive implementation most often fails by treating extension as corruption.
 |--------|--------|
 | `reject-bad-magic` | Byte-swapped magic. |
 | `reject-unknown-major` | `version_major` this reader does not implement. |
-| `reject-unknown-minor` | `version_minor` 11 while major is 0. **The vector that distinguishes a `0.x`-aware reader from one assuming minors are always skippable.** |
+| `reject-unknown-minor` | `version_minor` 13 while major is 0. **The vector that distinguishes a `0.x`-aware reader from one assuming minors are always skippable.** |
 | `reject-length-misaligned` | A block `length` that is not a multiple of 4. |
 | `reject-payload-len-overrun` | `payload_len` running past its own block. |
 
@@ -124,7 +126,7 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-undeclared-session` | A record naming a session that was never declared. |
 | `isolate-duplicate-id` | A `source_id` declared twice. |
 | `isolate-coverage-gap` | A decode stage leaving an input range neither covered by `spans` nor marked Undecoded. |
-| `isolate-sequenced-no-basis` | A hint-less `SEQUENCED` session with no `sequenced_basis`. Recording is unconditional — the trivially-sound cases write `trivial` rather than omitting it. |
+| `isolate-sequenced-no-basis` | A hint-less `SEQUENCED` session with no `sequenced_basis`. Recording is unconditional — the trivially-sound cases write `trivial` rather than omitting it. **A reader can only raise this at Session End**, since hint-lessness is a property of the records. |
 | `isolate-unknown-source-kind` | An undefined Source `kind` — load-bearing, unlike `tcp_role`, because it decides how span offsets are read. |
 
 ### The provenance chain

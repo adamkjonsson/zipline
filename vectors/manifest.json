@@ -1,5 +1,5 @@
 {
-  "format": "zipline-payload/0.11",
+  "format": "zipline-payload/0.12",
   "vectors": [
     {
       "name": "raw-minimal",
@@ -119,12 +119,30 @@
       "has_jsonl": true
     },
     {
+      "name": "merge-timestamp-tie",
+      "tier": "accept",
+      "bytes": 240,
+      "summary": "Two concurrent records from DIFFERENT participants bearing the SAME timestamp. Before 0.12 this was a genuine tie the format did not resolve, so two conformant readers could order the file differently. The merge now breaks it by ascending participant_id, so pid 0's record precedes pid 1's.",
+      "spec_section": "Merge algorithm -- step 4",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
+      "name": "partially-hinted-sequenced",
+      "tier": "accept",
+      "bytes": 316,
+      "summary": "A SEQUENCED session where ONE record carries seq_start and the rest carry no hints at all. Under 0.12's definition a single hint anywhere means the session is not hint-less, so no sequenced_basis is required -- even though most of the order rests on timestamps. This vector pins that answer.",
+      "spec_section": "Merge algorithm -- hint-less",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
       "name": "isolate-sequenced-no-basis",
       "tier": "isolate",
       "bytes": 168,
       "summary": "A hint-less session marked SEQUENCED with no sequenced_basis. Recording the basis is unconditional -- the trivially-sound cases write `trivial` rather than omitting it -- so this file is semantically invalid.",
       "spec_section": "Sequenced files (precomputed order)",
-      "expect": "MAY reject the file, or isolate the session. The check cannot fire at the Session Descriptor alone in the general case, but it can here: SEQUENCED is set, the session carries no seq/ack, and no sequenced_basis accompanies the flag.",
+      "expect": "MAY reject the file, or isolate the session. Note WHEN: no record carries seq_start or ack, so the session is hint-less -- but a reader cannot know that until Session End or end-of-stream, since hint-lessness is a property of the records and the Session Descriptor precedes them. A checker that raises this at the descriptor is guessing; one that never raises it has not deferred the check.",
       "has_jsonl": false
     },
     {
@@ -149,7 +167,7 @@
       "name": "reject-unknown-minor",
       "tier": "reject",
       "bytes": 48,
-      "summary": "version_minor is 12 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.11 reader MUST reject it.",
+      "summary": "version_minor is 13 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.12 reader MUST reject it.",
       "spec_section": "File Header -- version numbering",
       "expect": "Reject the file. This is the vector that distinguishes a 0.x-aware reader from one that assumes minors are always skippable.",
       "has_jsonl": false

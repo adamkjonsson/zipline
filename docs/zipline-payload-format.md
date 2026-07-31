@@ -1,17 +1,17 @@
-# Zipline Payload Format (v0.11)
+# Zipline Payload Format (v0.12)
 
-> Status: **version 0.11** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.12** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
-> `0.10` was the first revision informed by a real implementation; `0.11` is the
-> second, correcting what a review of `0.10` found. More are expected.
+> `0.10` was the first revision informed by a real implementation; `0.11` and
+> `0.12` corrected what successive reviews of them found. More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` and `0.11` followed. Note
-> `0.11` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10`, `0.11` and `0.12`
+> followed. Note `0.12` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -196,7 +196,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.11","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -295,7 +295,8 @@ OUTPUT: one interleaved, causally-consistent sequence
 3. Topologically sort the resulting DAG.
 
 4. Where the topo order is free (concurrent records with no causal edge
-   between them), break ties by timestamp.
+   between them), break ties by timestamp; where timestamps are equal,
+   by ascending `participant_id`.
 ```
 
 Step 2 is the payoff — it stitches the two separately-captured directions
@@ -304,18 +305,35 @@ together on causality rather than the skew-prone clock.
 **The merge never reorders one participant's records against each other.** Step
 1 takes each participant's records in file order and nothing later disturbs it:
 the merge is a k-way interleaving of already-sorted streams, so step 4's
-timestamp tie-break chooses only *between* participants. This matters most where
-there is least to go on — a **hint-less** session has no causal edges at all, so
+tie-break chooses only *between* participants. This matters most where
+there is least to go on — a hint-less session has no causal edges at all, so
 every record is concurrent and the whole order is step 4. Even there, a
 participant's own records keep their stored order, and a timestamp that runs
 backwards within one participant changes nothing. The merge is *stable* with
 respect to stored order.
 
+**Hint-less**, used throughout this document, means: **a session in which no
+record carries `seq_start` or `ack`.** A single such hint anywhere in the session
+yields causal edges, so the session is not hint-less. Chat rooms and one-way UDP
+feeds are the usual examples; a TCP session is hint-less only if its writer
+recorded no sequence numbers at all.
+
+Note what this is a property of: the session's **records**, not its Session
+Descriptor. Because [declare-on-first-use](#declaration-order-declare-on-first-use)
+places the descriptor before them, a reader cannot decide it when the session is
+declared — only at [Session End](#session-end-0x12) or end-of-stream. Any check
+that depends on it defers to that point, which costs one boolean per open session
+and composes with the state a reader already keeps.
+
 **A producer computing a sequenced order MAY choose a different tie-break** —
 round-robin, source order, anything deterministic — if it knows the clocks are
-unreliable, and it says so with
-[`sequenced_basis`](#sequenced-files-precomputed-order). That choice belongs to
-the producer, which knows how the capture was taken. A **reader** cannot make
+unreliable. That choice belongs to the producer, which knows how the capture was
+taken; the stored order is authoritative however it was reached, and a reader
+never re-derives it. On a **hint-less** session the producer records what the
+order rests on in
+[`sequenced_basis`](#sequenced-files-precomputed-order); on a session with hints
+there is nothing to record, since the causal edges already account for the order
+and only genuinely concurrent records reach the tie-break at all. A **reader** cannot make
 it: skew is not a property a file asserts, and the absence of
 [`SINGLE_CLOCK`](#file-header-0x01) says nothing either way. So a reader
 breaking ties always uses the timestamp.
@@ -380,7 +398,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.11","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -457,7 +475,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.11","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -477,12 +495,12 @@ causal order despite the inverted timestamps:
 
 Sequencing is **optional** and orthogonal to raw-vs-decoded. A reader MUST still
 accept unsequenced sessions (and run the merge itself if it wants their
-interleaved view). Determinism is a free side benefit: because the producer fixes
-the tie-break for concurrent records, every reader of a sequenced session observes
-the *same* order. Independent per-reader merges come close — they all break ties
-by timestamp — but two concurrent records bearing the *same* timestamp are a
-genuine tie that this document does not resolve, so readers may still differ
-there.
+interleaved view). Sequencing is an optimisation, not a correctness fix: **the
+merge is fully deterministic either way.** Step 4 orders concurrent records by
+`(timestamp, participant_id)`, and `participant_id` is unique within its session,
+so the frontiers are totally ordered and every reader of the same file computes
+the same interleaving. A producer that bakes the order in saves each reader the
+work; it does not change the answer.
 
 **What a sequenced session rests on.** A session's causal order comes from
 whatever ordering hints its records carry. A **TCP** session has `seq`/`ack`, so
@@ -542,6 +560,14 @@ which [declare-on-first-use](#declaration-order-declare-on-first-use) places
 only one participant will ever send. It can always know what it is relying on.
 A producer that cannot justify triviality yet simply is not relying on it, and
 records the basis it *is* relying on.
+
+The same asymmetry settles a question the rule otherwise raises. Whether a
+session is [hint-less](#merge-algorithm) is a property of its records, which the
+producer cannot confirm when it writes the descriptor either — but it does not
+need to. It decides by *what it is relying on*: a producer relying on transport
+hints expects them and writes no basis, and one relying on anything else writes
+that. The reader, which cannot see the producer's reasoning, is the side that
+must wait until Session End to conclude the session was hint-less at all.
 
 The requirement is on the producer, not the consumer: a reader **MUST NOT**
 reject a session for an unrecognised value, and a value it does not know simply
@@ -840,7 +866,7 @@ bytes it could not parse — its ids read in `raw.zpf`'s namespace, coincidental
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.11","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -878,7 +904,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.11","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -991,7 +1017,7 @@ MUST be the first block in the file. Body:
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `0` for this document                                        |
-| `version_minor` | u16  | `11` for this document                                       |
+| `version_minor` | u16  | `12` for this document                                       |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -1005,7 +1031,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.11` is the eleventh minor and is **greater** than `0.9`. A writer stamps
+number: `0.12` is the twelfth minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -1745,7 +1771,9 @@ requirement binds **hint-less sessions only** — a session carrying `seq`/`ack`
 may be sequenced whatever its timestamps do, and needs no `sequenced_basis`.
 
 A **missing** `sequenced_basis` on a hint-less `SEQUENCED` session is a semantic
-violation, isolatable like any other. A reader MUST NOT reject a session merely
+violation, isolatable like any other. A reader can only raise it at
+[Session End](#session-end-0x12) or end-of-stream, because until then it does not
+know the session is hint-less (see [Merge algorithm](#merge-algorithm)). A reader MUST NOT reject a session merely
 for carrying a `sequenced_basis` value it does not recognise — the vocabulary is
 open, and an unknown value means an unknown basis, not an invalid one.
 
@@ -1762,7 +1790,7 @@ A reader therefore:
   wrong, not the file.
 - Uses timestamps for ordering in exactly one place: as the tie-break between
   causally *concurrent* records while running the [merge](#merge-algorithm) on a
-  non-sequenced session (step 4).
+  non-sequenced session (step 4), where `participant_id` settles an exact tie.
 
 The only stored-order guarantee a reader may rely on — and the only one whose
 violation it may act on — is the per-participant `seq_start` ordering above,
@@ -2031,7 +2059,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  0B 00                    version_minor = 11   (0.11, little-endian)
+000E  0C 00                    version_minor = 12   (0.12, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
@@ -2216,7 +2244,7 @@ declare-on-first-use contract holding in the byte stream.
 - **Transport-neutral ordering hints.** Generic `seq_pos` / `cum_ack` options,
   letting the [merge](#merge-algorithm) derive causal edges for transports the
   format does not model — the SCTP entry above is the same idea named concretely.
-  *Not adopted in 1.1:* the merge needs **both** a monotonic per-sender position
+  *Not adopted in `0.10`:* the merge needs **both** a monotonic per-sender position
   and a *cumulative* peer acknowledgement, and the sessions that motivated the
   request (multi-party UDP, chat) supply neither. RTP-style protocols supply only
   the first, which yields no cross-participant edges at all. Those cases are
@@ -2226,7 +2254,7 @@ declare-on-first-use contract holding in the byte stream.
 
 - **A machine-checkable "annotation" file kind.** A third derived-file kind
   asserting that a transform changed nothing but metadata, so a consumer could
-  skip re-verifying the payloads. *Not adopted in 1.1:* the layer-preserving
+  skip re-verifying the payloads. *Not adopted in `0.10`:* the layer-preserving
   pass-through already covers the case, and the `spans`-versus-`origin`
   distinction (see [Conformance](#conformance)) already tells mechanically
   whether a file's own stage built a record or re-emitted it. A third kind would

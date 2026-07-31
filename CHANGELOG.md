@@ -60,6 +60,58 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.12] — 2026-07-31
+
+A corrective release, like `0.11`: it fixes what the review
+of `0.11` found and adds no option, block or capability. Reasoning in
+[docs/implementation-review-response-0.11.md](docs/implementation-review-response-0.11.md).
+
+### Clarified
+
+- **`hint-less` is defined**, having carried normative weight in fourteen places
+  with only a parenthetical to explain it: **a session in which no record carries
+  `seq_start` or `ack`.** One such hint anywhere means the session is not
+  hint-less.
+- **Deciding it is deferred to Session End.** Hint-lessness is a property of a
+  session's *records*, and declare-on-first-use puts the Session Descriptor
+  before them — so a reader concludes it only at Session End or end-of-stream,
+  and the `sequenced_basis` check defers to that point. *One boolean per open
+  session; it composes with state a reader already keeps.* The producer needs no
+  such deferral: it decides by what it is relying on, which it knows when it sets
+  the flag.
+
+### Added
+
+- **Two conformance vectors.** `merge-timestamp-tie` — two concurrent records
+  from different participants with identical timestamps, stored in the *opposite*
+  order to the one the merge must produce, so a reader that falls back to stored
+  order fails it. And `partially-hinted-sequenced` — a `SEQUENCED` session with
+  one hinted record and two unhinted ones, pinning the answer to the question
+  that took longest to settle. 26 in total.
+
+### Changed
+
+- **The merge is now fully deterministic.** Step 4 breaks ties by
+  `(timestamp, participant_id)` rather than by timestamp alone. `participant_id`
+  is unique within its session, so the frontiers are totally ordered and every
+  reader of the same file computes the same interleaving — closing the last place
+  two conformant readers could legitimately disagree. `0.11` surfaced this gap
+  after removing the round-robin fallback that had masked it. *At least one
+  implementation already merges on `(timestamp, pid)` because a total order was
+  needed to test the merge at all; this ratifies the convention before more
+  implementations pick differently.*
+- **Sequencing is stated as an optimisation, not a correctness fix**, which
+  follows from the above: a producer baking in the order saves each reader the
+  work, it does not change the answer.
+- **The producer tie-break clause is scoped.** `0.11` said a producer choosing a
+  different tie-break "says so with `sequenced_basis`", but that option is scoped
+  to hint-less sessions, leaving a TCP producer nowhere to record it. Now: on a
+  hint-less session the producer records the basis; on a session with hints there
+  is nothing to record, since causal edges account for the order and only
+  genuinely concurrent records reach the tie-break.
+
+---
+
 ## [0.11] — 2026-07-30
 
 A corrective release: it fixes what the first review of
@@ -76,8 +128,9 @@ surface is held for `0.12`. Reasoning in
   alone would otherwise look for `0`/`9` and reject every real `0.9` file.*
 - **`0.x` files are disposable**, stated plainly for the first time: no upgrade
   path between `0.x` versions is guaranteed, and a `0.9` file that still matters
-  should be regenerated from its capture. *A version-upgrade transform is being
-  considered for `0.12`; until then there is none.*
+  should be regenerated from its capture. *A way to record a version re-stamp is
+  planned for `0.13`, as a File Header option rather than a transform; until then
+  there is none.*
 - **Recording `sequenced_basis` is unconditional; soundness may be trivial.**
   `0.10` required the option in the registry while the narrative exempted the
   trivially-sound cases and a third passage still said SHOULD — three statements,
@@ -463,7 +516,8 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.11...HEAD
+[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.12...HEAD
+[0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12
 [0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...v0.11
 [0.10]: https://github.com/adamkjonsson/zipline/compare/v0.9...v0.10
 [0.9]: https://github.com/adamkjonsson/zipline/releases/tag/v0.9
