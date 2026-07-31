@@ -23,7 +23,7 @@ Three findings remain:
 | # | Finding | Valid? | Disposition | Effort |
 |---|---------|--------|-------------|--------|
 | R1 | The exact-timestamp tie is unresolved — the last place two conformant readers can disagree | **Yes, and it should not wait** | Break ties by `(timestamp, participant_id)` | XS |
-| R2 | "hint-less" is load-bearing in 14 places and defined nowhere | **Yes** — but the proposed mixed-case answer **under-requires** | Define it; split the producer's obligation from the reader's check | S |
+| R2 | "hint-less" is load-bearing in 14 places and defined nowhere | **Yes**, and its rule is adopted as proposed | Define it; state the evaluation point. Partial-hint gap left open — see `0.13` | S |
 | R3 | The producer-tie-break sentence points at an option scoped to a different case | **Yes — my imprecision** | Scope the clause | XS |
 
 All three are corrective: no block, no option, no capability.
@@ -73,22 +73,29 @@ The term appears 14 times carrying normative weight, including the
 `sequenced_basis` MUST and the `SEQUENCED` soundness rule, and the nearest thing
 to a definition is a parenthetical in *Conformance*.
 
-**Where I disagree.** The review proposes that any hint anywhere makes a session
-not hint-less. That **under-requires**: a session with one hinted record earns
-almost no causal edges, so nearly all of its order still rests on timestamps —
-yet it would escape the basis requirement entirely. The rule is simple and
-checkable, which is its appeal, but it is simple in the wrong direction.
+**Adopt the review's rule.** A session is hint-less when no record in it carries
+`seq_start` or `ack`; a single hint anywhere means it is not hint-less and needs
+no basis.
 
-**Fix: split the obligation from the check**, because the producer and the reader
-know different things.
+**A rejected alternative, recorded because it looked right for a while.** This
+document first proposed splitting the rule in two — a *reader check* keyed on
+that same definition, plus a broader *producer obligation* to record the basis
+whenever the stored order does not follow entirely from causal hints. The aim was
+to catch the partially-hinted session, whose order rests mostly on timestamps
+while one stray hint exempts it.
 
-- **Producer obligation, keyed on intent.** A producer MUST record
-  `sequenced_basis` on a `SEQUENCED` session unless the stored order follows
-  *entirely* from causal hints. The producer knows this; it computed the order.
-- **Reader check, keyed on a checkable proxy.** A session in which **no** record
-  carries `seq_start` or `ack` is hint-less, and a hint-less `SEQUENCED` session
-  missing `sequenced_basis` is a semantic violation. Conservative: it never
-  accuses a file the producer got right.
+That obligation is **undecidable for a streaming producer**, for exactly the
+reason `0.11` removed the previous exemption: the Session Descriptor is written
+before the records. A producer opening a TCP session expects hints and writes no
+basis; if a record later arrives without `seq_start`, the order no longer follows
+entirely from hints and the descriptor is already on disk. A batch producer knows;
+a streaming one cannot. Reproducing the defect we had just removed, in the fix for
+it, is worth recording rather than quietly dropping.
+
+The residual gap is also narrower than it first appeared. A consumer *can* see
+that some records lack hints, and that the merge leaves those concurrent; what it
+cannot learn is what the producer relied on for them. That is reduced legibility,
+not a correctness trap.
 
 **The evaluation point must also be stated**, which is the half surviving from
 the previous round: whether a session is hint-less is a property of its
@@ -140,7 +147,20 @@ Contents fixed now:
    the one this project settled on last round.
 4. **Decrypted tunnels** — design first, wording second.
 
-**A rule so `0.13` cannot slide wholesale.** Items 1–3 are committed. Item 4
+Plus one candidate, to be decided rather than assumed:
+
+5. **A basis on every `SEQUENCED` session**, not only hint-less ones — the clean
+   way to close R2's partial-hint gap. Trivially decidable, since a producer
+   always knows what it is relying on when it sets the flag, and it removes the
+   `hint-less` dependency from that rule entirely. Costs: it reinstates
+   `transport` as a vocabulary value, which `0.11` deleted on the grounds that it
+   could never legitimately appear — under this rule it appears constantly and
+   legitimately — and it puts an option on every sequenced TCP session. It also
+   *adds an obligation to files that are conformant today*, which is why it is
+   not in `0.12`. Decide it once there is evidence the gap matters.
+
+**A rule so `0.13` cannot slide wholesale.** Items 1–3 are committed; item 5 is
+a candidate, not a commitment. Item 4
 ships in `0.13` only if its three open questions are settled by the time 1–3 are
 drafted; otherwise `0.13` ships without it and tunnels become `0.14`. The
 feature release does not wait on the least-settled item in it.
@@ -180,9 +200,11 @@ Continues the numbering from
       settled in time, otherwise `0.14`.
 - [x] **The re-stamp is an option, not a transform** — adopting the review's
       design over the previous round's conclusion.
-- [ ] **R2's split** — confirm the producer-obligation / reader-check split, or
-      take the review's simpler "any hint anywhere" rule and accept that it
-      under-requires
+- [x] **R2's rule** — **decided: the review's single rule.** The split this
+      document originally proposed is withdrawn: its producer obligation was
+      undecidable for a streaming writer, reproducing the very defect `0.11`
+      removed. See §2. The partial-hint gap is left open and recorded as a
+      `0.13` candidate below
 
 ### Phase 17 — The three fixes
 
@@ -195,8 +217,6 @@ Continues the numbering from
 - [ ] **R2b** — state the evaluation point: it is a property of the records, so a
       reader concludes it only at Session End or end-of-stream, and a checker
       defers the `sequenced_basis` requirement to there
-- [ ] **R2c** — split the obligation from the check per §2, so a partially-hinted
-      session whose order rests on timestamps is not silently exempted
 - [ ] **R3** — scope the producer-tie-break clause to hint-less sessions
 - [ ] Check the 14 existing uses of "hint-less" still read correctly against the
       new definition — in particular any that assume the whole session rather
@@ -207,8 +227,10 @@ Continues the numbering from
 - [ ] Vector for R1: two concurrent records, different participants, **identical
       timestamps** — the case where an unspecified tie-break makes two conformant
       readers disagree
-- [ ] Vector for R2: a partially-hinted `SEQUENCED` session, which distinguishes
-      the split rule from the review's simpler one
+- [ ] Vector for R2: a **partially-hinted** `SEQUENCED` session carrying no
+      basis — conformant under the adopted rule, and the case a future `0.13`
+      change would reclassify. Worth having precisely because it pins today's
+      answer to the question that was hardest to settle
 - [ ] Confirm `isolate-sequenced-no-basis` still expresses what R2 settles, since
       it currently encodes an assumption rather than a stated rule
 - [ ] Bump `version_minor` to `12` — File Header, byte-level example, all JSONL
