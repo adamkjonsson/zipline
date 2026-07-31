@@ -119,8 +119,9 @@ surface is held for `0.12`. Reasoning in
   alone would otherwise look for `0`/`9` and reject every real `0.9` file.*
 - **`0.x` files are disposable**, stated plainly for the first time: no upgrade
   path between `0.x` versions is guaranteed, and a `0.9` file that still matters
-  should be regenerated from its capture. *A version-upgrade transform is being
-  considered for `0.12`; until then there is none.*
+  should be regenerated from its capture. *A way to record a version re-stamp is
+  planned for `0.13`, as a File Header option rather than a transform; until then
+  there is none.*
 - **Recording `sequenced_basis` is unconditional; soundness may be trivial.**
   `0.10` required the option in the registry while the narrative exempted the
   trivially-sound cases and a third passage still said SHOULD — three statements,
