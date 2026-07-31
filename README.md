@@ -87,8 +87,10 @@ a rule rather than the rule itself:
   — the response, including the decision to renumber.
 - [docs/SPEC-0.10-REVIEW.md](docs/SPEC-0.10-REVIEW.md) and
   [docs/implementation-review-response-0.10.md](docs/implementation-review-response-0.10.md)
-  — the same exchange for `0.10`, which produced `0.11`, and where `0.12` is
-  being planned.
+  — the same exchange for `0.10`, which produced `0.11`.
+- [docs/SPEC-0.11-REVIEW.md](docs/SPEC-0.11-REVIEW.md) and
+  [docs/implementation-review-response-0.11.md](docs/implementation-review-response-0.11.md)
+  — the review of `0.11`, and the scope it settles for `0.12` and `0.13`.
 
 ## License
 
