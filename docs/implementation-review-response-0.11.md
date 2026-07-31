@@ -208,19 +208,21 @@ Continues the numbering from
 
 ### Phase 17 — The three fixes
 
-- [ ] **R1** — replace step 4 of the merge algorithm: ties break by timestamp,
+- [x] **R1** — replace step 4 of the merge algorithm: ties break by timestamp,
       then by ascending `participant_id`. Restate the determinism paragraph in
       *Sequenced files* as a plain guarantee rather than a caveat, since it now
       is one
-- [ ] **R2a** — define **hint-less** once, where it is first used: a session in
+- [x] **R2a** — define **hint-less** once, where it is first used: a session in
       which no record carries `seq_start` or `ack`
-- [ ] **R2b** — state the evaluation point: it is a property of the records, so a
+- [x] **R2b** — state the evaluation point: it is a property of the records, so a
       reader concludes it only at Session End or end-of-stream, and a checker
       defers the `sequenced_basis` requirement to there
-- [ ] **R3** — scope the producer-tie-break clause to hint-less sessions
-- [ ] Check the 14 existing uses of "hint-less" still read correctly against the
-      new definition — in particular any that assume the whole session rather
-      than its records
+- [x] **R3** — scope the producer-tie-break clause to hint-less sessions
+- [x] Checked all fourteen uses of "hint-less" against the new definition; all
+      read correctly. One gap the plan did not anticipate: the producer applies a
+      rule keyed on a property it cannot evaluate at descriptor time either. It
+      does not need to — it decides by what it is *relying on* — but the document
+      now says so, or a reader would reasonably ask
 
 ### Phase 18 — Vectors and release
 

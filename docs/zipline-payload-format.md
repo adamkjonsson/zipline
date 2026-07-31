@@ -295,7 +295,8 @@ OUTPUT: one interleaved, causally-consistent sequence
 3. Topologically sort the resulting DAG.
 
 4. Where the topo order is free (concurrent records with no causal edge
-   between them), break ties by timestamp.
+   between them), break ties by timestamp; where timestamps are equal,
+   by ascending `participant_id`.
 ```
 
 Step 2 is the payoff — it stitches the two separately-captured directions
@@ -305,17 +306,34 @@ together on causality rather than the skew-prone clock.
 1 takes each participant's records in file order and nothing later disturbs it:
 the merge is a k-way interleaving of already-sorted streams, so step 4's
 timestamp tie-break chooses only *between* participants. This matters most where
-there is least to go on — a **hint-less** session has no causal edges at all, so
+there is least to go on — a hint-less session has no causal edges at all, so
 every record is concurrent and the whole order is step 4. Even there, a
 participant's own records keep their stored order, and a timestamp that runs
 backwards within one participant changes nothing. The merge is *stable* with
 respect to stored order.
 
+**Hint-less**, used throughout this document, means: **a session in which no
+record carries `seq_start` or `ack`.** A single such hint anywhere in the session
+yields causal edges, so the session is not hint-less. Chat rooms and one-way UDP
+feeds are the usual examples; a TCP session is hint-less only if its writer
+recorded no sequence numbers at all.
+
+Note what this is a property of: the session's **records**, not its Session
+Descriptor. Because [declare-on-first-use](#declaration-order-declare-on-first-use)
+places the descriptor before them, a reader cannot decide it when the session is
+declared — only at [Session End](#session-end-0x12) or end-of-stream. Any check
+that depends on it defers to that point, which costs one boolean per open session
+and composes with the state a reader already keeps.
+
 **A producer computing a sequenced order MAY choose a different tie-break** —
 round-robin, source order, anything deterministic — if it knows the clocks are
-unreliable, and it says so with
-[`sequenced_basis`](#sequenced-files-precomputed-order). That choice belongs to
-the producer, which knows how the capture was taken. A **reader** cannot make
+unreliable. That choice belongs to the producer, which knows how the capture was
+taken; the stored order is authoritative however it was reached, and a reader
+never re-derives it. On a **hint-less** session the producer records what the
+order rests on in
+[`sequenced_basis`](#sequenced-files-precomputed-order); on a session with hints
+there is nothing to record, since the causal edges already account for the order
+and only genuinely concurrent records reach the tie-break at all. A **reader** cannot make
 it: skew is not a property a file asserts, and the absence of
 [`SINGLE_CLOCK`](#file-header-0x01) says nothing either way. So a reader
 breaking ties always uses the timestamp.
@@ -477,12 +495,12 @@ causal order despite the inverted timestamps:
 
 Sequencing is **optional** and orthogonal to raw-vs-decoded. A reader MUST still
 accept unsequenced sessions (and run the merge itself if it wants their
-interleaved view). Determinism is a free side benefit: because the producer fixes
-the tie-break for concurrent records, every reader of a sequenced session observes
-the *same* order. Independent per-reader merges come close — they all break ties
-by timestamp — but two concurrent records bearing the *same* timestamp are a
-genuine tie that this document does not resolve, so readers may still differ
-there.
+interleaved view). Sequencing is an optimisation, not a correctness fix: **the
+merge is fully deterministic either way.** Step 4 orders concurrent records by
+`(timestamp, participant_id)`, and `participant_id` is unique within its session,
+so the frontiers are totally ordered and every reader of the same file computes
+the same interleaving. A producer that bakes the order in saves each reader the
+work; it does not change the answer.
 
 **What a sequenced session rests on.** A session's causal order comes from
 whatever ordering hints its records carry. A **TCP** session has `seq`/`ack`, so
@@ -542,6 +560,14 @@ which [declare-on-first-use](#declaration-order-declare-on-first-use) places
 only one participant will ever send. It can always know what it is relying on.
 A producer that cannot justify triviality yet simply is not relying on it, and
 records the basis it *is* relying on.
+
+The same asymmetry settles a question the rule otherwise raises. Whether a
+session is [hint-less](#merge-algorithm) is a property of its records, which the
+producer cannot confirm when it writes the descriptor either — but it does not
+need to. It decides by *what it is relying on*: a producer relying on transport
+hints expects them and writes no basis, and one relying on anything else writes
+that. The reader, which cannot see the producer's reasoning, is the side that
+must wait until Session End to conclude the session was hint-less at all.
 
 The requirement is on the producer, not the consumer: a reader **MUST NOT**
 reject a session for an unrecognised value, and a value it does not know simply
@@ -1745,7 +1771,9 @@ requirement binds **hint-less sessions only** — a session carrying `seq`/`ack`
 may be sequenced whatever its timestamps do, and needs no `sequenced_basis`.
 
 A **missing** `sequenced_basis` on a hint-less `SEQUENCED` session is a semantic
-violation, isolatable like any other. A reader MUST NOT reject a session merely
+violation, isolatable like any other. A reader can only raise it at
+[Session End](#session-end-0x12) or end-of-stream, because until then it does not
+know the session is hint-less (see [Merge algorithm](#merge-algorithm)). A reader MUST NOT reject a session merely
 for carrying a `sequenced_basis` value it does not recognise — the vocabulary is
 open, and an unknown value means an unknown basis, not an invalid one.
 

@@ -60,6 +60,49 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [Unreleased] — 0.12
+
+**In development.** A corrective release, like `0.11`: it fixes what the review
+of `0.11` found and adds no option, block or capability. Reasoning in
+[docs/implementation-review-response-0.11.md](docs/implementation-review-response-0.11.md).
+
+### Clarified
+
+- **`hint-less` is defined**, having carried normative weight in fourteen places
+  with only a parenthetical to explain it: **a session in which no record carries
+  `seq_start` or `ack`.** One such hint anywhere means the session is not
+  hint-less.
+- **Deciding it is deferred to Session End.** Hint-lessness is a property of a
+  session's *records*, and declare-on-first-use puts the Session Descriptor
+  before them — so a reader concludes it only at Session End or end-of-stream,
+  and the `sequenced_basis` check defers to that point. *One boolean per open
+  session; it composes with state a reader already keeps.* The producer needs no
+  such deferral: it decides by what it is relying on, which it knows when it sets
+  the flag.
+
+### Changed
+
+- **The merge is now fully deterministic.** Step 4 breaks ties by
+  `(timestamp, participant_id)` rather than by timestamp alone. `participant_id`
+  is unique within its session, so the frontiers are totally ordered and every
+  reader of the same file computes the same interleaving — closing the last place
+  two conformant readers could legitimately disagree. `0.11` surfaced this gap
+  after removing the round-robin fallback that had masked it. *At least one
+  implementation already merges on `(timestamp, pid)` because a total order was
+  needed to test the merge at all; this ratifies the convention before more
+  implementations pick differently.*
+- **Sequencing is stated as an optimisation, not a correctness fix**, which
+  follows from the above: a producer baking in the order saves each reader the
+  work, it does not change the answer.
+- **The producer tie-break clause is scoped.** `0.11` said a producer choosing a
+  different tie-break "says so with `sequenced_basis`", but that option is scoped
+  to hint-less sessions, leaving a TCP producer nowhere to record it. Now: on a
+  hint-less session the producer records the basis; on a session with hints there
+  is nothing to record, since causal edges account for the order and only
+  genuinely concurrent records reach the tie-break.
+
+---
+
 ## [0.11] — 2026-07-30
 
 A corrective release: it fixes what the first review of
