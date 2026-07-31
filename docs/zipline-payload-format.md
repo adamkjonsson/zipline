@@ -2244,7 +2244,7 @@ declare-on-first-use contract holding in the byte stream.
 - **Transport-neutral ordering hints.** Generic `seq_pos` / `cum_ack` options,
   letting the [merge](#merge-algorithm) derive causal edges for transports the
   format does not model — the SCTP entry above is the same idea named concretely.
-  *Not adopted in 1.1:* the merge needs **both** a monotonic per-sender position
+  *Not adopted in `0.10`:* the merge needs **both** a monotonic per-sender position
   and a *cumulative* peer acknowledgement, and the sessions that motivated the
   request (multi-party UDP, chat) supply neither. RTP-style protocols supply only
   the first, which yields no cross-participant edges at all. Those cases are
@@ -2254,7 +2254,7 @@ declare-on-first-use contract holding in the byte stream.
 
 - **A machine-checkable "annotation" file kind.** A third derived-file kind
   asserting that a transform changed nothing but metadata, so a consumer could
-  skip re-verifying the payloads. *Not adopted in 1.1:* the layer-preserving
+  skip re-verifying the payloads. *Not adopted in `0.10`:* the layer-preserving
   pass-through already covers the case, and the `spans`-versus-`origin`
   distinction (see [Conformance](#conformance)) already tells mechanically
   whether a file's own stage built a record or re-emitted it. A third kind would
