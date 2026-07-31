@@ -36,7 +36,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 11
+MAJOR, MINOR = 0, 12
 
 
 class Corrupt(Exception):

@@ -1,4 +1,4 @@
-# hintless-merge-backwards-ts
+# merge-timestamp-tie
 #
 # Generated from the same description as the .zpf -- never edited
 # by hand, so the annotation cannot drift from the bytes.
@@ -52,46 +52,33 @@
 
 0088  20 00                    type   = 0x0020  Record
 008A  00 00                    reserved
-008C  20 00 00 00              length = 32
+008C  24 00 00 00              length = 36
 0090  08 00 00 00 00 00 00 00  session_id = 8  (u64)
-0098  00 00                    sender_pid = 0
+0098  01 00                    sender_pid = 1
 009A  01 00                    source_id  = 1
 009C  D0 07 00 00 00 00 00 00  timestamp  = 2000
 00A4  00 00                    _reserved  (u16 = 0)
 00A6  00 00                    flags      = 0x0000
-00A8  02 00 00 00              payload_len = 2
-00AC  61 31                    "a1"
-00AE  00 00                    payload padding
+00A8  08 00 00 00              payload_len = 8
+00AC  66 72 6F 6D 2D 62 6F 62  "from-bob"
 
-00B0  20 00                    type   = 0x0020  Record
-00B2  00 00                    reserved
-00B4  20 00 00 00              length = 32
-00B8  08 00 00 00 00 00 00 00  session_id = 8  (u64)
-00C0  01 00                    sender_pid = 1
-00C2  01 00                    source_id  = 1
-00C4  6C 07 00 00 00 00 00 00  timestamp  = 1900
-00CC  00 00                    _reserved  (u16 = 0)
-00CE  00 00                    flags      = 0x0000
-00D0  02 00 00 00              payload_len = 2
-00D4  62 31                    "b1"
-00D6  00 00                    payload padding
+00B4  20 00                    type   = 0x0020  Record
+00B6  00 00                    reserved
+00B8  28 00 00 00              length = 40
+00BC  08 00 00 00 00 00 00 00  session_id = 8  (u64)
+00C4  00 00                    sender_pid = 0
+00C6  01 00                    source_id  = 1
+00C8  D0 07 00 00 00 00 00 00  timestamp  = 2000
+00D0  00 00                    _reserved  (u16 = 0)
+00D2  00 00                    flags      = 0x0000
+00D4  0A 00 00 00              payload_len = 10
+00D8  66 72 6F 6D 2D 61 6C 69  "from-alice"
+00E0  63 65
+00E2  00 00                    payload padding
 
-00D8  20 00                    type   = 0x0020  Record
-00DA  00 00                    reserved
-00DC  20 00 00 00              length = 32
-00E0  08 00 00 00 00 00 00 00  session_id = 8  (u64)
-00E8  00 00                    sender_pid = 0
-00EA  01 00                    source_id  = 1
-00EC  34 08 00 00 00 00 00 00  timestamp  = 2100
-00F4  00 00                    _reserved  (u16 = 0)
-00F6  00 00                    flags      = 0x0000
-00F8  02 00 00 00              payload_len = 2
-00FC  61 32                    "a2"
-00FE  00 00                    payload padding
+00E4  41 00                    type   = 0x0041  End of file
+00E6  00 00                    reserved
+00E8  04 00 00 00              length = 4
+00EC  44 4E 45 5A              end_magic = 0x5A454E44  ("ZEND")
 
-0100  41 00                    type   = 0x0041  End of file
-0102  00 00                    reserved
-0104  04 00 00 00              length = 4
-0108  44 4E 45 5A              end_magic = 0x5A454E44  ("ZEND")
-
-010C                           (end of file, 268 bytes)
+00F0                           (end of file, 240 bytes)

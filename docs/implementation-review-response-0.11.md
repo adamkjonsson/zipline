@@ -226,21 +226,24 @@ Continues the numbering from
 
 ### Phase 18 — Vectors and release
 
-- [ ] Vector for R1: two concurrent records, different participants, **identical
+- [x] Vector for R1: two concurrent records, different participants, **identical
       timestamps** — the case where an unspecified tie-break makes two conformant
       readers disagree
-- [ ] Vector for R2: a **partially-hinted** `SEQUENCED` session carrying no
+- [x] Vector for R2: a **partially-hinted** `SEQUENCED` session carrying no
       basis — conformant under the adopted rule, and the case a future `0.13`
       change would reclassify. Worth having precisely because it pins today's
       answer to the question that was hardest to settle
-- [ ] Confirm `isolate-sequenced-no-basis` still expresses what R2 settles, since
+- [x] Confirm `isolate-sequenced-no-basis` still expresses what R2 settles, since
       it currently encodes an assumption rather than a stated rule
-- [ ] Bump `version_minor` to `12` — File Header, byte-level example, all JSONL
+- [x] Bump `version_minor` to `12` — File Header, byte-level example, all JSONL
       examples, every vector, the checker, and `reject-unknown-minor` to `13`.
       *This is not automatic; the `0.11` plan omitted it and it was nearly
       shipped stamping `10`*
-- [ ] Full read-through, not only the mechanical sweeps
-- [ ] Cut `0.12`: date the CHANGELOG section, tag, hand back
+- [x] Full read-through. Found two passages still calling step 4 a *timestamp*
+      tie-break, which R1 made incomplete — the mechanical sweeps reported clean,
+      as they have every round
+- [x] Cut `0.12`: CHANGELOG dated 2026-07-31, compare links added
+- [ ] Tag `v0.12` once merged, and hand back to `python-zipline`
 
 ### Phase 19 — `0.13`
 

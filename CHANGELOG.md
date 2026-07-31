@@ -60,9 +60,9 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [Unreleased] — 0.12
+## [0.12] — 2026-07-31
 
-**In development.** A corrective release, like `0.11`: it fixes what the review
+A corrective release, like `0.11`: it fixes what the review
 of `0.11` found and adds no option, block or capability. Reasoning in
 [docs/implementation-review-response-0.11.md](docs/implementation-review-response-0.11.md).
 
@@ -79,6 +79,15 @@ of `0.11` found and adds no option, block or capability. Reasoning in
   session; it composes with state a reader already keeps.* The producer needs no
   such deferral: it decides by what it is relying on, which it knows when it sets
   the flag.
+
+### Added
+
+- **Two conformance vectors.** `merge-timestamp-tie` — two concurrent records
+  from different participants with identical timestamps, stored in the *opposite*
+  order to the one the merge must produce, so a reader that falls back to stored
+  order fails it. And `partially-hinted-sequenced` — a `SEQUENCED` session with
+  one hinted record and two unhinted ones, pinning the answer to the question
+  that took longest to settle. 26 in total.
 
 ### Changed
 
@@ -507,7 +516,8 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.11...HEAD
+[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.12...HEAD
+[0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12
 [0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...v0.11
 [0.10]: https://github.com/adamkjonsson/zipline/compare/v0.9...v0.10
 [0.9]: https://github.com/adamkjonsson/zipline/releases/tag/v0.9
