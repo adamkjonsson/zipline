@@ -1,5 +1,9 @@
 # Response: the 0.10 implementation review
 
+> **Historical record.** This document captures a decision round as it happened —
+> what was found, what was decided, and why. It is not a plan and is not kept
+> current. **Active work lives in the [issue tracker](https://github.com/adamkjonsson/zipline/issues).**
+
 Assessment of [SPEC-0.10-REVIEW.md](SPEC-0.10-REVIEW.md), a review of `0.10`
 from `python-zipline` against tag `v0.10`, and the decisions that follow from it.
 

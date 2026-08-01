@@ -1,5 +1,9 @@
 # Analysis: implementation feedback on Zipline Payload Format v1.0
 
+> **Historical record.** This document captures a decision round as it happened —
+> what was found, what was decided, and why. It is not a plan and is not kept
+> current. **Active work lives in the [issue tracker](https://github.com/adamkjonsson/zipline/issues).**
+
 Assessment of issues #8–#16, raised while implementing the format in Python.
 This document analyses *what each issue means for the standard* and *how big the
 impact is*. It deliberately stops short of drafting spec wording; that is the
