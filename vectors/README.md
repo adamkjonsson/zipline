@@ -7,6 +7,23 @@ failure, for testing an implementation of the
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
 
+> ## Errata against `v0.12`
+>
+> Three vectors are known to be defective. Reported by `python-zipline` while
+> porting to `0.12`; see [../docs/VECTOR-DEFECTS.md](../docs/VECTOR-DEFECTS.md).
+> **Fixes land in `0.13`** — they require regenerating shipped files, which is a
+> release-shaped change. Until then:
+>
+> | Vector | Tier | What to expect |
+> |--------|------|----------------|
+> | `undecoded-skipped` | `accept` | Omits the mandatory `produced_by`/`produced_at` on a derived file. **A conformant reader will diagnose it.** Treat a diagnostic here as correct behaviour, not a failure. |
+> | `undecoded-reason-class` | `accept` | Same defect, same expectation. Everything else about both vectors is right — their projections were compared line for line and match. |
+> | `isolate-coverage-gap` | `isolate` | Carries **two** violations: the coverage gap it exists to test, and the same missing provenance. A reader can trip on the provenance error and pass the vector **without implementing coverage checking at all**. Do not treat passing it as evidence your coverage check works. |
+>
+> The last is the one that matters. A negative vector must carry **exactly one**
+> violation, or it silently tests whichever the reader happens to detect first —
+> a rule this suite now states explicitly, below, and will enforce in `check.py`.
+
 ## Ground rules
 
 These four decide whether the vectors are worth anything, so they come first.
@@ -55,9 +72,17 @@ the tiers are where implementations differ:
 | `reject` | Structurally corrupt. A reader MUST reject the whole file. |
 | `isolate` | Well-framed but semantically invalid. A reader MAY reject the file *or* discard the smallest unit it can soundly isolate — and MUST NOT silently repair, guess, or drop without a diagnostic. |
 
-A reader that *rejects* an `isolate` vector is as wrong as one that accepts it
-silently. A reader that treats an unknown block type as corruption fails the
-extension contract outright — see the `escape-*` vectors, which are all `accept`.
+Rejecting an `isolate` vector, with a diagnostic, **is conformant** — the tier
+table above and *Conformance* both permit it. The failures to guard against are
+different: a reader that accepts a semantic violation **silently**, and one that
+treats an `accept` vector as corrupt. A reader that rejects an unknown block type
+fails the extension contract outright — see the `escape-*` vectors, which are all
+`accept`.
+
+**A negative vector carries exactly one violation.** With two, it silently tests
+whichever the reader detects first, and passes implementations that never
+exercised the rule it was built for. See the errata above for a case where that
+happened.
 
 ## Layout
 

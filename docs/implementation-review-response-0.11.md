@@ -271,28 +271,26 @@ challenges the normative text.
       which is what happened. The coverage guarantee is the format's central
       honesty claim, making that the negative vector least affordable to have
       inert.
-- [ ] **Adopt the principle the report draws out**: *a negative vector must carry
-      exactly one violation*, or it silently tests whichever the reader detects
-      first. Add it to the vectors README as a ground rule — it is the general
-      lesson, and the reason the defect mattered more than a missing option
-      should
+- [x] **Adopted the principle the report draws out**: *a negative vector must
+      carry exactly one violation*, or it silently tests whichever the reader
+      detects first — now a ground rule in the vectors README, landed early with
+      the erratum since it costs nothing and needs no release
 - [ ] **Enforce it mechanically in `check.py`**, as the report suggests: a
       vector's declared tier and its actual violation count must agree, and a
       negative vector must carry exactly one. This is the check that would have
       caught the defect at build time
-- [ ] **`vectors/README.md` ground rule 4 contradicts its own tier table** — the
-      table says a reader MAY reject an `isolate` vector, matching *Conformance*;
-      the prose calls rejecting "as wrong as one that accepts it silently". The
-      prose is the error, and it is mine. Reword: the failure being warned
-      against is accepting *silently*, or treating a semantic violation as
-      structural corruption — rejecting with a diagnostic is conformant.
-      *Stated in the section explaining why negative vectors are the valuable
-      half, so it is the sentence a harness author is most likely to encode*
+- [x] **`vectors/README.md` ground rule 4 contradicted its own tier table** —
+      corrected early rather than documented as broken, since it is prose in the
+      README rather than a shipped binary, so fixing it needs no release. It now
+      says what the table and *Conformance* say: rejecting an `isolate` vector
+      with a diagnostic is conformant, and the failures to guard against are
+      silent acceptance and treating an `accept` vector as corrupt
 
-**Interim, if `0.13` is not imminent.** The `v0.12` vectors are shipped with
-these defects, so anyone porting today hits them. An erratum note at the top of
-`vectors/README.md` costs nothing and does not need a release — worth doing
-regardless of when `0.13` lands.
+**Interim: done.** An errata block now heads `vectors/README.md`, naming all
+three vectors and what a porting implementer should expect from each — in
+particular that passing `isolate-coverage-gap` is *not* evidence a coverage check
+works. It needed no release, so it landed immediately. What remains for `0.13` is
+regenerating the three vectors themselves and the `check.py` enforcement.
 
 **Then the feature work:**
 
