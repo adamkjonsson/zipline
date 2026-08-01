@@ -249,6 +249,53 @@ Continues the numbering from
 
 Outlined only; planned properly once `0.12` ships.
 
+**Vector defects, reported against `v0.12` — do these first.** From
+[VECTOR-DEFECTS.md](VECTOR-DEFECTS.md), found while `python-zipline` ported to
+`0.12`. Both verified against the tree; both are vector-side, and neither
+challenges the normative text.
+
+- [ ] **Three decode-stage vectors omit `produced_by`/`produced_at`** —
+      `undecoded-skipped`, `undecoded-reason-class` and `isolate-coverage-gap`
+      call `file_header()` with no options, while every other derived vector sets
+      both. All three declare a `zpf-input` Source, so *Conformance*'s rule that
+      a derived file MUST set them applies. Add the options and regenerate `.hex`
+      and `.jsonl`.
+
+      The two tiers fail in opposite directions, and the second is worse. The
+      `accept` pair **punishes a conformant reader**: one that implements the
+      derived-file rule must diagnose them, which is what `accept` forbids — the
+      better the implementation, the more certainly it fails.
+      `isolate-coverage-gap` **rewards a non-conformant one**: it carries two
+      violations, so a reader trips on the provenance error, isolates the file,
+      and passes the vector *with coverage checking entirely unimplemented*,
+      which is what happened. The coverage guarantee is the format's central
+      honesty claim, making that the negative vector least affordable to have
+      inert.
+- [ ] **Adopt the principle the report draws out**: *a negative vector must carry
+      exactly one violation*, or it silently tests whichever the reader detects
+      first. Add it to the vectors README as a ground rule — it is the general
+      lesson, and the reason the defect mattered more than a missing option
+      should
+- [ ] **Enforce it mechanically in `check.py`**, as the report suggests: a
+      vector's declared tier and its actual violation count must agree, and a
+      negative vector must carry exactly one. This is the check that would have
+      caught the defect at build time
+- [ ] **`vectors/README.md` ground rule 4 contradicts its own tier table** — the
+      table says a reader MAY reject an `isolate` vector, matching *Conformance*;
+      the prose calls rejecting "as wrong as one that accepts it silently". The
+      prose is the error, and it is mine. Reword: the failure being warned
+      against is accepting *silently*, or treating a semantic violation as
+      structural corruption — rejecting with a diagnostic is conformant.
+      *Stated in the section explaining why negative vectors are the valuable
+      half, so it is the sentence a harness author is most likely to encode*
+
+**Interim, if `0.13` is not imminent.** The `v0.12` vectors are shipped with
+these defects, so anyone porting today hits them. An erratum note at the top of
+`vectors/README.md` costs nothing and does not need a release — worth doing
+regardless of when `0.13` lands.
+
+**Then the feature work:**
+
 - [ ] Settle the three tunnel questions, which gate whether item 4 makes `0.13`
 - [ ] Input stream extents, `transform_params_digest`, the re-stamp option
 - [ ] Vectors for each, including a **broken** chain — the fixture gap `0.11`
