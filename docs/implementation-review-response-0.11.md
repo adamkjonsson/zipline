@@ -1,5 +1,9 @@
 # Response: the 0.11 implementation review
 
+> **Historical record.** This document captures a decision round as it happened —
+> what was found, what was decided, and why. It is not a plan and is not kept
+> current. **Active work lives in the [issue tracker](https://github.com/adamkjonsson/zipline/issues).**
+
 Assessment of [SPEC-0.11-REVIEW.md](SPEC-0.11-REVIEW.md), a review of `0.11`
 from `python-zipline` against tag `v0.11`, and the scope it settles for `0.12`
 and `0.13`.
@@ -247,9 +251,25 @@ Continues the numbering from
 
 ### Phase 19 — `0.13`
 
-Outlined only; planned properly once `0.12` ships.
+**Migrated to the [issue tracker](https://github.com/adamkjonsson/zipline/issues?q=is%3Aissue+milestone%3A0.13).** Every
+item this phase listed is now an issue under the `0.13` milestone, with its
+reasoning carried across verbatim:
 
-- [ ] Settle the three tunnel questions, which gate whether item 4 makes `0.13`
-- [ ] Input stream extents, `transform_params_digest`, the re-stamp option
-- [ ] Vectors for each, including a **broken** chain — the fixture gap `0.11`
-      left open, exercising *bytes unavailable* against *no bytes exist*
+| Item | Issue |
+|------|-------|
+| Input stream extents on Session End | [#35](https://github.com/adamkjonsson/zipline/issues/35) |
+| `transform_params_digest` on the File Header | [#36](https://github.com/adamkjonsson/zipline/issues/36) |
+| Version re-stamp record | [#37](https://github.com/adamkjonsson/zipline/issues/37) |
+| Three vectors missing `produced_by`/`produced_at` | [#38](https://github.com/adamkjonsson/zipline/issues/38) |
+| Enforce one violation per negative vector | [#39](https://github.com/adamkjonsson/zipline/issues/39) |
+| Broken-chain fixture | [#40](https://github.com/adamkjonsson/zipline/issues/40) |
+| Decrypted tunnels — *conditional; `0.14` if its questions do not settle in time* | [#41](https://github.com/adamkjonsson/zipline/issues/41) |
+| Basis on every `SEQUENCED` session — *candidate, not a commitment* | [#42](https://github.com/adamkjonsson/zipline/issues/42) |
+
+Three unscheduled items also moved, carrying no milestone:
+[per-session integrity counts](https://github.com/adamkjonsson/zipline/issues/43),
+[a random-access index](https://github.com/adamkjonsson/zipline/issues/44), and [SCTP support](https://github.com/adamkjonsson/zipline/issues/45).
+
+Two items from this phase landed before the migration, both prose fixes needing
+no release: the *exactly one violation* ground rule, and the correction to
+`vectors/README.md` ground rule 4 — which had contradicted its own tier table.

@@ -1,5 +1,9 @@
 # Response: the 1.1-beta implementation review
 
+> **Historical record.** This document captures a decision round as it happened —
+> what was found, what was decided, and why. It is not a plan and is not kept
+> current. **Active work lives in the [issue tracker](https://github.com/adamkjonsson/zipline/issues).**
+
 Assessment of [SPEC-1.1-REVIEW.md](SPEC-1.1-REVIEW.md), a review from
 `python-zipline` dated 2026-07-28, and the decisions that follow from it.
 

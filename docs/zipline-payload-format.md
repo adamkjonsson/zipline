@@ -181,7 +181,7 @@ too: the mirror of declare-on-first-use is **end-on-flush**, a
 [Session End](#session-end-0x12) block the writer SHOULD emit at the moment it
 flushes-and-forgets a session, after which nothing references that session
 again and a reader may drop its state. (A future
-[random-access index](#possible-future-extensions) could gather descriptor
+[random-access index](https://github.com/adamkjonsson/zipline/issues/44) could gather descriptor
 offsets without changing this streaming contract.)
 
 ### A first example
@@ -369,7 +369,7 @@ monotonic sequence position** compared with the serial-number rule, and (b) a
 with `seq_start` (plus the computed record end) and `ack`. SCTP's TSNs — the
 same 32-bit serial-number space — and its cumulative TSN ack meet the identical
 contract, so supporting a new transport means adding option ids (see
-[Possible future extensions](#possible-future-extensions)), never changing the
+[Design decisions not taken](#design-decisions-not-taken)), never changing the
 algorithm.
 
 ### Caveats
@@ -728,7 +728,7 @@ resolving a single record's range **without** reading from the start costs O(k)
 in that participant's preceding records, and since records interleave across
 participants there is no shortcut. A reader that needs random access should build
 the per-participant prefix sums on a first pass and keep them. A
-[random-access index](#possible-future-extensions) would make that cheaper, and
+[random-access index](https://github.com/adamkjonsson/zipline/issues/44) would make that cheaper, and
 is not part of this version.
 
 This is the space a second decode stage references when it decodes a decoded
@@ -767,7 +767,7 @@ the order they appear in.
 One consequence is worth naming: such a transform's own configuration has no
 `params_digest` to live in, so a filtered file records *what* it was derived from
 but not *how*. A merge has the same gap today. See
-[Possible future extensions](#possible-future-extensions).
+[issue #36](https://github.com/adamkjonsson/zipline/issues/36).
 
 ### Source Descriptor (which input)
 
@@ -2145,22 +2145,20 @@ declare-on-first-use contract holding in the byte stream.
   per-session digest, so a single changed session forces re-derivation of only
   that session?
 
-## Possible future extensions
+## Design decisions not taken
 
-- **Random-access index.** An optional `Index` block near the end (just before
-  the [End block](#end-of-file-0x41)) mapping `session_id` → the byte offset of
-  its Session Descriptor, so a reader can seek to a session instead of scanning
-  from the start. *Benefit:* O(1) lookup on finished files at rest. *Cost:* the
-  writer must hold a session→offset map until finalize (O(#sessions) memory,
-  unbounded for indefinite live captures), and — because records interleave — it
-  locates a session's *declaration*, not its scattered records. Stays fully
-  optional and streaming-compatible: a skippable block, absent on live or
-  truncated files, found via a back-pointer from the End block.
+Ideas weighed and **rejected**, kept here with the reasoning because each is a
+question that recurs — a reader who wonders why the format does *not* do one of
+these finds the answer where the question arises.
+
+This is not a backlog. Planned work lives in the
+[issue tracker](https://github.com/adamkjonsson/zipline/issues); see
+[Planned, tracked elsewhere](#planned-tracked-elsewhere) below.
 
 - **Self-describing repeatability (a `repeatable` id-bit).** Reserve the high bit
   of a TLV `id` to mark an option as an ordered list, so a schema-less tool could
   render an unknown option as scalar-vs-array without consulting the registry.
-  *Not adopted now:* a reader already preserves every occurrence in order (see
+  *Not adopted:* a reader already preserves every occurrence in order (see
   [TLV framing](#tlv-option-framing--id-registry)), so generic round-trip is
   lossless without it; the bit would only buy prettier rendering of unknown
   single-valued options, at the cost of a permanent framing bit, a per-occurrence
@@ -2199,58 +2197,17 @@ declare-on-first-use contract holding in the byte stream.
   **body-layout change**, so it is free while the format is in `0.x` and costs a
   major bump afterwards.
 
-- **Per-session integrity counts.** Optional totals (record count, per-
-  participant byte count) as TLVs on the [Session End](#session-end-0x12)
-  block, as a truncation/loss tripwire. Deferred: they are pure additions, so
-  they fit a later minor version without a format change.
-
-- **`transform_params_digest` on the File Header.** A derived file records *what*
-  it came from — `zpf-input` Sources with digests — and, for a decode stage, which
-  decoder ran. It does not record the configuration of a transform that produces
-  records **without** decoding them: a filter, a reordering stage, a merge. Those
-  inherit their input's `decoder_id`s (see
-  [Layers](#layers-raw-and-decoded-live-in-separate-files)), so no
-  `params_digest` applies to them, and the file is not reproducible from what it
-  states. A File Header option pinning the transform's own configuration would
-  close it, alongside the `produced_by` that already names the tool.
-
-- **Input stream extents, to make the coverage guarantee self-verifiable.**
-  Today the [coverage guarantee](#coverage-honesty-undecoded-blocks) is checkable
-  only *relative to* what a decoded file claims: nothing records how long each
-  **input** participant stream was. A decoder that silently stopped at offset 500
-  of a 900-byte stream produces a file that looks internally complete — `[0, 500)`
-  covered contiguously, no gaps — and the omission is invisible without opening
-  the parent. So the format's central honesty guarantee is, strictly, "verifiable
-  if you still have the input", not "verifiable from the file in front of you".
-  *The fix:* a decode stage records each input stream's extent. It cannot live on
-  the Participant Descriptor, which declare-on-first-use puts before the records —
-  a live decode does not yet know the extent — so it belongs on
-  [Session End](#session-end-0x12), alongside the integrity counts above and for
-  the same reason. Deferred rather than dismissed: it is a pure addition, and it
-  is the difference between a guarantee a consumer can enforce and one it must
-  take on trust.
-
-- **SCTP support.** The container needs no frame or block changes — SCTP is a
-  minor-version addition of options: a per-record `stream_id` (u16, the SCTP
-  stream an association multiplexes), `tsn` and `cum_tsn_ack` (u32 ordering
-  hints; TSNs live in the same RFC 1982 serial-number space and acks are
-  cumulative, so the [merge](#merge-algorithm) instantiates unchanged — see
-  its transport-neutrality note), logical offset spaces scoped per
-  `(session, pid, stream_id)`, the `proto` value `sctp`, and an address-set
-  convention for multi-homing (distinct from the tunnel-layer `endpoint`
-  list, whose order already means something else). Message boundaries reuse
-  the `message` record flag as-is.
-
 - **Transport-neutral ordering hints.** Generic `seq_pos` / `cum_ack` options,
   letting the [merge](#merge-algorithm) derive causal edges for transports the
-  format does not model — the SCTP entry above is the same idea named concretely.
-  *Not adopted in `0.10`:* the merge needs **both** a monotonic per-sender position
-  and a *cumulative* peer acknowledgement, and the sessions that motivated the
-  request (multi-party UDP, chat) supply neither. RTP-style protocols supply only
-  the first, which yields no cross-participant edges at all. Those cases are
-  served instead by a producer asserting the order and recording
-  `sequenced_basis` (see [Sequenced files](#sequenced-files-precomputed-order)).
-  Worth revisiting for any transport that genuinely carries both.
+  format does not model. *Not adopted in `0.10`:* the merge needs **both** a
+  monotonic per-sender position and a *cumulative* peer acknowledgement, and the
+  sessions that motivated the request (multi-party UDP, chat) supply neither.
+  RTP-style protocols supply only the first, which yields no cross-participant
+  edges at all. Those cases are served instead by a producer asserting the order
+  and recording `sequenced_basis` (see
+  [Sequenced files](#sequenced-files-precomputed-order)). Worth revisiting for any
+  transport that genuinely carries both — SCTP is the concrete one, and is
+  tracked as an issue.
 
 - **A machine-checkable "annotation" file kind.** A third derived-file kind
   asserting that a transform changed nothing but metadata, so a consumer could
@@ -2260,3 +2217,19 @@ declare-on-first-use contract holding in the byte stream.
   whether a file's own stage built a record or re-emitted it. A third kind would
   add a permanent branch to a taxonomy whose value is that it has two, to buy a
   guarantee nobody has yet needed to check.
+
+### Planned, tracked elsewhere
+
+Additions this document once listed here, now in the
+[issue tracker](https://github.com/adamkjonsson/zipline/issues) so they carry
+state and a milestone rather than drifting in prose:
+
+| Extension | Issue |
+|-----------|-------|
+| Input stream extents, making the coverage guarantee self-verifiable | [#35](https://github.com/adamkjonsson/zipline/issues/35) |
+| `transform_params_digest` on the File Header | [#36](https://github.com/adamkjonsson/zipline/issues/36) |
+| Recording that a file's bytes were re-stamped from an earlier version | [#37](https://github.com/adamkjonsson/zipline/issues/37) |
+| Decrypted tunnels — an offset space keyed on what a stream *is* | [#41](https://github.com/adamkjonsson/zipline/issues/41) |
+| Per-session integrity counts on Session End | [#43](https://github.com/adamkjonsson/zipline/issues/43) |
+| Random-access index block | [#44](https://github.com/adamkjonsson/zipline/issues/44) |
+| SCTP support | [#45](https://github.com/adamkjonsson/zipline/issues/45) |
