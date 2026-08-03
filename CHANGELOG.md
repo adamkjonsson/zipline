@@ -100,6 +100,23 @@ built on the letter of the old text may have been rejecting valid files.
   was already stated per *input participant stream*, which is exactly what makes
   it survive fan-out.
 
+### Added
+
+- **`external_session_id` on the Session Descriptor** (`0x0054`, bytes,
+  single-valued) — an identity assigned by something *outside* this format: a
+  trace id, a capture orchestrator's UUID, a NetFlow flow key, a case number.
+  Nothing here interprets it. It answers a different question from `session_id`,
+  which stays **u64** and is still what `spans` and `origin` reference — a
+  cross-file reference needs a fixed-width numeric key. Deliberately **opaque and
+  variable-length**: one option per session costs nothing per record, so fixing a
+  width would foreclose SHA-256s and URNs to save nothing. `bytes` is the option
+  registry's first value of that type; it projects as base64, by the same rule
+  that already covers `payload`, so a UUID never acquires a second spelling. The
+  Session Descriptor prose carries the birthday arithmetic for anyone choosing
+  random ids — 2³² is the 50% point in a 64-bit space, and one-in-a-million needs
+  only ~6 million ids.
+- **A conformance vector**, `external-session-id`, carrying a 16-byte binary UUID.
+
 ### Fixed
 
 - **Three decode-stage vectors now set `produced_by`/`produced_at`.**

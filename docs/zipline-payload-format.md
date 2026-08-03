@@ -1153,7 +1153,38 @@ Options: `name`, `version`, `params_digest`, `comment`.
 
 Options: `proto` (string; see below), `flow_key` (string), `flags` (u16,
 session-level flags; see below), `sequenced_basis` (string; see
-[Sequenced files](#sequenced-files-precomputed-order)), `comment`.
+[Sequenced files](#sequenced-files-precomputed-order)), `external_session_id`
+(bytes; see below), `comment`.
+
+**`external_session_id` — what the rest of the world calls this conversation.**
+`session_id` and this option answer different questions, and reaching for the
+wrong one is easy:
+
+| | Assigned by | Answers |
+|---|---|---|
+| `session_id` | the producer | which session is this, here and in files derived from here |
+| `external_session_id` | some other system | what does the rest of the world call this conversation |
+
+A trace id, a UUID from a capture orchestrator, a flow key from a NetFlow
+collector, a case number, a span id from a distributed trace. **Nothing in this
+format interprets it** — it is carried, compared for equality if a consumer
+chooses, and never parsed. `spans` and `origin` keep referring to `session_id`,
+because a cross-file reference needs a fixed-width numeric key; `session_id`
+therefore stays u64 and this option does not replace it. Note `session_id` is
+already global-capable — a writer may draw it from a fleet-wide sequence — so
+this is not "the global one", it is the *foreign* one.
+
+It is **opaque and variable-length**: one option per session, so its size costs
+nothing per record, and there is no reason to fix a width. That admits a UUID (16
+bytes), a SHA-256 (32), a URN, or an arbitrary correlation string with equal ease.
+
+*Choosing an external id — guidance, not a rule this format enforces.* For
+**randomly** chosen identifiers the birthday bound bites earlier than people
+expect: in a 64-bit space, 2³² ids is where the collision chance reaches 50%, and
+a one-in-a-million chance needs only about 6 million ids. A producer picking
+random values should choose a width where that bound is comfortable. A producer
+using a monotonic counter has no collision problem at any width — which is
+exactly why the format declines to pick one for either of them.
 
 `proto` names the session's protocol. Well-known values: `tcp`, `udp`, `http`,
 `tls`, `irc`, `dns`. Other values are permitted and MUST be lowercase; a
@@ -1574,6 +1605,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; **MUST** be present on such a session; open vocabulary, defined values `clock`/`protocol`/`external`/`trivial` (see [Sequenced files](#sequenced-files-precomputed-order)) |
+| `0x0054` | external_session_id | bytes   | Session                  | an identity assigned by something *outside* this format — a trace id, a capture orchestrator's UUID, a case number. Opaque: nothing here interprets it (see [Session Descriptor](#session-descriptor-0x10)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick (recommended spellings: see [Participant Descriptor](#participant-descriptor-0x11)); **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
@@ -2031,7 +2063,11 @@ general naming rule covers it.
   narrower fields are always plain numbers.
 - **Strings** → JSON string; a `digest` keeps its `"<alg>:<hex>"` form.
 - **`payload`** and any raw-byte value → **standard base64** (RFC 4648 §4, with
-  `=` padding).
+  `=` padding). This covers an option whose registry type is **`bytes`**
+  (`external_session_id`) exactly as it covers the Record and Custom bodies: the
+  value is opaque, so it projects as base64 rather than being spelled. A reader
+  MUST NOT assume a `bytes` option is text, even when it decodes to printable
+  ASCII.
 - **Enums** render as their defined **string label**: `kind` as
   `"capture"`/`"zpf-input"`, `tcp_role` as `"initiator"`/`"responder"` (omitted
   when unknown). A value with **no defined label** renders as its raw number

@@ -215,6 +215,8 @@ def o_proto(v):          return option(0x0050, s(v), "proto")
 def o_flow_key(v):       return option(0x0051, s(v), "flow_key")
 def o_sess_flags(v):     return option(0x0052, u16(v), "flags", f"0x{v:04X}")
 def o_seq_basis(v):      return option(0x0053, s(v), "sequenced_basis")
+def o_external_sid(v):
+    return option(0x0054, v, "external_session_id", f"{len(v)} opaque bytes")
 def o_endpoint(v):       return option(0x0060, s(v), "endpoint")
 def o_isn(v):            return option(0x0061, u32(v), "isn", str(v))
 def o_tcp_role(v):       return option(0x0063, u8(v), "tcp_role", str(v))
@@ -578,6 +580,36 @@ vector(
         {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 0,
          "off_start": 0, "off_end": 40, "reason": "rtp-seq-gap",
          "reason_class": "hole", "decoder_id": 1},
+        {"type": "end"},
+    ],
+)
+
+UUID = bytes.fromhex("3f2504e04f8911d39a0c0305e82c3301")
+
+vector(
+    "external-session-id", "accept",
+    "A session carrying an identity assigned outside this format -- here a "
+    "16-byte binary UUID. The value is opaque bytes, not a string: it is "
+    "projected as base64 and MUST NOT be spelled out, or one id acquires two "
+    "spellings. session_id is untouched and still what spans reference.",
+    "Session Descriptor (0x10)",
+    [
+        file_header(),
+        source(1, 0, [o_uri("c.pcap")]),
+        session(7, [o_proto("tcp"), o_external_sid(UUID)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"hi"),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp",
+         "external_session_id": b64(UUID)},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "payload": b64(b"hi")},
         {"type": "end"},
     ],
 )

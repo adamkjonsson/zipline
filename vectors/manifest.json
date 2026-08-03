@@ -92,6 +92,15 @@
       "has_jsonl": true
     },
     {
+      "name": "external-session-id",
+      "tier": "accept",
+      "bytes": 184,
+      "summary": "A session carrying an identity assigned outside this format -- here a 16-byte binary UUID. The value is opaque bytes, not a string: it is projected as base64 and MUST NOT be spelled out, or one id acquires two spellings. session_id is untouched and still what spans reference.",
+      "spec_section": "Session Descriptor (0x10)",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
       "name": "sequenced-basis",
       "tier": "accept",
       "bytes": 248,
