@@ -1,5 +1,5 @@
 {
-  "format": "zipline-payload/0.12",
+  "format": "zipline-payload/0.13",
   "vectors": [
     {
       "name": "raw-minimal",
@@ -76,7 +76,7 @@
     {
       "name": "undecoded-skipped",
       "tier": "accept",
-      "bytes": 328,
+      "bytes": 360,
       "summary": "A decode stage that deliberately declines a region -- a byte-order mark -- and says so with reason = skipped rather than claiming a parse failure.",
       "spec_section": "Undecoded (0x21)",
       "expect": "Accept. The .jsonl file is the expected projection.",
@@ -85,7 +85,7 @@
     {
       "name": "undecoded-reason-class",
       "tier": "accept",
-      "bytes": 232,
+      "bytes": 264,
       "summary": "A non-canonical reason, which MUST carry reason_class so a consumer can still tell whether the bytes exist upstream.",
       "spec_section": "Undecoded (0x21)",
       "expect": "Accept. The .jsonl file is the expected projection.",
@@ -167,7 +167,7 @@
       "name": "reject-unknown-minor",
       "tier": "reject",
       "bytes": 48,
-      "summary": "version_minor is 13 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.12 reader MUST reject it.",
+      "summary": "version_minor is 14 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.13 reader MUST reject it.",
       "spec_section": "File Header -- version numbering",
       "expect": "Reject the file. This is the vector that distinguishes a 0.x-aware reader from one that assumes minors are always skippable.",
       "has_jsonl": false
@@ -211,7 +211,7 @@
     {
       "name": "isolate-coverage-gap",
       "tier": "isolate",
-      "bytes": 304,
+      "bytes": 336,
       "summary": "A decode stage whose output leaves part of the input stream neither covered by a decoded record's spans nor marked Undecoded.",
       "spec_section": "Coverage honesty: Undecoded blocks",
       "expect": "MAY reject the file, or isolate the session. The range [10,20) of input stream (session 7, pid 0) is covered by neither a record's spans nor an Undecoded block, so the coverage guarantee fails.",

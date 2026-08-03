@@ -60,6 +60,29 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.13] — unreleased
+
+The first release since `0.9` to add capability rather than only correct.
+Scope and reasoning in
+[docs/RELEASE-0.13-PLAN.md](docs/RELEASE-0.13-PLAN.md); the work is tracked
+against the [`0.13` milestone](https://github.com/adamkjonsson/zipline/milestone/1).
+
+### Fixed
+
+- **Three decode-stage vectors now set `produced_by`/`produced_at`.**
+  `undecoded-skipped`, `undecoded-reason-class` and `isolate-coverage-gap` are
+  derived files, which *Conformance* requires to declare both, and none did. The
+  two tiers failed in opposite directions: the `accept` pair failed a **correct**
+  reader, while `isolate-coverage-gap` carried a second violation and so passed
+  an **incorrect** one — a reader could trip on the missing provenance and pass
+  it with coverage checking entirely unimplemented. Found by `python-zipline`
+  porting to `0.12`.
+- **`reject-unknown-minor` now stamps the minor after this one.** It stamped
+  `13`, which this release makes valid; it is derived from the current version so
+  it keeps testing an unimplemented minor at every future bump.
+
+---
+
 ## [0.12] — 2026-07-31
 
 A corrective release, like `0.11`: it fixes what the review
@@ -516,7 +539,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[Unreleased]: https://github.com/adamkjonsson/zipline/compare/v0.12...HEAD
+[0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...HEAD
 [0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12
 [0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...v0.11
 [0.10]: https://github.com/adamkjonsson/zipline/compare/v0.9...v0.10

@@ -5,10 +5,12 @@ A running list, to be reported to the
 0.9 → 0.12 port is finished. Found while implementing against
 `vectors/` at tag `v0.12` (commit `c291afc`).
 
-**Status: 2 defects, affecting 3 vectors and the vectors README.** Appended to as
-later migration phases exercise more of the tree — the `accept` tier's
-projections are not fully compared until Phase 2, so this list is not yet
-complete.
+**Status: 2 defects, affecting 3 vectors and the vectors README. Both fixed in
+`0.13`** — defect 2 by commit `a52c717`, defect 1 by the `0.13` version-stamp
+commit, which regenerated the three vectors. The file is kept as the record of
+what was wrong and why. Appended to as later migration phases exercise more of
+the tree — the `accept` tier's projections are not fully compared until Phase 2,
+so this list is not yet complete.
 
 Nothing here challenges the *normative text*. Per the vectors' own ground rule
 2, a vector that disagrees with the specification is the thing that is wrong,
@@ -17,6 +19,10 @@ and all of these are vector-side.
 ---
 
 ## Defect 1 — Three decode-stage vectors omit the mandatory `produced_by`/`produced_at`
+
+**→ FIXED in `0.13`** ([#38](https://github.com/adamkjonsson/zipline/issues/38)).
+All three File Headers now carry both options, matching `decoded-basic`; the
+`.zpf`, `.hex` and `.jsonl` were regenerated with them.
 
 **Affected:**
 
@@ -108,6 +114,10 @@ two `accept` vectors become conformant files.
 
 ## Defect 2 — `vectors/README.md` contradicts the specification on the `isolate` tier
 
+**→ FIXED** by commit `a52c717`. Ground rule 4 now says what the tier table and
+*Conformance* say: rejecting an `isolate` vector, with a diagnostic, is
+conformant.
+
 ### What is wrong
 
 The README says both of these:
@@ -151,7 +161,8 @@ imply doubt about them:
 
 - **`raw-minimal` is byte-for-byte the specification's 196-byte worked example.**
   Independently confirmed: this project transcribed the same example into a test
-  fixture by hand, and after the 0.12 version stamp the two agree exactly.
+  fixture by hand, and after the 0.12 version stamp the two agree exactly. They
+  still agree byte-for-byte after the `0.13` stamp, both 196 bytes.
 - **`undecoded-reason-class` carries `reason_class = "hole"`** (option `0x00A1`)
   on its non-canonical `rtp-seq-gap` reason, exactly as required. Only its
   File Header provenance is wrong.
