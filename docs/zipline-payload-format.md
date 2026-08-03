@@ -778,10 +778,11 @@ from. Those spans will not ascend with stored order, which is expected: nothing
 requires them to, and coverage depends only on which ranges are covered, not on
 the order they appear in.
 
-One consequence is worth naming: such a transform's own configuration has no
-`params_digest` to live in, so a filtered file records *what* it was derived from
-but not *how*. A merge has the same gap today. See
-[issue #36](https://github.com/adamkjonsson/zipline/issues/36).
+One consequence follows: because every `params_digest` in such a file belongs to
+an *inherited* decoder, the transform's own configuration has none to live in.
+The File Header option
+[`transform_params_digest`](#file-header-0x01) is where it goes, and a merge —
+which declares no Decoder at all — uses the same option for the same reason.
 
 ### Source Descriptor (which input)
 
@@ -1097,8 +1098,34 @@ operands are signed, so times before the origin are representable.
 Header options: `time_epoch` (i64, `tick_hz` ticks; default Unix epoch
 1970-01-01T00:00:00Z), `creator` (string), `produced_by` (string, derived files —
 tool + version that produced this file), `produced_at` (i64, derived files —
-wall-clock build time in Unix seconds), `flags` (u16, file-level flags; see
-below), `comment`.
+wall-clock build time in Unix seconds), `transform_params_digest` (string,
+derived files — see below), `flags` (u16, file-level flags; see below),
+`comment`.
+
+**`transform_params_digest` — how a transform that did not decode was configured.**
+A decoder's configuration has a home already: `params_digest` on the
+[Decoder Descriptor](#decoder-descriptor-which-decoding), which is what the
+reproducibility contract is stated against. Two kinds of transform fall outside
+it, and both were left recording *what* a file was derived from but not *how*:
+
+- A **filter or reordering stage**. It is a decode stage, but
+  [`decoder_id` names a layer, not a stage](#layers-raw-and-decoded-live-in-separate-files):
+  it *inherits* its input's decoders and re-declares their descriptors, so every
+  `params_digest` in the file describes a stage that ran further up the chain,
+  never this one. Its own parameters — the filter predicate, the ordering key —
+  had nowhere to go.
+- A **pass-through transform**, such as the [merge](#sequenced-files-precomputed-order),
+  which declares no Decoder at all.
+
+Both are parameterised, and two runs with different parameters produce different
+files from the same input, so `produced_by`/`produced_at` do not settle
+reproducibility on their own. The digest is per-*file* because such a stage
+applies one configuration to its whole output.
+
+A derived file may therefore carry this option **and** an inherited `decoder_id`
+whose descriptor has its own `params_digest`. That is not a duplicate: the two
+describe different stages, one upstream and one here. A raw file is not the output
+of a transform, so the option MUST NOT appear on one.
 
 **File flags.** The `flags` option is a u16 bitfield of file-level assertions;
 when absent, every bit is 0. Bit `0x0001` (**SINGLE_CLOCK**) asserts that every
@@ -1595,6 +1622,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0012` | produced_by      | string     | File Header              | tool + version that ran the transform (derived files)          |
 | `0x0013` | produced_at      | i64        | File Header              | wall-clock build time of this artifact (Unix seconds)          |
 | `0x0014` | flags            | u16        | File Header              | file-level flags bitfield; bit `0x0001` = SINGLE_CLOCK (see [Sequenced files](#sequenced-files-precomputed-order)) |
+| `0x0015` | transform_params_digest | string | File Header           | hash of the config of a transform that produced records **without decoding** — a filter, a reordering stage, a merge. A decode stage's config lives on its Decoder (`params_digest`); see [Layers](#layers-raw-and-decoded-live-in-separate-files) |
 | `0x0020` | uri              | string     | Source                   | where the referenced capture/input file lives                  |
 | `0x0021` | digest           | string     | Source                   | content hash of the referenced file — the dependency edge      |
 | `0x0022` | link_type        | u16        | Source (capture)         | link-layer type of the capture (e.g. a pcap LINKTYPE)          |

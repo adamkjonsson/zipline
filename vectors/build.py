@@ -206,6 +206,8 @@ def o_creator(v):        return option(0x0011, s(v), "creator")
 def o_produced_by(v):    return option(0x0012, s(v), "produced_by")
 def o_produced_at(v):    return option(0x0013, i64(v), "produced_at", str(v))
 def o_file_flags(v):     return option(0x0014, u16(v), "flags", f"0x{v:04X}")
+def o_transform_params_digest(v):
+    return option(0x0015, s(v), "transform_params_digest")
 def o_uri(v):            return option(0x0020, s(v), "uri")
 def o_digest(v):         return option(0x0021, s(v), "digest")
 def o_dec_name(v):       return option(0x0041, s(v), "name")
@@ -650,11 +652,15 @@ vector(
     "A stage that reorders a participant's decoded records without decoding "
     "them. It is a decode stage -- stored order defines the offsets, so "
     "reordering changes them -- and its spans run DOWNWARD against stored "
-    "order. A reader that assumes spans ascend fails here.",
+    "order. A reader that assumes spans ascend fails here. The declared Decoder "
+    "is INHERITED (http/1.1, the layer's), so its params_digest describes a "
+    "stage further up the chain; this stage's own config lives in the File "
+    "Header transform_params_digest.",
     "Layers -- filtering and reordering a decoded stream",
     [
         file_header(options=[o_produced_by("zpf-reorder 0.1"),
-                             o_produced_at(1719530000)]),
+                             o_produced_at(1719530000),
+                             o_transform_params_digest("sha256:7c1e")]),
         source(1, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
         session(7, [o_proto("http")]),
@@ -671,7 +677,8 @@ vector(
     ],
     jsonl=[
         {"type": "file", "format": FORMAT, "tick_hz": 1000000,
-         "produced_by": "zpf-reorder 0.1", "produced_at": 1719530000},
+         "produced_by": "zpf-reorder 0.1", "produced_at": 1719530000,
+         "transform_params_digest": "sha256:7c1e"},
         {"type": "source", "source_id": 1, "kind": "zpf-input",
          "uri": "decoded.zpf", "digest": "sha256:44dd"},
         {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},

@@ -115,7 +115,22 @@ built on the letter of the old text may have been rejecting valid files.
   Session Descriptor prose carries the birthday arithmetic for anyone choosing
   random ids — 2³² is the 50% point in a 64-bit space, and one-in-a-million needs
   only ~6 million ids.
-- **A conformance vector**, `external-session-id`, carrying a 16-byte binary UUID.
+- **`transform_params_digest` on the File Header** (`0x0015`, string,
+  single-valued) — the configuration of a transform that produced records
+  **without decoding**. Two kinds of stage had nowhere to record it, and the
+  specification named the gap without closing it. A **filter or reordering
+  stage** is a decode stage, but `decoder_id` names a *layer, not a stage*: it
+  inherits its input's decoders and re-declares their descriptors, so every
+  `params_digest` in the file describes something that ran further upstream,
+  never this stage. A **merge** declares no Decoder at all. Both are
+  parameterised, so `produced_by`/`produced_at` did not settle reproducibility
+  on their own. A file may carry this *and* an inherited `decoder_id` whose
+  descriptor has its own `params_digest` — they describe different stages, one
+  here and one upstream — and a raw file, not being a transform's output, MUST
+  NOT carry it.
+- **Two conformance vectors' worth of coverage.** `external-session-id` carries a
+  16-byte binary UUID; `reordered-decoded` gains a `transform_params_digest`, it
+  being exactly the transform whose configuration had nowhere to live.
 
 ### Fixed
 

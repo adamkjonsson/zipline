@@ -112,8 +112,8 @@
     {
       "name": "reordered-decoded",
       "tier": "accept",
-      "bytes": 544,
-      "summary": "A stage that reorders a participant's decoded records without decoding them. It is a decode stage -- stored order defines the offsets, so reordering changes them -- and its spans run DOWNWARD against stored order. A reader that assumes spans ascend fails here.",
+      "bytes": 560,
+      "summary": "A stage that reorders a participant's decoded records without decoding them. It is a decode stage -- stored order defines the offsets, so reordering changes them -- and its spans run DOWNWARD against stored order. A reader that assumes spans ascend fails here. The declared Decoder is INHERITED (http/1.1, the layer's), so its params_digest describes a stage further up the chain; this stage's own config lives in the File Header transform_params_digest.",
       "spec_section": "Layers -- filtering and reordering a decoded stream",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
