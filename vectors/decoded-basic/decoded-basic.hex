@@ -134,9 +134,23 @@
 01E0  01 00
 01E2  00 00                    value padding
 
-01E4  41 00                    type   = 0x0041  End of file
+01E4  12 00                    type   = 0x0012  Session End
 01E6  00 00                    reserved
-01E8  04 00 00 00              length = 4
-01EC  44 4E 45 5A              end_magic = 0x5A454E44  ("ZEND")
+01E8  3C 00 00 00              length = 60
+01EC  07 00 00 00 00 00 00 00  session_id = 7  (u64)
+01F4  C0 00 03 00              option 0x00C0 reason, len = 3
+01F8  66 69 6E                 "fin"
+01FB  00                       value padding
+01FC  C1 00 28 00              option 0x00C1 input_extents, len = 40  (2 entry/entries)
+0200  01 00 00 00 07 00 00 00
+0208  00 00 00 00 12 00 00 00
+0210  00 00 00 00 01 00 01 00
+0218  07 00 00 00 00 00 00 00
+0220  8B 00 00 00 00 00 00 00
 
-01F0                           (end of file, 496 bytes)
+0228  41 00                    type   = 0x0041  End of file
+022A  00 00                    reserved
+022C  04 00 00 00              length = 4
+0230  44 4E 45 5A              end_magic = 0x5A454E44  ("ZEND")
+
+0234                           (end of file, 564 bytes)

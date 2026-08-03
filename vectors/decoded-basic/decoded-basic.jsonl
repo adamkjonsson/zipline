@@ -7,4 +7,5 @@
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,"payload":"UkVR","decoder_id":1,"spans":[{"source_id":1,"session_id":7,"pid":0,"off_start":0,"off_end":18}],"content_type":"dec:request"}
 {"type":"record","session_id":7,"sender_pid":1,"source_id":1,"ts":995,"payload":"UkVTUA==","decoder_id":1,"spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],"content_type":"dec:response"}
 {"type":"undecoded","source_id":1,"session_id":7,"pid":1,"off_start":100,"off_end":139,"reason":"undecodable","decoder_id":1}
+{"type":"session_end","session_id":7,"reason":"fin","input_extents":[{"source_id":1,"session_id":7,"pid":0,"extent":18},{"source_id":1,"session_id":7,"pid":1,"extent":139}]}
 {"type":"end"}

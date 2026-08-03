@@ -1308,7 +1308,8 @@ bounded-memory contract.
 |--------------|------|-----------------------------|
 | `session_id` | u64  | the session being ended     |
 
-Options: `reason` (string), `comment`.
+Options: `reason` (string), `input_extents` (packed, derived files; **repeatable**
+— see below), `comment`.
 
 `reason` says *how* the session ended — an open vocabulary with suggested
 values `fin` (clean TCP close), `rst` (reset), `timeout` (idle eviction),
@@ -1321,6 +1322,52 @@ implicitly closes every still-open session, so a Session End as a file's last
 act is redundant but harmless; readers MUST NOT require the block (a crashed
 writer never wrote it). A transform SHOULD emit a Session End for an output
 session once its input for that session is exhausted.
+
+**`input_extents` — making the coverage guarantee self-verifiable.** The
+[coverage guarantee](#coverage-honesty-undecoded-blocks) says every offset of an
+input participant stream is covered by a `spans` entry or an Undecoded block. A
+consumer holding only the derived file cannot check it: the file states which
+ranges are covered but never how long the streams were, so a decode stage that
+stopped early and simply said nothing about the tail is indistinguishable from
+one that consumed everything. Verifying it meant fetching the input and measuring
+it — which defeats the point of a guarantee the file is supposed to make about
+itself. This option supplies the missing number. Each entry is:
+
+```
+source_id: u16, pid: u16, session_id: u64, extent: u64
+```
+
+The two u16s lead so the u64s stay 4-byte aligned, as in a
+[span-list](#tlv-option-framing--id-registry) entry. The triple
+`(source_id, session_id, pid)` names an input participant stream **in the
+source's id namespace**, never this file's — the same rule that governs `spans`
+and `origin`. `extent` is that stream's length in **its own** offset space: a
+transport stream's is hole-inclusive, a decoded stream's is the concatenation of
+its record payloads, exactly as the layer defines it.
+
+It is **repeatable** because a stage reads several input streams per output
+session — at minimum both directions of a conversation.
+
+**Under fan-out, every consuming session declares the same full extent.** One
+input stream may feed several output sessions, and each writes its own Session
+End; each declares that stream's **whole** length, not the portion it happened to
+use. A checker therefore unions the covering spans across *all* sessions naming
+the stream and compares that union against the one extent. This follows from the
+coverage guarantee being stated per input participant stream rather than per
+session: the covering spans may come from records in different output sessions,
+so the total they must add up to has to be the same number wherever it is
+declared. Two sessions declaring **different** extents for one stream is a
+contradiction, and a reader MAY treat it as a semantic violation.
+
+A writer that does not know a stream's extent omits the entry. Declaring an
+extent larger than the file's own coverage accounts for is the honest way to say
+"this decode stopped early"; declaring one smaller is a contradiction of the same
+kind as above. Note this is the moment the writer already knows: declare-on-first-use
+puts the Participant Descriptor before any record, when a live decode cannot yet
+know how long a stream will be, whereas at Session End it does.
+
+The option is meaningless in a raw file, whose records are the stream rather than
+a derivation of one; a raw file MUST NOT carry it.
 
 ### Record (`0x20`)
 
@@ -1601,18 +1648,19 @@ Whether an id is *single-valued* or *repeatable* is a **semantic** property in t
 registry, consulted only by a consumer that actually interprets the id:
 
 - A **repeatable** id is an ordered list; its occurrences and their order are
-  significant. **The repeatable ids are `endpoint` and `spans`** — a closed list;
-  any future repeatable id MUST be added to it.
+  significant. **The repeatable ids are `endpoint`, `spans` and `input_extents`**
+  — a closed list; any future repeatable id MUST be added to it.
 - A **single-valued** id (every other id) SHOULD appear at most once; a consumer
   that interprets it uses the **first** occurrence. If it nonetheless repeats, a
   faithful reader still preserves the extra occurrences for round-trip.
-- The two repeatable ids list differently. Each `endpoint` occurrence is one
+- The three repeatable ids list differently. Each `endpoint` occurrence is one
   list element (a tunnel layer). Each `spans` occurrence is a **chunk** of
   packed entries: successive occurrences concatenate, in file order, into the
   record's one span list. That is what lifts the per-occurrence value cap
   (⌊65 535 / 28⌋ = 2340 entries) off the logical list — a record needing more
   spans simply carries several `spans` options. Writers SHOULD coalesce
-  adjacent ranges before resorting to that.
+  adjacent ranges before resorting to that. `input_extents` chunks the same way
+  as `spans` (⌊65 535 / 20⌋ = 3276 entries per occurrence), for the same reason.
 
 | Id       | Name             | Value type | Used in                  | Meaning                                                        |
 |----------|------------------|------------|--------------------------|----------------------------------------------------------------|
@@ -1650,6 +1698,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 | `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
+| `0x00C1` | input_extents    | packed     | Session End (derived)    | length of each input participant stream this session drew on, in that stream's own offset space: `source_id: u16, pid: u16, session_id: u64, extent: u64` — ids in the source's namespace; **repeatable**, occurrences concatenate (see [Session End](#session-end-0x12)) |
 
 A **span-list** value is `count` packed entries, each 28 bytes:
 `source_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
@@ -2085,7 +2134,7 @@ general naming rule covers it.
 
 - **Integers** → JSON number, with one exception: a **64-bit** field (`session_id`,
   `ts`/`timestamp`, `tick_hz`, `time_epoch`, `produced_at`,
-  `ts_first`, `off_start`, `off_end`) MAY be written as a JSON number **or** a
+  `ts_first`, `off_start`, `off_end`, `extent`) MAY be written as a JSON number **or** a
   decimal string, and a writer SHOULD use the string form when the value exceeds
   2⁵³ (beyond JSON's exact-integer range). A reader MUST accept both. 32-bit and
   narrower fields are always plain numbers.
@@ -2109,14 +2158,18 @@ general naming rule covers it.
   bitfield is omitted.
 - **Repeatable options** (`endpoint`) → a JSON **array**, order preserved —
   **always an array, even for a single occurrence** (`["10.0.0.1:51000"]`), so a
-  reader never has to branch on the JSON type of a key. (`spans`, whose
-  repetition is chunking rather than listing, has its own rule below, and is
-  likewise always an array.)
+  reader never has to branch on the JSON type of a key. (`spans` and
+  `input_extents`, whose repetition is chunking rather than listing, have their
+  own rules below, and are likewise always arrays.)
 - **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
   objects; repeated binary occurrences merge into this one array, and a
   converter back to binary MAY split it into several occurrences.
 - **`origin`** → a JSON object `{source_id, session_id, pid}` (a `spans` entry
   without offsets; ids in the referenced source's namespace).
+- **`input_extents`** → a JSON array of `{source_id, session_id, pid, extent}`
+  objects, always an array; repeated binary occurrences merge into it and a
+  converter back to binary MAY split it again, exactly as for `spans`. Ids are in
+  the referenced source's namespace.
 - An **absent** option is an **omitted** key; a reader treats a missing key as
   "option not present," never as a present option carrying a default.
 - **Framing / on-disk-only fields are not projected**: the block

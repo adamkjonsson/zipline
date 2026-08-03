@@ -128,9 +128,30 @@ built on the letter of the old text may have been rejecting valid files.
   descriptor has its own `params_digest` — they describe different stages, one
   here and one upstream — and a raw file, not being a transform's output, MUST
   NOT carry it.
-- **Two conformance vectors' worth of coverage.** `external-session-id` carries a
-  16-byte binary UUID; `reordered-decoded` gains a `transform_params_digest`, it
-  being exactly the transform whose configuration had nowhere to live.
+- **`input_extents` on Session End** (`0x00C1`, packed, **repeatable**) — the
+  length of each input participant stream a session drew on, in that stream's own
+  offset space, as `source_id: u16, pid: u16, session_id: u64, extent: u64`. This
+  makes the **coverage guarantee self-verifiable**: a consumer holding only the
+  derived file could state which input ranges were covered but never how long the
+  streams were, so a stage that stopped early and said nothing about the tail was
+  indistinguishable from one that consumed everything — checking meant fetching
+  the input and measuring it. Session End is where it goes because
+  declare-on-first-use puts the Participant Descriptor before any record, when a
+  live decode cannot yet know a stream's length; at Session End it does.
+  **Under fan-out, every session consuming a stream declares that stream's whole
+  extent identically**, and a checker unions the covering spans across all of
+  them — which follows from the coverage guarantee being per input participant
+  stream rather than per session. Two sessions declaring different extents for one
+  stream is a contradiction a reader MAY treat as a semantic violation. Added to
+  the closed repeatable-id list, which now reads `endpoint`, `spans`,
+  `input_extents`. Raw files MUST NOT carry it.
+- **Three conformance vectors.** `external-session-id` carries a 16-byte binary
+  UUID; `decoded-basic` gains a Session End with extents that meet its coverage
+  exactly — **the suite's first Session End block anywhere**, a gap nobody had
+  noticed; and `isolate-extent-exceeds-coverage` declares a 40-byte stream while
+  covering only `[0,20)`, the silent-truncation case the option exists to catch.
+  `reordered-decoded` gains a `transform_params_digest`, it being exactly the
+  transform whose configuration had nowhere to live. 28 in total.
 
 ### Fixed
 

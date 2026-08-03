@@ -134,6 +134,11 @@ def session(session_id, options=()):
     return block(0x10, "Session Descriptor", body, options)
 
 
+def session_end(session_id, options=()):
+    body = [P(u64(session_id), f"session_id = {session_id}  (u64)")]
+    return block(0x12, "Session End", body, options)
+
+
 def participant(session_id, pid, options=()):
     body = [
         P(u64(session_id), f"session_id = {session_id}  (u64)"),
@@ -235,6 +240,12 @@ def o_decoder_id(v):     return option(0x0090, u16(v), "decoder_id", str(v))
 def o_content_type(v):   return option(0x0091, s(v), "content_type")
 def o_reason(v):         return option(0x00A0, s(v), "reason")
 def o_reason_class(v):   return option(0x00A1, s(v), "reason_class")
+def o_end_reason(v):     return option(0x00C0, s(v), "reason")
+def o_input_extents(entries):
+    packed = b''.join(u16(src) + u16(pid) + u64(sess) + u64(ext)
+                      for src, pid, sess, ext in entries)
+    return option(0x00C1, packed, "input_extents",
+                  f"{len(entries)} entry/entries")
 def o_label(v):          return option(0x00B0, s(v), "label")
 def o_name_kind(v):      return option(0x00B1, s(v), "kind")
 def o_unregistered(oid, v):
@@ -286,7 +297,10 @@ vector(
 vector(
     "decoded-basic", "accept",
     "A decode stage's output: decoded records citing spans in the input, plus "
-    "an Undecoded block covering the tail the decoder could not parse.",
+    "an Undecoded block covering the tail the decoder could not parse. Its "
+    "Session End declares input_extents, so the coverage guarantee is "
+    "checkable from this file alone -- spans plus Undecoded meet the declared "
+    "length of each input stream exactly. Also the suite's only Session End.",
     "A decoded file, end to end",
     [
         file_header(options=[o_produced_by("zpf-decode 0.4"),
@@ -303,6 +317,10 @@ vector(
             o_decoder_id(1), o_spans([(1, 1, 7, 0, 100)]),
             o_content_type("dec:response")]),
         undecoded(1, 1, 7, 100, 139, [o_reason("undecodable"), o_decoder_id(1)]),
+        # Extents make the coverage guarantee checkable from this file alone:
+        # pid 0 spans [0,18), pid 1 spans [0,100) + undecoded [100,139).
+        session_end(7, [o_end_reason("fin"),
+                        o_input_extents([(1, 0, 7, 18), (1, 1, 7, 139)])]),
         end_block(),
     ],
     jsonl=[
@@ -329,6 +347,10 @@ vector(
         {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 1,
          "off_start": 100, "off_end": 139, "reason": "undecodable",
          "decoder_id": 1},
+        {"type": "session_end", "session_id": 7, "reason": "fin",
+         "input_extents": [
+             {"source_id": 1, "session_id": 7, "pid": 0, "extent": 18},
+             {"source_id": 1, "session_id": 7, "pid": 1, "extent": 139}]},
         {"type": "end"},
     ],
 )
@@ -945,6 +967,31 @@ vector(
     expect="MAY reject the file, or isolate the session. The range [10,20) of "
            "input stream (session 7, pid 0) is covered by neither a record's "
            "spans nor an Undecoded block, so the coverage guarantee fails.",
+)
+
+vector(
+    "isolate-extent-exceeds-coverage", "isolate",
+    "A decode stage whose Session End declares an input stream 40 bytes long "
+    "while its spans and Undecoded blocks account for only [0,20). The tail "
+    "[20,40) was silently dropped. Without input_extents this file is "
+    "indistinguishable from an honest one that consumed a 20-byte stream -- "
+    "which is the whole reason the option exists.",
+    "Session End (0x12) -- input_extents",
+    [file_header(options=[o_produced_by("zpf-decode 0.4"),
+                          o_produced_at(1719570000)]),
+     source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
+     decoder(1, [o_dec_name("http/1.1")]),
+     session(7, [o_proto("http")]),
+     participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+     record(7, 0, 1, 1000, b"part", options=[
+         o_decoder_id(1), o_spans([(1, 0, 7, 0, 20)])]),
+     session_end(7, [o_input_extents([(1, 0, 7, 40)])]),
+     end_block()],
+    expect="MAY reject the file, or isolate the session. The declared extent "
+           "of input stream (session 7, pid 0) is 40, but spans plus Undecoded "
+           "blocks cover only [0,20), so the coverage guarantee fails against "
+           "the file's own declaration. A reader that ignores input_extents "
+           "sees nothing wrong here, which is what this vector is for.",
 )
 
 vector(
