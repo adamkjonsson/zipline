@@ -778,10 +778,11 @@ from. Those spans will not ascend with stored order, which is expected: nothing
 requires them to, and coverage depends only on which ranges are covered, not on
 the order they appear in.
 
-One consequence is worth naming: such a transform's own configuration has no
-`params_digest` to live in, so a filtered file records *what* it was derived from
-but not *how*. A merge has the same gap today. See
-[issue #36](https://github.com/adamkjonsson/zipline/issues/36).
+One consequence follows: because every `params_digest` in such a file belongs to
+an *inherited* decoder, the transform's own configuration has none to live in.
+The File Header option
+[`transform_params_digest`](#file-header-0x01) is where it goes, and a merge —
+which declares no Decoder at all — uses the same option for the same reason.
 
 ### Source Descriptor (which input)
 
@@ -1065,6 +1066,15 @@ the version it implements — there is no obligation to compute the lowest versi
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
 
+**A writer stamps the version it implements, and nothing re-stamps a file
+afterwards.** While `version_major` is `0`, converting an existing file's bytes to
+carry a later `version_minor` is **out of scope** for this format: there is no
+option, no transform and no procedure for it, and a file that claims a version it
+was not written against is claiming something untrue. A `0.x` file is
+**disposable** — where one still matters, regenerate it from the capture rather
+than transcoding it. That is cheap precisely because the provenance chain records
+what it was derived from and how.
+
 The compatibility rules have **two regimes**:
 
 - **While `version_major` is `0`** — the current regime — anything may change
@@ -1097,8 +1107,34 @@ operands are signed, so times before the origin are representable.
 Header options: `time_epoch` (i64, `tick_hz` ticks; default Unix epoch
 1970-01-01T00:00:00Z), `creator` (string), `produced_by` (string, derived files —
 tool + version that produced this file), `produced_at` (i64, derived files —
-wall-clock build time in Unix seconds), `flags` (u16, file-level flags; see
-below), `comment`.
+wall-clock build time in Unix seconds), `transform_params_digest` (string,
+derived files — see below), `flags` (u16, file-level flags; see below),
+`comment`.
+
+**`transform_params_digest` — how a transform that did not decode was configured.**
+A decoder's configuration has a home already: `params_digest` on the
+[Decoder Descriptor](#decoder-descriptor-which-decoding), which is what the
+reproducibility contract is stated against. Two kinds of transform fall outside
+it, and both were left recording *what* a file was derived from but not *how*:
+
+- A **filter or reordering stage**. It is a decode stage, but
+  [`decoder_id` names a layer, not a stage](#layers-raw-and-decoded-live-in-separate-files):
+  it *inherits* its input's decoders and re-declares their descriptors, so every
+  `params_digest` in the file describes a stage that ran further up the chain,
+  never this one. Its own parameters — the filter predicate, the ordering key —
+  had nowhere to go.
+- A **pass-through transform**, such as the [merge](#sequenced-files-precomputed-order),
+  which declares no Decoder at all.
+
+Both are parameterised, and two runs with different parameters produce different
+files from the same input, so `produced_by`/`produced_at` do not settle
+reproducibility on their own. The digest is per-*file* because such a stage
+applies one configuration to its whole output.
+
+A derived file may therefore carry this option **and** an inherited `decoder_id`
+whose descriptor has its own `params_digest`. That is not a duplicate: the two
+describe different stages, one upstream and one here. A raw file is not the output
+of a transform, so the option MUST NOT appear on one.
 
 **File flags.** The `flags` option is a u16 bitfield of file-level assertions;
 when absent, every bit is 0. Bit `0x0001` (**SINGLE_CLOCK**) asserts that every
@@ -1153,7 +1189,38 @@ Options: `name`, `version`, `params_digest`, `comment`.
 
 Options: `proto` (string; see below), `flow_key` (string), `flags` (u16,
 session-level flags; see below), `sequenced_basis` (string; see
-[Sequenced files](#sequenced-files-precomputed-order)), `comment`.
+[Sequenced files](#sequenced-files-precomputed-order)), `external_session_id`
+(bytes; see below), `comment`.
+
+**`external_session_id` — what the rest of the world calls this conversation.**
+`session_id` and this option answer different questions, and reaching for the
+wrong one is easy:
+
+| | Assigned by | Answers |
+|---|---|---|
+| `session_id` | the producer | which session is this, here and in files derived from here |
+| `external_session_id` | some other system | what does the rest of the world call this conversation |
+
+A trace id, a UUID from a capture orchestrator, a flow key from a NetFlow
+collector, a case number, a span id from a distributed trace. **Nothing in this
+format interprets it** — it is carried, compared for equality if a consumer
+chooses, and never parsed. `spans` and `origin` keep referring to `session_id`,
+because a cross-file reference needs a fixed-width numeric key; `session_id`
+therefore stays u64 and this option does not replace it. Note `session_id` is
+already global-capable — a writer may draw it from a fleet-wide sequence — so
+this is not "the global one", it is the *foreign* one.
+
+It is **opaque and variable-length**: one option per session, so its size costs
+nothing per record, and there is no reason to fix a width. That admits a UUID (16
+bytes), a SHA-256 (32), a URN, or an arbitrary correlation string with equal ease.
+
+*Choosing an external id — guidance, not a rule this format enforces.* For
+**randomly** chosen identifiers the birthday bound bites earlier than people
+expect: in a 64-bit space, 2³² ids is where the collision chance reaches 50%, and
+a one-in-a-million chance needs only about 6 million ids. A producer picking
+random values should choose a width where that bound is comfortable. A producer
+using a monotonic counter has no collision problem at any width — which is
+exactly why the format declines to pick one for either of them.
 
 `proto` names the session's protocol. Well-known values: `tcp`, `udp`, `http`,
 `tls`, `irc`, `dns`. Other values are permitted and MUST be lowercase; a
@@ -1250,7 +1317,8 @@ bounded-memory contract.
 |--------------|------|-----------------------------|
 | `session_id` | u64  | the session being ended     |
 
-Options: `reason` (string), `comment`.
+Options: `reason` (string), `input_extents` (packed, derived files; **repeatable**
+— see below), `comment`.
 
 `reason` says *how* the session ended — an open vocabulary with suggested
 values `fin` (clean TCP close), `rst` (reset), `timeout` (idle eviction),
@@ -1263,6 +1331,52 @@ implicitly closes every still-open session, so a Session End as a file's last
 act is redundant but harmless; readers MUST NOT require the block (a crashed
 writer never wrote it). A transform SHOULD emit a Session End for an output
 session once its input for that session is exhausted.
+
+**`input_extents` — making the coverage guarantee self-verifiable.** The
+[coverage guarantee](#coverage-honesty-undecoded-blocks) says every offset of an
+input participant stream is covered by a `spans` entry or an Undecoded block. A
+consumer holding only the derived file cannot check it: the file states which
+ranges are covered but never how long the streams were, so a decode stage that
+stopped early and simply said nothing about the tail is indistinguishable from
+one that consumed everything. Verifying it meant fetching the input and measuring
+it — which defeats the point of a guarantee the file is supposed to make about
+itself. This option supplies the missing number. Each entry is:
+
+```
+source_id: u16, pid: u16, session_id: u64, extent: u64
+```
+
+The two u16s lead so the u64s stay 4-byte aligned, as in a
+[span-list](#tlv-option-framing--id-registry) entry. The triple
+`(source_id, session_id, pid)` names an input participant stream **in the
+source's id namespace**, never this file's — the same rule that governs `spans`
+and `origin`. `extent` is that stream's length in **its own** offset space: a
+transport stream's is hole-inclusive, a decoded stream's is the concatenation of
+its record payloads, exactly as the layer defines it.
+
+It is **repeatable** because a stage reads several input streams per output
+session — at minimum both directions of a conversation.
+
+**Under fan-out, every consuming session declares the same full extent.** One
+input stream may feed several output sessions, and each writes its own Session
+End; each declares that stream's **whole** length, not the portion it happened to
+use. A checker therefore unions the covering spans across *all* sessions naming
+the stream and compares that union against the one extent. This follows from the
+coverage guarantee being stated per input participant stream rather than per
+session: the covering spans may come from records in different output sessions,
+so the total they must add up to has to be the same number wherever it is
+declared. Two sessions declaring **different** extents for one stream is a
+contradiction, and a reader MAY treat it as a semantic violation.
+
+A writer that does not know a stream's extent omits the entry. Declaring an
+extent larger than the file's own coverage accounts for is the honest way to say
+"this decode stopped early"; declaring one smaller is a contradiction of the same
+kind as above. Note this is the moment the writer already knows: declare-on-first-use
+puts the Participant Descriptor before any record, when a live decode cannot yet
+know how long a stream will be, whereas at Session End it does.
+
+The option is meaningless in a raw file, whose records are the stream rather than
+a derivation of one; a raw file MUST NOT carry it.
 
 ### Record (`0x20`)
 
@@ -1543,18 +1657,19 @@ Whether an id is *single-valued* or *repeatable* is a **semantic** property in t
 registry, consulted only by a consumer that actually interprets the id:
 
 - A **repeatable** id is an ordered list; its occurrences and their order are
-  significant. **The repeatable ids are `endpoint` and `spans`** — a closed list;
-  any future repeatable id MUST be added to it.
+  significant. **The repeatable ids are `endpoint`, `spans` and `input_extents`**
+  — a closed list; any future repeatable id MUST be added to it.
 - A **single-valued** id (every other id) SHOULD appear at most once; a consumer
   that interprets it uses the **first** occurrence. If it nonetheless repeats, a
   faithful reader still preserves the extra occurrences for round-trip.
-- The two repeatable ids list differently. Each `endpoint` occurrence is one
+- The three repeatable ids list differently. Each `endpoint` occurrence is one
   list element (a tunnel layer). Each `spans` occurrence is a **chunk** of
   packed entries: successive occurrences concatenate, in file order, into the
   record's one span list. That is what lifts the per-occurrence value cap
   (⌊65 535 / 28⌋ = 2340 entries) off the logical list — a record needing more
   spans simply carries several `spans` options. Writers SHOULD coalesce
-  adjacent ranges before resorting to that.
+  adjacent ranges before resorting to that. `input_extents` chunks the same way
+  as `spans` (⌊65 535 / 20⌋ = 3276 entries per occurrence), for the same reason.
 
 | Id       | Name             | Value type | Used in                  | Meaning                                                        |
 |----------|------------------|------------|--------------------------|----------------------------------------------------------------|
@@ -1564,6 +1679,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0012` | produced_by      | string     | File Header              | tool + version that ran the transform (derived files)          |
 | `0x0013` | produced_at      | i64        | File Header              | wall-clock build time of this artifact (Unix seconds)          |
 | `0x0014` | flags            | u16        | File Header              | file-level flags bitfield; bit `0x0001` = SINGLE_CLOCK (see [Sequenced files](#sequenced-files-precomputed-order)) |
+| `0x0015` | transform_params_digest | string | File Header           | hash of the config of a transform that produced records **without decoding** — a filter, a reordering stage, a merge. A decode stage's config lives on its Decoder (`params_digest`); see [Layers](#layers-raw-and-decoded-live-in-separate-files) |
 | `0x0020` | uri              | string     | Source                   | where the referenced capture/input file lives                  |
 | `0x0021` | digest           | string     | Source                   | content hash of the referenced file — the dependency edge      |
 | `0x0022` | link_type        | u16        | Source (capture)         | link-layer type of the capture (e.g. a pcap LINKTYPE)          |
@@ -1574,6 +1690,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; **MUST** be present on such a session; open vocabulary, defined values `clock`/`protocol`/`external`/`trivial` (see [Sequenced files](#sequenced-files-precomputed-order)) |
+| `0x0054` | external_session_id | bytes   | Session                  | an identity assigned by something *outside* this format — a trace id, a capture orchestrator's UUID, a case number. Opaque: nothing here interprets it (see [Session Descriptor](#session-descriptor-0x10)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick (recommended spellings: see [Participant Descriptor](#participant-descriptor-0x11)); **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
@@ -1590,6 +1707,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 | `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
+| `0x00C1` | input_extents    | packed     | Session End (derived)    | length of each input participant stream this session drew on, in that stream's own offset space: `source_id: u16, pid: u16, session_id: u64, extent: u64` — ids in the source's namespace; **repeatable**, occurrences concatenate (see [Session End](#session-end-0x12)) |
 
 A **span-list** value is `count` packed entries, each 28 bytes:
 `source_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
@@ -2025,13 +2143,17 @@ general naming rule covers it.
 
 - **Integers** → JSON number, with one exception: a **64-bit** field (`session_id`,
   `ts`/`timestamp`, `tick_hz`, `time_epoch`, `produced_at`,
-  `ts_first`, `off_start`, `off_end`) MAY be written as a JSON number **or** a
+  `ts_first`, `off_start`, `off_end`, `extent`) MAY be written as a JSON number **or** a
   decimal string, and a writer SHOULD use the string form when the value exceeds
   2⁵³ (beyond JSON's exact-integer range). A reader MUST accept both. 32-bit and
   narrower fields are always plain numbers.
 - **Strings** → JSON string; a `digest` keeps its `"<alg>:<hex>"` form.
 - **`payload`** and any raw-byte value → **standard base64** (RFC 4648 §4, with
-  `=` padding).
+  `=` padding). This covers an option whose registry type is **`bytes`**
+  (`external_session_id`) exactly as it covers the Record and Custom bodies: the
+  value is opaque, so it projects as base64 rather than being spelled. A reader
+  MUST NOT assume a `bytes` option is text, even when it decodes to printable
+  ASCII.
 - **Enums** render as their defined **string label**: `kind` as
   `"capture"`/`"zpf-input"`, `tcp_role` as `"initiator"`/`"responder"` (omitted
   when unknown). A value with **no defined label** renders as its raw number
@@ -2045,14 +2167,18 @@ general naming rule covers it.
   bitfield is omitted.
 - **Repeatable options** (`endpoint`) → a JSON **array**, order preserved —
   **always an array, even for a single occurrence** (`["10.0.0.1:51000"]`), so a
-  reader never has to branch on the JSON type of a key. (`spans`, whose
-  repetition is chunking rather than listing, has its own rule below, and is
-  likewise always an array.)
+  reader never has to branch on the JSON type of a key. (`spans` and
+  `input_extents`, whose repetition is chunking rather than listing, have their
+  own rules below, and are likewise always arrays.)
 - **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
   objects; repeated binary occurrences merge into this one array, and a
   converter back to binary MAY split it into several occurrences.
 - **`origin`** → a JSON object `{source_id, session_id, pid}` (a `spans` entry
   without offsets; ids in the referenced source's namespace).
+- **`input_extents`** → a JSON array of `{source_id, session_id, pid, extent}`
+  objects, always an array; repeated binary occurrences merge into it and a
+  converter back to binary MAY split it again, exactly as for `spans`. Ids are in
+  the referenced source's namespace.
 - An **absent** option is an **omitted** key; a reader treats a missing key as
   "option not present," never as a present option carrying a default.
 - **Framing / on-disk-only fields are not projected**: the block
@@ -2230,6 +2356,22 @@ these finds the answer where the question arises.
 This is not a backlog. Planned work lives in the
 [issue tracker](https://github.com/adamkjonsson/zipline/issues); see
 [Planned, tracked elsewhere](#planned-tracked-elsewhere) below.
+
+- **A File Header option recording that a file's bytes were re-stamped from an
+  earlier version.** So a `0.12` file could be relabelled `0.13` and say honestly
+  that it had been. *Not adopted, and not deferred:* there is no regime in which
+  it is the right tool. **In `0.x`** — now — the format's own position is that a
+  file which still matters is regenerated from its capture, so the option would
+  exist to support the thing the specification says not to do. **In a `1.x`
+  minor** it is unnecessary: a reader MUST NOT gate parsing on `version_minor`,
+  so a `1.1` file already reads under `1.3` and there is nothing to re-stamp.
+  **Across a major bump** it is insufficient: the frame or a block body may
+  change, so the header cannot simply be relabelled — the file is rewritten,
+  which is a genuine transform with genuine provenance and belongs in the
+  pass-through machinery, not in a header flag. What the option really implies is
+  a *transcoding specification*, one rule per version pair, growing without
+  bound. See [Version numbering](#file-header-0x01) for the position it would
+  have contradicted.
 
 - **A marker saying a record's payload is byte-identical to its span.** Since
   `spans` asserts [correspondence, not identity](#tlv-option-framing--id-registry),

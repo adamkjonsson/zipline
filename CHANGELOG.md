@@ -100,6 +100,80 @@ built on the letter of the old text may have been rejecting valid files.
   was already stated per *input participant stream*, which is exactly what makes
   it survive fan-out.
 
+### Added
+
+- **`external_session_id` on the Session Descriptor** (`0x0054`, bytes,
+  single-valued) — an identity assigned by something *outside* this format: a
+  trace id, a capture orchestrator's UUID, a NetFlow flow key, a case number.
+  Nothing here interprets it. It answers a different question from `session_id`,
+  which stays **u64** and is still what `spans` and `origin` reference — a
+  cross-file reference needs a fixed-width numeric key. Deliberately **opaque and
+  variable-length**: one option per session costs nothing per record, so fixing a
+  width would foreclose SHA-256s and URNs to save nothing. `bytes` is the option
+  registry's first value of that type; it projects as base64, by the same rule
+  that already covers `payload`, so a UUID never acquires a second spelling. The
+  Session Descriptor prose carries the birthday arithmetic for anyone choosing
+  random ids — 2³² is the 50% point in a 64-bit space, and one-in-a-million needs
+  only ~6 million ids.
+- **`transform_params_digest` on the File Header** (`0x0015`, string,
+  single-valued) — the configuration of a transform that produced records
+  **without decoding**. Two kinds of stage had nowhere to record it, and the
+  specification named the gap without closing it. A **filter or reordering
+  stage** is a decode stage, but `decoder_id` names a *layer, not a stage*: it
+  inherits its input's decoders and re-declares their descriptors, so every
+  `params_digest` in the file describes something that ran further upstream,
+  never this stage. A **merge** declares no Decoder at all. Both are
+  parameterised, so `produced_by`/`produced_at` did not settle reproducibility
+  on their own. A file may carry this *and* an inherited `decoder_id` whose
+  descriptor has its own `params_digest` — they describe different stages, one
+  here and one upstream — and a raw file, not being a transform's output, MUST
+  NOT carry it.
+- **`input_extents` on Session End** (`0x00C1`, packed, **repeatable**) — the
+  length of each input participant stream a session drew on, in that stream's own
+  offset space, as `source_id: u16, pid: u16, session_id: u64, extent: u64`. This
+  makes the **coverage guarantee self-verifiable**: a consumer holding only the
+  derived file could state which input ranges were covered but never how long the
+  streams were, so a stage that stopped early and said nothing about the tail was
+  indistinguishable from one that consumed everything — checking meant fetching
+  the input and measuring it. Session End is where it goes because
+  declare-on-first-use puts the Participant Descriptor before any record, when a
+  live decode cannot yet know a stream's length; at Session End it does.
+  **Under fan-out, every session consuming a stream declares that stream's whole
+  extent identically**, and a checker unions the covering spans across all of
+  them — which follows from the coverage guarantee being per input participant
+  stream rather than per session. Two sessions declaring different extents for one
+  stream is a contradiction a reader MAY treat as a semantic violation. Added to
+  the closed repeatable-id list, which now reads `endpoint`, `spans`,
+  `input_extents`. Raw files MUST NOT carry it.
+- **Three conformance vectors.** `external-session-id` carries a 16-byte binary
+  UUID; `decoded-basic` gains a Session End with extents that meet its coverage
+  exactly — **the suite's first Session End block anywhere**, a gap nobody had
+  noticed; and `isolate-extent-exceeds-coverage` declares a 40-byte stream while
+  covering only `[0,20)`, the silent-truncation case the option exists to catch.
+  `reordered-decoded` gains a `transform_params_digest`, it being exactly the
+  transform whose configuration had nowhere to live. 28 in total.
+
+### Removed
+
+- **The planned version re-stamp option is dropped, and will not appear.** The
+  `0.11` notes below promise "A way to record a version re-stamp is planned for
+  `0.13`, as a File Header option rather than a transform; until then there is
+  none." **There will be none.** Correcting it here rather than editing that
+  entry, which said what was believed at the time.
+
+  The reason is regime, not cost. In `0.x` the format's own position is that a
+  file which still matters is regenerated from its capture, so the option would
+  support the one thing the specification says not to do. In a `1.x` minor it is
+  unnecessary — a reader MUST NOT gate parsing on `version_minor`, so a `1.1`
+  file already reads under `1.3`. Across a major bump it is insufficient — the
+  frame or a block body may change, so the file is rewritten, which is a genuine
+  transform with real provenance rather than a relabelling. What it really asks
+  for is a transcoding specification, one rule per version pair, growing without
+  bound. The specification now **states the disposability position directly**,
+  under *Version numbering*, where it had never been said — it lived only in this
+  file's *Conventions* — and records the rejected option under *Design decisions
+  not taken* so the question stops recurring.
+
 ### Fixed
 
 - **Three decode-stage vectors now set `produced_by`/`produced_at`.**
