@@ -1066,6 +1066,15 @@ the version it implements — there is no obligation to compute the lowest versi
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
 
+**A writer stamps the version it implements, and nothing re-stamps a file
+afterwards.** While `version_major` is `0`, converting an existing file's bytes to
+carry a later `version_minor` is **out of scope** for this format: there is no
+option, no transform and no procedure for it, and a file that claims a version it
+was not written against is claiming something untrue. A `0.x` file is
+**disposable** — where one still matters, regenerate it from the capture rather
+than transcoding it. That is cheap precisely because the provenance chain records
+what it was derived from and how.
+
 The compatibility rules have **two regimes**:
 
 - **While `version_major` is `0`** — the current regime — anything may change
@@ -2347,6 +2356,22 @@ these finds the answer where the question arises.
 This is not a backlog. Planned work lives in the
 [issue tracker](https://github.com/adamkjonsson/zipline/issues); see
 [Planned, tracked elsewhere](#planned-tracked-elsewhere) below.
+
+- **A File Header option recording that a file's bytes were re-stamped from an
+  earlier version.** So a `0.12` file could be relabelled `0.13` and say honestly
+  that it had been. *Not adopted, and not deferred:* there is no regime in which
+  it is the right tool. **In `0.x`** — now — the format's own position is that a
+  file which still matters is regenerated from its capture, so the option would
+  exist to support the thing the specification says not to do. **In a `1.x`
+  minor** it is unnecessary: a reader MUST NOT gate parsing on `version_minor`,
+  so a `1.1` file already reads under `1.3` and there is nothing to re-stamp.
+  **Across a major bump** it is insufficient: the frame or a block body may
+  change, so the header cannot simply be relabelled — the file is rewritten,
+  which is a genuine transform with genuine provenance and belongs in the
+  pass-through machinery, not in a header flag. What the option really implies is
+  a *transcoding specification*, one rule per version pair, growing without
+  bound. See [Version numbering](#file-header-0x01) for the position it would
+  have contradicted.
 
 - **A marker saying a record's payload is byte-identical to its span.** Since
   `spans` asserts [correspondence, not identity](#tlv-option-framing--id-registry),

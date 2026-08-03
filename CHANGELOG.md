@@ -153,6 +153,27 @@ built on the letter of the old text may have been rejecting valid files.
   `reordered-decoded` gains a `transform_params_digest`, it being exactly the
   transform whose configuration had nowhere to live. 28 in total.
 
+### Removed
+
+- **The planned version re-stamp option is dropped, and will not appear.** The
+  `0.11` notes below promise "A way to record a version re-stamp is planned for
+  `0.13`, as a File Header option rather than a transform; until then there is
+  none." **There will be none.** Correcting it here rather than editing that
+  entry, which said what was believed at the time.
+
+  The reason is regime, not cost. In `0.x` the format's own position is that a
+  file which still matters is regenerated from its capture, so the option would
+  support the one thing the specification says not to do. In a `1.x` minor it is
+  unnecessary — a reader MUST NOT gate parsing on `version_minor`, so a `1.1`
+  file already reads under `1.3`. Across a major bump it is insufficient — the
+  frame or a block body may change, so the file is rewritten, which is a genuine
+  transform with real provenance rather than a relabelling. What it really asks
+  for is a transcoding specification, one rule per version pair, growing without
+  bound. The specification now **states the disposability position directly**,
+  under *Version numbering*, where it had never been said — it lived only in this
+  file's *Conventions* — and records the rejected option under *Design decisions
+  not taken* so the question stops recurring.
+
 ### Fixed
 
 - **Three decode-stage vectors now set `produced_by`/`produced_at`.**
