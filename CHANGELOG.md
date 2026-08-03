@@ -151,7 +151,48 @@ built on the letter of the old text may have been rejecting valid files.
   noticed; and `isolate-extent-exceeds-coverage` declares a 40-byte stream while
   covering only `[0,20)`, the silent-truncation case the option exists to catch.
   `reordered-decoded` gains a `transform_params_digest`, it being exactly the
-  transform whose configuration had nowhere to live. 28 in total.
+  transform whose configuration had nowhere to live.
+- **A `Discontinuity` block** (`0x22`), with `width` (`0x00D0`, u64, optional) and
+  `reason` (`0x00D1`, string). The release's only new block type. It states a
+  break in a file's **own** output stream: the records either side are **not
+  contiguous**. This closes a live silent-corruption path on the specification's
+  own flagship chain, `raw → tls-records → http`, with no tunnel involved. A
+  decode stage's output is the concatenation of its record payloads, so two
+  records either side of an input gap are *adjacent* in it — the gap does not
+  survive the layer — and nothing obliges a decode stage to re-emit its input's
+  Undecoded blocks. So the HTTP stage could emit one message spanning the join,
+  **coverage would pass**, and a consumer would read a message that was never
+  sent, with no marker in the file it was reading.
+
+  It is the mirror of `Undecoded` (`0x21`), and the two are easy to confuse:
+  every field of an Undecoded block is read against the *input*, while a
+  Discontinuity's ids name a stream in the file that carries it. Consequently a
+  pass-through preserving a decoded layer **renumbers** these to its own ids
+  rather than copying them verbatim as it does Undecoded blocks. It discharges no
+  coverage obligation; a stage that both failed to decode an input region and
+  needs to say its output breaks emits both blocks.
+
+  **`width` absent means unknown** — TLS lost a record and the plaintext length is
+  unrecoverable — and contributes **0** to the positional arithmetic, so later
+  records stay addressable and a downstream stage can still cite `spans` into the
+  output. Present, it is a real hole of known extent (QUIC STREAM offsets) and
+  contributes `width`. The positional rule is now
+  `[Σ(preceding payload_len + preceding declared widths), + payload_len)`.
+  Raw files MUST NOT carry the block: a transport offset space is already
+  hole-inclusive, so the two accounts would contradict.
+
+  **This block is not safe to skip, and it is the only one that is not.** A reader
+  skipping it by `length` computes a wrong positional range for every later record
+  of that participant, silently. The `0.x` rule that a reader MUST reject an
+  unimplemented `version_minor` covers that completely today; after `1.0` the same
+  block would need a **major** bump. *Version numbering* now uses it as the worked
+  example, and states the test for a minor-bump addition as "is a reader that
+  skips this still correct", not "can a reader skip this".
+- **Three more conformance vectors**, for the block. `discontinuity-unknown-width`
+  is Finding 3's stage 1 verbatim; `discontinuity-known-width` picks numbers where
+  a reader ignoring `width` computes visibly different ranges (`[75,105)` versus
+  `[50,80)`); `isolate-discontinuity-in-raw` puts the block in a raw file, where
+  the sequence numbers already state the same gap. 31 in total.
 
 ### Removed
 

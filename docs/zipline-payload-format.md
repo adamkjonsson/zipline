@@ -135,6 +135,7 @@ Block types:
 | 0x12 | Session End             | optional: no further blocks reference this session; how it ended |
 | 0x20 | Record                  | a directed payload unit (see fields below)      |
 | 0x21 | Undecoded               | a region the transform did not decode, referencing the predecessor's bytes (see Layers) |
+| 0x22 | Discontinuity           | a break in *this* file's own output stream — the records either side are not contiguous, whether or not the gap's width is knowable |
 | 0x30 | Name/Identity Resolution| optional: map participant ids → human labels    |
 | 0x41 | End                     | optional; if present, the last block — marks the file complete |
 | 0xFF | Custom                  | vendor/experimental, namespaced                 |
@@ -732,10 +733,18 @@ keeps its input's unchanged, whichever kind that was.
 **A decoded record's own range is therefore positional.** A Record block carries
 no offset field; its place in the stream is implied by the concatenation above.
 Record *k* of a participant occupies
-`[Σ payload_len of the preceding records, + its own payload_len)`, counting that
-participant's records in stored order. Nothing else states this, so a consumer
-resolving a decoded record — to a range in its own file, or one level down —
-computes it that way.
+
+```
+[ Σ(preceding payload_len + preceding declared widths), + its own payload_len )
+```
+
+counting that participant's records **and its
+[Discontinuity](#discontinuity-0x22) blocks** in stored order. A declared width
+is the `width` on a Discontinuity block; one with no `width` — a break whose
+extent is unknowable — contributes **0**. With no Discontinuity blocks, which is
+the ordinary case, the sum is exactly the preceding payload lengths. Nothing else
+states this, so a consumer resolving a decoded record — to a range in its own
+file, or one level down — computes it that way.
 
 *Cost.* Forward reading pays nothing: one running counter per participant. But
 resolving a single record's range **without** reading from the start costs O(k)
@@ -1082,8 +1091,8 @@ The compatibility rules have **two regimes**:
   the compatibility identity: a reader **MUST reject** a file whose
   `version_minor` it does not implement, exactly as it rejects an unknown
   `version_major`. Nothing is guaranteed to survive a `0.x` bump.
-- **From `1.0` onward**, a **minor** bump only adds blocks and options, and old
-  readers keep working — guaranteed by the skip rules, not by inspection. A
+- **From `1.0` onward**, a **minor** bump only adds blocks and options that are
+  *safe to skip*, and old readers keep working — guaranteed by the skip rules, not by inspection. A
   reader **MUST NOT** gate parsing on `version_minor`; it discovers what it does
   not know locally, as it meets it. Anything that would break a reader requires a
   **major** bump, which may also change frame or body layout, and which a reader
@@ -1091,6 +1100,17 @@ The compatibility rules have **two regimes**:
 
 `version_minor` therefore stops mattering to readers at `1.0`. That transition is
 what `1.0` is *for*.
+
+**"Safe to skip" is the whole of the minor-bump test, and it is not automatic.**
+The skip rules make an unknown block or option *parseable* by an old reader; they
+cannot make it *harmless*, because that depends on whether the thing skipped
+carried meaning the reader needed. [Discontinuity](#discontinuity-0x22) (`0x22`) is
+the worked example: skip it and every later record of that participant gets a
+wrong positional range, silently. Adding it in `0.13` is fine — a `0.x` reader
+MUST reject a minor it does not implement, so no old reader ever sees it — but the
+same block after `1.0` would need a **major** bump. Ask of any proposed minor-bump
+addition not "can a reader skip this" but "is a reader that skips this still
+correct".
 
 **The version describes the file, not the rendering.** A converter projects any
 file into whichever version of the [JSONL face](#jsonl--binary-field-mapping) it
@@ -1586,6 +1606,93 @@ via its software support, and emits Undecoded blocks in the decode stage's outpu
 file. (A pass-through preserving a *decoded* layer is the other case: its input
 already had Undecoded blocks, and it re-emits them unchanged.)
 
+### Discontinuity (`0x22`)
+
+Decoded layers only. Marks a break in **this** file's own output stream: the
+records either side of it are **not contiguous**, whatever their positional
+ranges say. Body:
+
+| Field            | Type | Notes                                              |
+|------------------|------|----------------------------------------------------|
+| `session_id`     | u64  | session in **this** file                           |
+| `participant_id` | u16  | participant (stream) in **this** file              |
+| `_reserved`      | u16  | MUST be 0                                          |
+
+Options: `width` (u64 — the gap's extent in this stream's offset space; **absent
+means unknown**), `reason` (string, open vocabulary: `tls-record-lost`,
+`decrypt-failed`, `stream-gap`, …), `comment`.
+
+**This is the mirror image of [Undecoded](#undecoded-0x21), and confusing the two
+is the easy mistake.** Every field of an Undecoded block is read against the
+*input* — it is deliberately byte-identical to a packed `spans` entry, and it says
+"there were bytes over there that I did not decode". A Discontinuity says
+"something is missing **here**, in what I produced", and its ids are this file's
+own. That is why it cannot be an Undecoded block with different options, and why
+it must be a block rather than a record option: its meaning is positional, and
+stored order is what defines a decoded stream's offsets, so it has to interleave
+with the records it separates.
+
+**Why the output space needs its own marker at all.** A decode stage's output is
+the concatenation of its record payloads, so two records either side of an input
+gap are *adjacent* in it — the gap does not survive the layer. Nothing obliges a
+decode stage to re-emit its input's Undecoded blocks (that duty falls on
+pass-throughs), so on the chain `raw → tls-records → http`, one lost TCP segment
+under TLS leaves the HTTP stage free to emit a single message spanning the join,
+covering it completely, with **coverage passing** and no marker anywhere in the
+file the consumer is reading. The information survives only in principle, by
+walking down to the raw file and noticing a gap between two stage-1 spans — which
+nothing states as an invariant and no checker tests. This block is what makes the
+break visible where it is read.
+
+**Width, and why an absent one still counts.** A `width` present is a real hole of
+known extent: QUIC gives stream offsets, so the missing bytes can be counted, and
+it contributes `width` to the
+[positional arithmetic](#layers-raw-and-decoded-live-in-separate-files). A `width`
+absent is a break of unknowable extent — TLS lost a record, and the *plaintext*
+length it would have produced is not recoverable from the ciphertext — and it
+contributes **0**.
+
+Contributing 0 is deliberate. Offsets after such a break stay the payload
+concatenation, so every later record remains addressable and a downstream stage
+can still cite `spans` into this output. The alternative — declaring later offsets
+undefined — would end a chain at its first lost record, and a consumer would lose
+the whole remainder of a stream rather than one hole in it. What the block asserts
+is not a length. It asserts that the two sides **do not join**, which is the actual
+defect: a consumer that splices them reads a message that was never sent.
+
+**Placement and ordering.** A Discontinuity has no `timestamp`; it takes its
+position from stored order alone, between the records it separates, and it is not
+a record — the [merge](#merge-algorithm) interleaves records and does not emit it
+as one. Because the merge never reorders one participant's records against each
+other, a Discontinuity keeps its place in that participant's sequence. It sits
+under the ordinary declare-on-first-use rule: its session and participant must
+already be declared.
+
+**Coverage is unaffected.** The [coverage guarantee](#coverage-honesty-undecoded-blocks)
+is a statement about *input* streams, and this block makes none — it neither
+discharges a coverage obligation nor creates one. A stage that both fails to
+decode an input region and needs to say its output has a break emits **both**: an
+Undecoded block naming the input range, and a Discontinuity naming its own.
+
+**A raw file MUST NOT carry one.** A transport stream's offset space is already
+hole-inclusive — a gap occupies a real range that no payload covers — so the break
+is expressible without any block, and the two mechanisms would contradict each
+other. The same goes for a pass-through preserving a transport layer. A
+pass-through preserving a **decoded** layer MUST re-emit its input's Discontinuity
+blocks unchanged, exactly as it re-emits Undecoded blocks: it is obliged to
+preserve logical offsets, and dropping one changes them.
+
+> **This block is not safe to skip, and it is the only one that is not.** A reader
+> that does not implement type `0x22` MUST skip it by `length` — and then computes
+> a wrong positional range for every later record of that participant, silently,
+> which is precisely the failure the block exists to prevent. Nothing in the frame
+> can fix that: the skip rule works because an unknown block carries no meaning a
+> reader needs, and this one does. Today it is covered completely by the `0.x`
+> rule that a reader **MUST reject** a `version_minor` it does not implement.
+> After `1.0`, adding a block like this would require a **major** bump — it is the
+> concrete case of the rule in
+> [Version numbering](#file-header-0x01), not an exception to it.
+
 ### Name/Identity Resolution (`0x30`)
 
 Optional.
@@ -1708,6 +1815,8 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 | `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
 | `0x00C1` | input_extents    | packed     | Session End (derived)    | length of each input participant stream this session drew on, in that stream's own offset space: `source_id: u16, pid: u16, session_id: u64, extent: u64` — ids in the source's namespace; **repeatable**, occurrences concatenate (see [Session End](#session-end-0x12)) |
+| `0x00D0` | width            | u64        | Discontinuity            | extent of the break in this stream's own offset space; **absent means unknown**, and an absent width contributes 0 to positional arithmetic (see [Discontinuity](#discontinuity-0x22)) |
+| `0x00D1` | reason           | string     | Discontinuity            | why the stream breaks here: `tls-record-lost`/`decrypt-failed`/`stream-gap`/… (open vocabulary) |
 
 A **span-list** value is `count` packed entries, each 28 bytes:
 `source_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
@@ -1910,9 +2019,12 @@ reference, not because this file was derived from it.
   guarantee is per input participant stream rather than per session exactly so
   that it survives that. A decoded record also
   appears in a **pass-through** file preserving a decoded layer, where it
-  carries no `spans` (see below). Decoder Descriptors and Undecoded blocks
+  carries no `spans` (see below). Decoder Descriptors, Undecoded blocks and
+  [Discontinuity](#discontinuity-0x22) blocks
   appear only in those two file kinds, never in a raw file or in a pass-through
-  preserving a raw layer.
+  preserving a raw layer. A Discontinuity is a statement about the file's **own**
+  output stream and discharges no coverage obligation: a stage that could not
+  decode an input region *and* needs to say its output breaks emits both blocks.
 - A **pass-through** record is any record a pass-through file re-emits. It
   carries no `spans` — `origin` plus offset preservation is its provenance — and
   it carries a `decoder_id` exactly when the input's record did. Its `source_id`
@@ -1937,6 +2049,17 @@ reference, not because this file was derived from it.
   copied verbatim. This is the one place a derived file names something other
   than its immediate input, and it does so because the *statement* being carried
   forward was always about that file.
+
+  It MUST also carry every [Discontinuity](#discontinuity-0x22) block forward, in
+  its position in the participant's stored order and with its `width` unchanged —
+  a declared width is a term in the positional arithmetic, so dropping one changes
+  the very offsets a pass-through exists to preserve. **But it re-emits these
+  differently from Undecoded blocks, and the difference is the point:** an
+  Undecoded block is copied *verbatim*, ids and all, because its statement was
+  always about a file further up the chain. A Discontinuity's ids name the stream
+  in the file that carries it, so a pass-through **renumbers** them to its own
+  `session_id`/`participant_id` — the same stream, named in the namespace of the
+  file now making the statement.
 
 **Ordering and sequencing.** A writer **MUST** store each participant's records
 in `seq_start` (logical stream) order; this is what guarantees an unsequenced
@@ -2117,6 +2240,7 @@ by its `type` string.
 | `session_end` | Session End (`0x12`)              |
 | `record`      | Record (`0x20`)                   |
 | `undecoded`   | Undecoded (`0x21`)                |
+| `discontinuity` | Discontinuity (`0x22`)          |
 | `name`        | Name/Identity Resolution (`0x30`) |
 | `end`         | End (`0x41`)                      |
 | `custom`      | Custom (`0xFF`)                   |
@@ -2143,7 +2267,7 @@ general naming rule covers it.
 
 - **Integers** → JSON number, with one exception: a **64-bit** field (`session_id`,
   `ts`/`timestamp`, `tick_hz`, `time_epoch`, `produced_at`,
-  `ts_first`, `off_start`, `off_end`, `extent`) MAY be written as a JSON number **or** a
+  `ts_first`, `off_start`, `off_end`, `extent`, `width`) MAY be written as a JSON number **or** a
   decimal string, and a writer SHOULD use the string form when the value exceeds
   2⁵³ (beyond JSON's exact-integer range). A reader MUST accept both. 32-bit and
   narrower fields are always plain numbers.

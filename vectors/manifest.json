@@ -92,6 +92,24 @@
       "has_jsonl": true
     },
     {
+      "name": "discontinuity-unknown-width",
+      "tier": "accept",
+      "bytes": 572,
+      "summary": "Finding 3's stage 1: a tls-records decoder that lost one TCP segment. The plaintext length the lost ciphertext would have produced is unknowable, so the Discontinuity carries NO width and contributes 0 to the positional arithmetic -- output offsets stay [0,50) and [50,80). The block's job is to say those two records DO NOT JOIN. Without it they are simply adjacent and a downstream decoder splices them silently.",
+      "spec_section": "Discontinuity (0x22)",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
+      "name": "discontinuity-known-width",
+      "tier": "accept",
+      "bytes": 580,
+      "summary": "A QUIC stream decoder, where the missing bytes CAN be counted: STREAM offsets give the gap's exact width. width = 25 is a term in the positional arithmetic, so the second record occupies [75,105), not [50,80). A reader that skips the block, or reads it but ignores width, computes a different range for every later record of this participant -- which is exactly the silent failure the block exists to prevent.",
+      "spec_section": "Discontinuity (0x22)",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
       "name": "external-session-id",
       "tier": "accept",
       "bytes": 184,
@@ -233,6 +251,15 @@
       "summary": "A decode stage whose Session End declares an input stream 40 bytes long while its spans and Undecoded blocks account for only [0,20). The tail [20,40) was silently dropped. Without input_extents this file is indistinguishable from an honest one that consumed a 20-byte stream -- which is the whole reason the option exists.",
       "spec_section": "Session End (0x12) -- input_extents",
       "expect": "MAY reject the file, or isolate the session. The declared extent of input stream (session 7, pid 0) is 40, but spans plus Undecoded blocks cover only [0,20), so the coverage guarantee fails against the file's own declaration. A reader that ignores input_extents sees nothing wrong here, which is what this vector is for.",
+      "has_jsonl": false
+    },
+    {
+      "name": "isolate-discontinuity-in-raw",
+      "tier": "isolate",
+      "bytes": 352,
+      "summary": "A RAW file carrying a Discontinuity block. A transport stream's offset space is already hole-inclusive -- a gap occupies a real range no payload covers, resolvable from seq_start and isn -- so the block is meaningless there and the two mechanisms contradict each other: is the missing region the sequence gap, the declared width, or their sum? The block belongs to decoded layers only.",
+      "spec_section": "Discontinuity (0x22)",
+      "expect": "MAY reject the file, or isolate the session. The gap is already stated implicitly and unambiguously by the sequence numbers -- seq_start 1001 + 50 bytes ends at 1051, and the next record starts at 1076 -- so the Discontinuity is a second, redundant and potentially contradicting account of the same 25 bytes. A reader MUST NOT sum the two.",
       "has_jsonl": false
     },
     {
