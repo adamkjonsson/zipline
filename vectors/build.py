@@ -24,6 +24,12 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# The version this tree stamps. Every vector's File Header, every JSONL `format`
+# string and the manifest read these, so a version bump is a one-line change and
+# no site can be missed.
+MAJOR, MINOR = 0, 13
+FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
+
 # ---------------------------------------------------------------- primitives
 
 def u8(v):  return struct.pack('<B', v)
@@ -95,7 +101,7 @@ def block(btype, name, body, options=()):
 
 # --------------------------------------------------------------- block kinds
 
-def file_header(tick_hz=1_000_000, major=0, minor=12, options=(), magic=0x5A495046):
+def file_header(tick_hz=1_000_000, major=MAJOR, minor=MINOR, options=(), magic=0x5A495046):
     body = [
         P(u32(magic), f'magic  = 0x{magic:08X}  ("ZIPF")'),
         P(u16(major), f"version_major = {major}"),
@@ -262,7 +268,7 @@ vector(
                options=[o_seq_start(1001), o_ack(5001)]),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "sideA.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -296,7 +302,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000,
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
          "produced_by": "zpf-decode 0.4", "produced_at": 1719500000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
@@ -340,7 +346,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000,
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
          "produced_by": "zpf-merge 1.2", "produced_at": 1719510000},
         {"type": "source", "source_id": 1, "kind": "zpf-input",
          "uri": "sideA.zpf", "digest": "sha256:11aa"},
@@ -370,7 +376,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "0x0042", "content": b64(b"\xde\xad\xbe\xef\x01\x02\x03\x04")},
         {"type": "session", "session_id": 7, "proto": "tcp"},
@@ -392,7 +398,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -417,7 +423,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -440,7 +446,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "participant", "session_id": 7, "pid": 0,
@@ -477,7 +483,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000,
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
          "produced_by": "zpf-annotate 0.2", "produced_at": 1719520000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
@@ -512,7 +518,8 @@ vector(
     "and says so with reason = skipped rather than claiming a parse failure.",
     "Undecoded (0x21)",
     [
-        file_header(),
+        file_header(options=[o_produced_by("zpf-decode 0.4"),
+                             o_produced_at(1719540000)]),
         source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
         decoder(1, [o_dec_name("text/utf8"), o_dec_version("1.0")]),
         session(7, [o_proto("http")]),
@@ -524,7 +531,8 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "produced_by": "zpf-decode 0.4", "produced_at": 1719540000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
         {"type": "decoder", "decoder_id": 1, "name": "text/utf8", "version": "1.0"},
@@ -548,7 +556,8 @@ vector(
     "still tell whether the bytes exist upstream.",
     "Undecoded (0x21)",
     [
-        file_header(),
+        file_header(options=[o_produced_by("zpf-decode 0.4"),
+                             o_produced_at(1719550000)]),
         source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
         decoder(1, [o_dec_name("http/1.1")]),
         session(7, [o_proto("http")]),
@@ -558,7 +567,8 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "produced_by": "zpf-decode 0.4", "produced_at": 1719550000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
         {"type": "decoder", "decoder_id": 1, "name": "http/1.1"},
@@ -589,7 +599,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
         {"type": "session", "session_id": 8, "proto": "irc", "sequenced": True,
          "sequenced_basis": "protocol"},
@@ -628,7 +638,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000,
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
          "produced_by": "zpf-reorder 0.1", "produced_at": 1719530000},
         {"type": "source", "source_id": 1, "kind": "zpf-input",
          "uri": "decoded.zpf", "digest": "sha256:44dd"},
@@ -672,7 +682,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
         {"type": "session", "session_id": 8, "proto": "irc"},
         {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["alice"]},
@@ -707,7 +717,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
         {"type": "session", "session_id": 8, "proto": "irc"},
         {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["alice"]},
@@ -739,7 +749,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "mixed.pcap"},
         {"type": "session", "session_id": 9, "proto": "udp", "sequenced": True},
         {"type": "participant", "session_id": 9, "pid": 0,
@@ -804,10 +814,13 @@ vector(
 
 vector(
     "reject-unknown-minor", "reject",
-    "version_minor is 13 while major is 0. In the 0.x regime the pair "
-    "(0, minor) is the compatibility identity, so a 0.12 reader MUST reject it.",
+    f"version_minor is {MINOR + 1} while major is 0. In the 0.x regime the pair "
+    f"(0, minor) is the compatibility identity, so a {MAJOR}.{MINOR} reader "
+    "MUST reject it.",
     "File Header -- version numbering",
-    [file_header(minor=13), source(1, 0, [o_uri("c.pcap")])],
+    # The next minor, derived, so this vector keeps testing an unimplemented
+    # version instead of becoming a valid file at the next version bump.
+    [file_header(minor=MINOR + 1), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file. This is the vector that distinguishes a 0.x-aware "
            "reader from one that assumes minors are always skippable.",
 )
@@ -879,7 +892,8 @@ vector(
     "A decode stage whose output leaves part of the input stream neither "
     "covered by a decoded record's spans nor marked Undecoded.",
     "Coverage honesty: Undecoded blocks",
-    [file_header(),
+    [file_header(options=[o_produced_by("zpf-decode 0.4"),
+                          o_produced_at(1719560000)]),
      source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
      decoder(1, [o_dec_name("http/1.1")]),
      session(7, [o_proto("http")]),
@@ -960,7 +974,7 @@ def build_chain():
     ]
     raw = chain_file("raw", "The capture-sourced file the chain starts from.",
                      raw_blocks, [
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000,
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
          "creator": "zpf-sessionize 1.0"},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "cap.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
@@ -1001,7 +1015,7 @@ def build_chain():
                      "A decode stage over raw.zpf. Its spans and Undecoded "
                      "block together cover every byte of both input streams.",
                      dec_blocks, [
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000,
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
          "produced_by": "zpf-decode 0.4", "produced_at": 1719500000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": raw_dg},
@@ -1052,7 +1066,7 @@ def build_chain():
                "label. Records carry no spans; the inherited Undecoded block "
                "still names raw.zpf, so raw.zpf is declared too.",
                ann_blocks, [
-        {"type": "file", "format": "zipline-payload/0.12", "tick_hz": 1000000,
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
          "produced_by": "zpf-annotate 0.2", "produced_at": 1719520000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": raw_dg},
@@ -1191,7 +1205,7 @@ def main():
         'files': sorted(chain_files),
     })
 
-    mtext = json.dumps({'format': 'zipline-payload/0.12',
+    mtext = json.dumps({'format': FORMAT,
                         'vectors': manifest}, indent=2) + '\n'
     mpath = os.path.join(HERE, 'manifest.json')
     if check:

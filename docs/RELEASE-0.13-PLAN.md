@@ -130,15 +130,41 @@ it is prose-only and looks lower-priority.
 
 ## Phases
 
-### Phase 0 — stamp and scope (half a day)
+### Phase 0 — stamp and scope (half a day) — **done**
 
-1. `vectors/build.py` — `minor=13` in `file_header()`.
-2. `vectors/check.py` — `MAJOR, MINOR = 0, 13`.
-3. `vectors/manifest.json` — `"format": "zipline-payload/0.13"`.
-4. Regenerate every vector; `python3 vectors/check.py` green.
-5. Spec line 1020 — `version_minor` "13 for this document".
-6. `CHANGELOG.md` — open an `## [0.13] — unreleased` section.
-7. Split #41 and un-milestone #42 per the decisions above.
+1. `vectors/build.py` — a single `MAJOR, MINOR = 0, 13` plus
+   `FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"`, read by `file_header()`, all 18
+   JSONL `format` strings and the manifest header. The version was spelled in 21
+   places; now it is spelled once and `0.14` is a one-line change.
+2. **`reject-unknown-minor` must move off `13`.** It stamped `minor=13`
+   *precisely so a `0.12` reader would reject it*. At `0.13` that file becomes
+   valid and `check.py` fails it — "claims the reject tier but walks cleanly". It
+   now derives `MINOR + 1`, so it keeps testing an unimplemented minor at every
+   future bump. **Any release that bumps the stamp must check this vector.**
+3. `vectors/check.py` — `MAJOR, MINOR = 0, 13`.
+4. #38 — `produced_by`/`produced_at` on `undecoded-skipped`,
+   `undecoded-reason-class` and `isolate-coverage-gap` (see its item below); done
+   here so those three regenerate once, not twice.
+5. Regenerate every vector; `python3 vectors/check.py` green.
+6. Spec — **eight sites, not one**: the title (1), the status block (3, 13–14),
+   five JSONL examples (199, 401, 478, 869, 907), the `version_minor` row (1020),
+   the "twelfth minor" prose (1034), and the worked-example hexdump (2062).
+   That last one is load-bearing: the 196-byte example is byte-for-byte
+   `raw-minimal`, independently confirmed by a second implementation, so the
+   hexdump and the vector must move together. Re-verify after regenerating.
+7. `README.md` (54, 63) and `vectors/README.md` (5). Delete the latter's
+   `Errata against v0.12` block — #38 closes all three of its rows.
+8. `CHANGELOG.md` — open an `## [0.13] — unreleased` section, and repoint the
+   `[Unreleased]` compare link at it.
+9. `docs/VECTOR-DEFECTS.md` — mark both defects fixed. Defect 2 was already
+   fixed in the tree by `a52c717`; only its status was stale.
+10. Split #41 and un-milestone #42 per the decisions above. Milestone `0.14`
+    already exists (see [Issue tracker](#issue-tracker)).
+
+**Not every `0.12` in the tree is a stamp.** Several name the version that
+*introduced* a rule — `build.py` 703 and 736, `vectors/README.md` 119,
+`README.md` 99, and every `CHANGELOG.md` section below `[0.13]`. Sweeping them
+would falsify the record. Grep for residuals and classify each hit.
 
 Do this **first**, not last. Every subsequent vector change regenerates the
 files anyway; bumping at the end means one large mechanical diff landing on top
@@ -419,10 +445,10 @@ day.** The milestone is this release's status display; a batch close at the end
 means it reads "9 open" until the moment it reads "0", and never tells anyone
 where the release actually is.
 
-**Prerequisite: create the `0.14` milestone.** It does not exist — the repository
-currently has one open milestone and no closed ones — so nothing can be postponed
-until it does. Give it a description saying what it carries: the provenance/layer
-axis separation, the sessionization stage, and the tunnel worked example.
+**Prerequisite: the `0.14` milestone.** It exists (`milestone/2`), created after
+this plan was written, but is described `TBD`. Give it a description saying what
+it carries: the provenance/layer axis separation, the sessionization stage, and
+the tunnel worked example.
 
 ### Terminal state of every issue in the milestone
 
@@ -434,20 +460,22 @@ axis separation, the sessionization stage, and the tunnel worked example.
 | [#38](https://github.com/adamkjonsson/zipline/issues/38) | Close | Phase 0 |
 | [#39](https://github.com/adamkjonsson/zipline/issues/39) | Close | Phase 4 |
 | [#40](https://github.com/adamkjonsson/zipline/issues/40) | Close | Phase 4 |
-| [#41](https://github.com/adamkjonsson/zipline/issues/41) | **Split into six**; #41 itself stays open as the umbrella, re-milestoned to `0.14`, closing when F2 lands | Phase 0 |
-| [#42](https://github.com/adamkjonsson/zipline/issues/42) | **Re-milestone to `0.14`**; add the trigger condition (a report of a real consumer misreading a partially-hinted `SEQUENCED` session) as a comment so the next reader knows what would settle it | Phase 0 |
+| [#41](https://github.com/adamkjonsson/zipline/issues/41) | ~~**Split into six**; #41 itself stays open as the umbrella, re-milestoned to `0.14`, closing when F2 lands~~ **DONE** — split into #50–#55; umbrella on `0.14` | Phase 0 |
+| [#42](https://github.com/adamkjonsson/zipline/issues/42) | ~~**Re-milestone to `0.14`**; add the trigger condition (a report of a real consumer misreading a partially-hinted `SEQUENCED` session) as a comment so the next reader knows what would settle it~~ **DONE** | Phase 0 |
 | [#47](https://github.com/adamkjonsson/zipline/issues/47) | Close | Phase 2 |
 
-### The six issues #41 becomes
+### The six issues #41 became
+
+Filed in Phase 0.
 
 | New issue | Milestone | Body |
 |---|---|---|
-| C1 — `spans` means correspondence | `0.13` | Finding 1 and Finding 2 of the analysis |
-| C2 — session fan-out | `0.13` | Finding 2; note the #35 dependency in both directions |
-| C3 — declared-discontinuity block | `0.13` | Finding 3; carry the open shape question forward explicitly |
-| F0 — provenance and layer as independent axes | `0.14` | Finding 6, including case G |
-| F1 — sessionization stage as a reassembly decoder | `0.14` | Finding 5 and Finding 7; note it depends on F0 |
-| F2 — tunnel worked example and fixtures | `0.14` | Follows F1 |
+| [#50](https://github.com/adamkjonsson/zipline/issues/50) — C1, `spans` means correspondence | `0.13` | Finding 1 and Finding 2 of the analysis |
+| [#51](https://github.com/adamkjonsson/zipline/issues/51) — C2, session fan-out | `0.13` | Finding 2; the #35 dependency in both directions |
+| [#52](https://github.com/adamkjonsson/zipline/issues/52) — C3, declared-discontinuity block | `0.13` | Finding 3; the open shape question carried forward explicitly |
+| [#53](https://github.com/adamkjonsson/zipline/issues/53) — F0, provenance and layer as independent axes | `0.14` | Finding 6, including case G |
+| [#54](https://github.com/adamkjonsson/zipline/issues/54) — F1, sessionization stage as a reassembly decoder | `0.14` | Finding 5 and Finding 7; depends on F0 |
+| [#55](https://github.com/adamkjonsson/zipline/issues/55) — F2, tunnel worked example and fixtures | `0.14` | Follows F1 |
 
 Each should link back to [ISSUE_41_ANALYSIS.md](ISSUE_41_ANALYSIS.md) rather than
 restating it — the analysis is the reasoning of record and it supersedes parts of
@@ -456,7 +484,7 @@ itself in place, which a copied excerpt would not track.
 ### Cross-references worth adding as comments
 
 These are conclusions this plan reached that belong on issues nobody will
-otherwise re-read:
+otherwise re-read. **All three posted in Phase 0.**
 
 - **[#35](https://github.com/adamkjonsson/zipline/issues/35)** — its rationale
   says Session End "already contains per-session integrity counts (issue #9)". It
@@ -473,6 +501,9 @@ otherwise re-read:
 
 *None of this can be done from the working tree — it needs `gh` or the web UI.*
 
+The one remaining tracker action for Phase 0 is **closing #38**, held for the
+commit that carries its fix rather than done in a batch.
+
 ## Definition of done
 
 - [ ] Every issue at its terminal state per [Issue tracker](#issue-tracker) — six
@@ -480,15 +511,17 @@ otherwise re-read:
       #41 umbrella on a `0.14` milestone that exists.
 - [ ] The `0.11` re-stamp promise at `CHANGELOG.md:131` corrected in the `0.13`
       notes, not left to rot.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.13`.
-- [ ] `manifest.json` `format` reads `zipline-payload/0.13`, every entry has
-      `violations`.
+- [x] `python3 vectors/check.py` green; every vector stamps `0.13`. *(Phase 0.
+      Re-check at release — every later phase regenerates the tree.)*
+- [ ] `manifest.json` `format` reads `zipline-payload/0.13` *(done, Phase 0)*,
+      every entry has `violations`.
 - [ ] Each new option appears in all seven places on the touch list.
 - [ ] `CHANGELOG.md` `[0.13]` complete, with **Clarified** entries separated from
       **Changed** — the distinction tells an implementer whether existing code was
       wrong or merely incomplete, and C1 is a *Clarified*, not a *Changed*.
 - [ ] The spec's "Planned, tracked elsewhere" table (2227–2235) drops the rows
       that shipped.
-- [ ] `docs/VECTOR-DEFECTS.md` marks defect 1 fixed.
+- [x] `docs/VECTOR-DEFECTS.md` marks defect 1 fixed *(Phase 0; defect 2 too — it
+      was already fixed in the tree, only its status was stale)*.
 - [ ] No spec sentence still says a decoder only frames, and no reachable text
       claims a decode-stage output is byte-identical to the region it spans.

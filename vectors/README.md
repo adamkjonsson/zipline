@@ -2,27 +2,10 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.12`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.13`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
-
-> ## Errata against `v0.12`
->
-> Three vectors are known to be defective. Reported by `python-zipline` while
-> porting to `0.12`; see [../docs/VECTOR-DEFECTS.md](../docs/VECTOR-DEFECTS.md).
-> **Fixes land in `0.13`** — they require regenerating shipped files, which is a
-> release-shaped change. Until then:
->
-> | Vector | Tier | What to expect |
-> |--------|------|----------------|
-> | `undecoded-skipped` | `accept` | Omits the mandatory `produced_by`/`produced_at` on a derived file. **A conformant reader will diagnose it.** Treat a diagnostic here as correct behaviour, not a failure. |
-> | `undecoded-reason-class` | `accept` | Same defect, same expectation. Everything else about both vectors is right — their projections were compared line for line and match. |
-> | `isolate-coverage-gap` | `isolate` | Carries **two** violations: the coverage gap it exists to test, and the same missing provenance. A reader can trip on the provenance error and pass the vector **without implementing coverage checking at all**. Do not treat passing it as evidence your coverage check works. |
->
-> The last is the one that matters. A negative vector must carry **exactly one**
-> violation, or it silently tests whichever the reader happens to detect first —
-> a rule this suite now states explicitly, below, and will enforce in `check.py`.
 
 ## Ground rules
 
@@ -81,8 +64,10 @@ fails the extension contract outright — see the `escape-*` vectors, which are 
 
 **A negative vector carries exactly one violation.** With two, it silently tests
 whichever the reader detects first, and passes implementations that never
-exercised the rule it was built for. See the errata above for a case where that
-happened.
+exercised the rule it was built for. `isolate-coverage-gap` carried two through
+`0.12` — the coverage gap it exists to test, and a missing `produced_by` — so a
+reader could pass it without implementing coverage checking at all. Fixed in
+`0.13`.
 
 ## Layout
 

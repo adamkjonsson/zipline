@@ -1,6 +1,6 @@
-# Zipline Payload Format (v0.12)
+# Zipline Payload Format (v0.13)
 
-> Status: **version 0.12** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.13** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
@@ -10,8 +10,8 @@
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10`, `0.11` and `0.12`
-> followed. Note `0.12` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.13`
+> followed. Note `0.13` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -196,7 +196,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.13","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -398,7 +398,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.13","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -475,7 +475,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.13","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -866,7 +866,7 @@ bytes it could not parse — its ids read in `raw.zpf`'s namespace, coincidental
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.13","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -904,7 +904,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.12","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.13","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -1017,7 +1017,7 @@ MUST be the first block in the file. Body:
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `0` for this document                                        |
-| `version_minor` | u16  | `12` for this document                                       |
+| `version_minor` | u16  | `13` for this document                                       |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -1031,7 +1031,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.12` is the twelfth minor and is **greater** than `0.9`. A writer stamps
+number: `0.13` is the thirteenth minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -2059,7 +2059,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  0C 00                    version_minor = 12   (0.12, little-endian)
+000E  0D 00                    version_minor = 13   (0.13, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
