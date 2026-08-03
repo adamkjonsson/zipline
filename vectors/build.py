@@ -181,6 +181,17 @@ def undecoded(source_id, pid, session_id, off_start, off_end, options=()):
     return block(0x21, "Undecoded", body, options)
 
 
+def discontinuity(session_id, pid, options=()):
+    """0x22 -- a break in THIS file's own output stream. Note the ids are this
+    file's, unlike Undecoded's, which are the input's."""
+    body = [
+        P(u64(session_id), f"session_id = {session_id}  (in THIS file)"),
+        P(u16(pid), f"participant_id = {pid}  (in THIS file)"),
+        P(u16(0), "_reserved"),
+    ]
+    return block(0x22, "Discontinuity", body, options)
+
+
 def name_block(session_id, pid, options=()):
     body = [
         P(u64(session_id), f"session_id = {session_id}"),
@@ -246,6 +257,8 @@ def o_input_extents(entries):
                       for src, pid, sess, ext in entries)
     return option(0x00C1, packed, "input_extents",
                   f"{len(entries)} entry/entries")
+def o_width(v):          return option(0x00D0, u64(v), "width", str(v))
+def o_disc_reason(v):    return option(0x00D1, s(v), "reason")
 def o_label(v):          return option(0x00B0, s(v), "label")
 def o_name_kind(v):      return option(0x00B1, s(v), "kind")
 def o_unregistered(oid, v):
@@ -604,6 +617,115 @@ vector(
         {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 0,
          "off_start": 0, "off_end": 40, "reason": "rtp-seq-gap",
          "reason_class": "hole", "decoder_id": 1},
+        {"type": "end"},
+    ],
+)
+
+vector(
+    "discontinuity-unknown-width", "accept",
+    "Finding 3's stage 1: a tls-records decoder that lost one TCP segment. The "
+    "plaintext length the lost ciphertext would have produced is unknowable, so "
+    "the Discontinuity carries NO width and contributes 0 to the positional "
+    "arithmetic -- output offsets stay [0,50) and [50,80). The block's job is "
+    "to say those two records DO NOT JOIN. Without it they are simply adjacent "
+    "and a downstream decoder splices them silently.",
+    "Discontinuity (0x22)",
+    [
+        file_header(options=[o_produced_by("zpf-tls 0.2"),
+                             o_produced_at(1719580000)]),
+        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
+        decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
+        session(7, [o_proto("tls")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"A" * 50, options=[
+            o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
+        # The input-side loss and the output-side break are two statements.
+        undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
+        discontinuity(7, 0, [o_disc_reason("tls-record-lost")]),
+        record(7, 0, 1, 1100, b"B" * 30, options=[
+            o_decoder_id(1), o_spans([(1, 0, 7, 139, 200)])]),
+        session_end(7, [o_input_extents([(1, 0, 7, 200)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "produced_by": "zpf-tls 0.2", "produced_at": 1719580000},
+        {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
+         "digest": "sha256:9f2c"},
+        {"type": "decoder", "decoder_id": 1, "name": "tls-records",
+         "version": "0.2"},
+        {"type": "session", "session_id": 7, "proto": "tls"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "payload": b64(b"A" * 50), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 0,
+                    "off_start": 0, "off_end": 100}]},
+        {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 0,
+         "off_start": 100, "off_end": 139, "reason": "gap", "decoder_id": 1},
+        {"type": "discontinuity", "session_id": 7, "pid": 0,
+         "reason": "tls-record-lost"},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1100, "payload": b64(b"B" * 30), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 0,
+                    "off_start": 139, "off_end": 200}]},
+        {"type": "session_end", "session_id": 7,
+         "input_extents": [
+             {"source_id": 1, "session_id": 7, "pid": 0, "extent": 200}]},
+        {"type": "end"},
+    ],
+)
+
+vector(
+    "discontinuity-known-width", "accept",
+    "A QUIC stream decoder, where the missing bytes CAN be counted: STREAM "
+    "offsets give the gap's exact width. width = 25 is a term in the positional "
+    "arithmetic, so the second record occupies [75,105), not [50,80). A reader "
+    "that skips the block, or reads it but ignores width, computes a different "
+    "range for every later record of this participant -- which is exactly the "
+    "silent failure the block exists to prevent.",
+    "Discontinuity (0x22)",
+    [
+        file_header(options=[o_produced_by("zpf-quic 0.1"),
+                             o_produced_at(1719590000)]),
+        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
+        decoder(1, [o_dec_name("quic-stream"), o_dec_version("0.1")]),
+        session(9, [o_proto("quic")]),
+        participant(9, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(9, 0, 1, 2000, b"C" * 50, options=[
+            o_decoder_id(1), o_spans([(1, 0, 9, 0, 50)])]),
+        undecoded(1, 0, 9, 50, 75, [o_reason("gap"), o_decoder_id(1)]),
+        discontinuity(9, 0, [o_width(25), o_disc_reason("stream-gap")]),
+        record(9, 0, 1, 2100, b"D" * 30, options=[
+            o_decoder_id(1), o_spans([(1, 0, 9, 75, 105)])]),
+        session_end(9, [o_input_extents([(1, 0, 9, 105)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "produced_by": "zpf-quic 0.1", "produced_at": 1719590000},
+        {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
+         "digest": "sha256:9f2c"},
+        {"type": "decoder", "decoder_id": 1, "name": "quic-stream",
+         "version": "0.1"},
+        {"type": "session", "session_id": 9, "proto": "quic"},
+        {"type": "participant", "session_id": 9, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "record", "session_id": 9, "sender_pid": 0, "source_id": 1,
+         "ts": 2000, "payload": b64(b"C" * 50), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 9, "pid": 0,
+                    "off_start": 0, "off_end": 50}]},
+        {"type": "undecoded", "source_id": 1, "session_id": 9, "pid": 0,
+         "off_start": 50, "off_end": 75, "reason": "gap", "decoder_id": 1},
+        {"type": "discontinuity", "session_id": 9, "pid": 0, "width": 25,
+         "reason": "stream-gap"},
+        {"type": "record", "session_id": 9, "sender_pid": 0, "source_id": 1,
+         "ts": 2100, "payload": b64(b"D" * 30), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 9, "pid": 0,
+                    "off_start": 75, "off_end": 105}]},
+        {"type": "session_end", "session_id": 9,
+         "input_extents": [
+             {"source_id": 1, "session_id": 9, "pid": 0, "extent": 105}]},
         {"type": "end"},
     ],
 )
@@ -992,6 +1114,31 @@ vector(
            "blocks cover only [0,20), so the coverage guarantee fails against "
            "the file's own declaration. A reader that ignores input_extents "
            "sees nothing wrong here, which is what this vector is for.",
+)
+
+vector(
+    "isolate-discontinuity-in-raw", "isolate",
+    "A RAW file carrying a Discontinuity block. A transport stream's offset "
+    "space is already hole-inclusive -- a gap occupies a real range no payload "
+    "covers, resolvable from seq_start and isn -- so the block is meaningless "
+    "there and the two mechanisms contradict each other: is the missing region "
+    "the sequence gap, the declared width, or their sum? The block belongs to "
+    "decoded layers only.",
+    "Discontinuity (0x22)",
+    [file_header(),
+     source(1, 0, [o_uri("c.pcap")]),
+     session(7, [o_proto("tcp")]),
+     participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+     record(7, 0, 1, 1000, b"A" * 50, options=[o_seq_start(1001)]),
+     discontinuity(7, 0, [o_width(25), o_disc_reason("stream-gap")]),
+     record(7, 0, 1, 1100, b"B" * 30, options=[o_seq_start(1076)]),
+     end_block()],
+    expect="MAY reject the file, or isolate the session. The gap is already "
+           "stated implicitly and unambiguously by the sequence numbers -- "
+           "seq_start 1001 + 50 bytes ends at 1051, and the next record starts "
+           "at 1076 -- so the Discontinuity is a second, redundant and "
+           "potentially contradicting account of the same 25 bytes. A reader "
+           "MUST NOT sum the two.",
 )
 
 vector(
