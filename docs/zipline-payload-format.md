@@ -637,6 +637,20 @@ This generalizes: `raw → tls-records → http → …` is the same mechanism a
 N times. Nothing special-cases "raw"; each stage just derives from the previous
 file's spans.
 
+**A stage's sessions need not line up with its input's.** The mapping from input
+participant streams to output sessions is **many-to-many**, and both directions
+are ordinary. One input stream MAY feed several output sessions — an HTTP/2
+decoder demultiplexes one connection into a session per stream — and one output
+session MAY draw on several input streams, which every two-direction decode
+already does. A stage MAY also mint sessions with no counterpart upstream at all.
+What binds an output record to its input is its [`spans`](#tlv-option-framing--id-registry),
+never a shared `session_id`: ids belong to the file that declares them, so the
+same number in two files means nothing (see [the namespace
+rule](#tlv-option-framing--id-registry)). The
+[coverage guarantee](#coverage-honesty-undecoded-blocks) is what keeps this
+honest, and it is stated per *input participant stream* precisely so that it
+still holds when one stream's bytes end up spread across several output sessions.
+
 Decoding is also not the *only* file → file stage: **all derivation is
 file → file**. The [merge](#sequenced-files-precomputed-order) is a
 *byte-preserving* transform — it re-emits its inputs' byte runs as
@@ -1772,7 +1786,11 @@ reference, not because this file was derived from it.
   region it did not decode with an **Undecoded** block rather than dropping it:
   within each input participant stream, every offset MUST be covered either by
   some decoded record's `spans` or by an Undecoded block naming that stream in
-  the source's id namespace (**the coverage guarantee**). A decoded record also
+  the source's id namespace (**the coverage guarantee**). The covering spans MAY
+  come from records in **different output sessions**: the stage's output sessions
+  need not correspond one-to-one with its input's, in either direction, and the
+  guarantee is per input participant stream rather than per session exactly so
+  that it survives that. A decoded record also
   appears in a **pass-through** file preserving a decoded layer, where it
   carries no `spans` (see below). Decoder Descriptors and Undecoded blocks
   appear only in those two file kinds, never in a raw file or in a pass-through

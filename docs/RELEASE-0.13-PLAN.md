@@ -239,12 +239,19 @@ The positional range rule at 718–732 gains one term:
 record k occupies [ Σ(preceding payload_len + preceding declared widths), + payload_len )
 ```
 
-**Shape — decide in Phase 1, build in Phase 3.** Two candidates:
+**Shape — DECIDED in Phase 1: a new block type (`0x22`).** Build it in Phase 3.
+The rejected candidate is kept because the question will recur.
 
 | Candidate | For | Against |
 |---|---|---|
-| New block type (`0x22`) | unambiguous; no overload of Record semantics | one more block type readers must skip correctly |
+| **New block type (`0x22`)** — **chosen** | unambiguous; no overload of Record semantics | one more block type readers must skip correctly — already a MUST, and `escape-unknown-block` tests it |
 | Zero-payload Record + a free `flags` bit + width option `0x0074` | reuses ordering, positional and stored-order machinery; zero-length records already exist for pure ACKs | a Record that is not a record; every "records concatenate" statement needs an exception |
+
+The deciding argument is the *Against* column, not the *For*: the block type's
+cost is a skip readers already owe, tested by an existing vector, while the
+Record overload's cost is an exception clause on every statement about records
+concatenating. C1 has just widened what a record's bytes may be; overloading what
+a record *is* on top of that compounds the reading burden in the same release.
 
 It must be a **block**, not a bare option: its meaning is positional and stored
 order defines offsets, so it has to interleave with records.
