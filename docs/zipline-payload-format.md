@@ -801,10 +801,25 @@ decoders: HTTP on one session, TLS-then-HTTP on another. A record's `decoder_id`
 is exactly what gives the record its meaning. **Reproducibility contract:** same
 input `digest` + same decoder `version`/`params_digest` ⇒ identical output.
 
+Where a stage needs a **secret** — a decryption key, a keylog — that secret is
+part of the config the `params_digest` covers, so the contract still holds; it
+becomes a statement only a key-holder can act on. Verification of the digest
+chain is unaffected, because it rests on the input `digest` rather than on
+re-running the stage. Third-party *regeneration* is not possible, and a consumer
+without the key should expect none.
+
 ### Typing a decoded record
 
-A decoder *frames* — it assembles raw bytes into one logical unit and marks its
-edges — but the assembled bytes are still just bytes. What they **are** (a PNG, a
+A decoder **frames, and may transform**. Framing is the common case — assembling
+raw bytes into one logical unit and marking its edges — but it is not the
+definition: a decoder MAY emit bytes that do not appear in its input, and in a
+different quantity. Decompressing a `Content-Encoding: gzip` body, decrypting a
+TLS record, and expanding an HPACK header block all produce output that exists
+nowhere upstream. What a record's `spans` name is therefore the input region the
+unit **corresponds to**, not a region holding the same bytes (see
+[`spans`](#tlv-option-framing--id-registry)).
+
+Either way the assembled bytes are still just bytes. What they **are** (a PNG, a
 UTF-8 string, a 64-bit integer) is a separate, optional label the decoder may
 attach: a `content_type` on the record. Absent, the payload is opaque and a
 consumer falls back to the decoder `name`; the bytes always stay the source of
@@ -1344,7 +1359,13 @@ intent, which some consumers use for their own purposes:
 | **bytes exist** | the bytes are present at that span in `source_id`; a consumer MAY follow the reference to fetch them | `undecodable`, `skipped`  |
 | **hole**        | the range has no bytes anywhere upstream — a plain *gap*                                    | `gap`, `truncated`        |
 
-Either way the bytes are not in *this* file.
+Either way the bytes are not in *this* file. What the class promises is the bytes
+**of the region the span names**, in the file it names them in — one level down.
+That is exact for an Undecoded block, whose region was by definition not decoded.
+Following a *record's* `spans` is a weaker thing, because a decoder may have
+transformed: it yields the input region the record corresponds to, which is the
+provenance of the record's bytes rather than a second copy of them. See
+[Recovering the bytes](#undecoded-0x21) below.
 
 None of these names a transport. A hole is the same object whether it was found
 from TCP sequence numbers, an SCTP TSN, an RTP sequence number, or an application
@@ -1359,8 +1380,19 @@ purpose — data it does not care about, or data carrying no information: a
 byte-order mark, a padding or reserved field. That distinction is needed because
 the [coverage guarantee](#coverage-honesty-undecoded-blocks) leaves a decoder no
 honest third option: without `skipped`, a decoder that ignores a BOM must either
-stretch a record's `spans` across bytes it never interpreted or report them
-`undecodable`, asserting a failure that did not occur. Keeping them apart also
+stretch a record's `spans` across a region no output unit corresponds to, or
+report them `undecodable`, asserting a failure that did not occur.
+
+**Correspondence is not proximity**, and this is where the difference bites. A
+discarded byte-order mark corresponds to no output unit — nothing downstream was
+computed from it — so it is `skipped`, and spanning it would be a false claim. A
+decryptor's nonce and authentication tag are the opposite case: they are inputs to
+the computation that produced the plaintext, so the inner record honestly spans
+the whole ciphertext packet, framing included. Tunnel-stream coverage therefore
+closes with **no** Undecoded blocks at all, not one per packet. The test is
+whether the bytes fed the unit, not whether they sit beside it.
+
+Keeping the two values apart also
 keeps `undecodable` usable as a decoder-quality signal — a consumer counting
 unparsed bytes should not have deliberate skips folded into the total.
 
@@ -1381,7 +1413,18 @@ report the missing `reason_class`.
 actually wants them; nothing here obliges a consumer that is merely reading the
 file to walk anything. It walks the provenance chain one level at a time — if the
 referenced span is itself Undecoded in `source_id`, it recurses — until it reaches
-the capture-sourced raw file that holds the actual bytes.
+the capture-sourced raw file that holds the bytes of the region it arrived at.
+
+**Those need not be the bytes it set out to find.** Each hop the walk crosses a
+*transforming* decode stage, what it recovers is the corresponding input, not the
+same content in another file: chasing a plaintext HTTP region down through a TLS
+stage reaches ciphertext, and through a gzip stage, compressed bytes. That is the
+honest answer — the plaintext exists nowhere upstream, and re-deriving it means
+re-running the stage, which needs its `params_digest` config and, for a key-gated
+stage, its key. A consumer that reports the recovered bytes as the region's
+content is making the same mistake as one that reports a broken chain as an empty
+region. Where every stage in the walk merely framed, the bytes are the same ones
+and the distinction costs nothing.
 
 A walk can fail for two reasons, and a consumer **MUST NOT** report them
 identically:
@@ -1525,7 +1568,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0070` | seq_start        | u32        | Record (TCP)             | absolute sequence number of the first payload byte             |
 | `0x0072` | ack              | u32        | Record (TCP)             | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
-| `0x0080` | spans            | span-list  | Record                   | source ranges these bytes were built from (see below)          |
+| `0x0080` | spans            | span-list  | Record                   | source ranges these bytes **correspond to** — the input the unit was computed from, not necessarily a copy of it (see below) |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which decoder's **layer** this record or region belongs to — the decoder that produced or declined the content, not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it) |
 | `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
@@ -1548,6 +1591,19 @@ referenced source's `kind`**: for a `zpf-input` source, `off_start`/`off_end` ar
 a `capture` source, they are **byte offsets into the capture file** and
 `session_id`/`pid` are unused (write 0). One option id (`spans`) serves both raw
 capture-provenance and decoded derivation-provenance.
+
+**What `spans` asserts is correspondence, not identity.** The span set names the
+input region the record's bytes were **computed from**; it does not promise that
+region holds those bytes, nor that it is the same length. A record of 8 bytes may
+span 16, or 16 000. Decoders that transform — gzip, HPACK, any decryption — are
+expressible for exactly this reason, and the alternative reading is unimplementable:
+deflate is stateful, so a byte mid-stream depends on the whole preceding window,
+and a decoder asserting *everything this unit was computed from* would emit O(n)
+spans per record, with HPACK worse. The rule is instead that a region belongs in a
+unit's span set when it **fed** that unit — which is what makes the
+[coverage guarantee](#coverage-honesty-undecoded-blocks) meaningful without making
+it impossible: every input offset is still accounted for exactly once, by a span or
+by an Undecoded block, whatever the decoder did to the bytes in between.
 
 **A span's — and an [Undecoded](#undecoded-0x21) body's — `session_id`/`pid` are
 in the referenced *source's* id namespace, never the current file's.** They name
@@ -1669,10 +1725,12 @@ file is the output of a file → file transform (all its records reference
 mix — and the difference is whether it **creates** a layer or **preserves** one:
 
 - A **decode stage** creates a layer. It runs decoders over its input's streams
-  and emits records whose `spans` name the input ranges they were built from,
+  and emits records whose `spans` name the input ranges they **correspond to**,
   plus [Undecoded](#undecoded-0x21) markers for every region it did not decode.
   A decoder accounts for regions it could not parse by reference, never by
-  copying bytes forward.
+  copying bytes forward. Its records' bytes need not appear in its input: a
+  decoder MAY transform (see
+  [Typing a decoded record](#typing-a-decoded-record)).
 - A **pass-through transform** preserves the layer its input already had. It
   re-emits that input's records with their bytes, logical offsets, `decoder_id`s
   and Undecoded markers **unchanged**, and its provenance is stream-level: an
@@ -2154,6 +2212,21 @@ these finds the answer where the question arises.
 This is not a backlog. Planned work lives in the
 [issue tracker](https://github.com/adamkjonsson/zipline/issues); see
 [Planned, tracked elsewhere](#planned-tracked-elsewhere) below.
+
+- **A marker saying a record's payload is byte-identical to its span.** Since
+  `spans` asserts [correspondence, not identity](#tlv-option-framing--id-registry),
+  a consumer cannot tell from a decoded record whether following its span yields
+  those same bytes or transformed ones — so a flag, or a `transform: none`
+  option, would say. *Not adopted:* the question it answers is not the one a
+  consumer acts on. What decides behaviour is whether the bytes are **fetchable
+  at all**, and the [recoverability class](#undecoded-0x21) already answers that.
+  A consumer that has the bytes in front of it has no use for a second copy, and
+  one walking the chain to re-derive must re-run the stage regardless — the
+  identity case just makes re-running trivial. The marker would also be
+  per-record while the property is per-span-entry (a record may span one region it
+  copied and another it rewrote), so an honest version is a parallel array,
+  which is real weight for a hint. If it is ever wanted, a `content_type` scheme
+  is the cheaper place than a new option.
 
 - **Self-describing repeatability (a `repeatable` id-bit).** Reserve the high bit
   of a TLV `id` to mark an option as an ordered list, so a schema-less tool could

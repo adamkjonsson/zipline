@@ -67,6 +67,28 @@ Scope and reasoning in
 [docs/RELEASE-0.13-PLAN.md](docs/RELEASE-0.13-PLAN.md); the work is tracked
 against the [`0.13` milestone](https://github.com/adamkjonsson/zipline/milestone/1).
 
+### Clarified
+
+Both of these describe what the format already did. **No file that is conformant
+under `0.12` stops being conformant**, and no writer has to change — but a reader
+built on the letter of the old text may have been rejecting valid files.
+
+- **`spans` asserts correspondence, not identity.** A decoder **frames, and may
+  transform**: it may emit bytes that appear nowhere in its input, in a different
+  quantity, and its `spans` name the input region the unit was *computed from*
+  rather than a region holding those same bytes. This is what makes gzip, HPACK
+  and any decryption stage expressible. *The specification contradicted its own
+  shipped conformance vector here:* `vectors/chain/decoded.zpf` has emitted
+  `RESP:200` — 8 bytes spanning 16 — since `0.11`, while the text said a decoder
+  only frames. `vectors/check.py` never caught it, because it verifies coverage of
+  ranges and never payload-to-span correspondence. Consequences now stated: the
+  recoverability walk reaches the *corresponding* bytes and not necessarily the
+  ones it set out to find (ciphertext, below a TLS stage); the reproducibility
+  contract holds for a key-gated stage but only for a key-holder, leaving digest
+  verification intact and third-party regeneration impossible; and correspondence
+  is **not proximity** — a discarded byte-order mark stays `skipped`, while a
+  decryptor's nonce and auth tag are honestly spanned, which closes tunnel-stream
+  coverage with no Undecoded blocks rather than one per packet.
 ### Fixed
 
 - **Three decode-stage vectors now set `produced_by`/`produced_at`.**
