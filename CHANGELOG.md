@@ -60,12 +60,24 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.13] — unreleased
+## [0.13] — 2026-08-04
 
-The first release since `0.9` to add capability rather than only correct.
-Scope and reasoning in
-[docs/RELEASE-0.13-PLAN.md](docs/RELEASE-0.13-PLAN.md); the work is tracked
-against the [`0.13` milestone](https://github.com/adamkjonsson/zipline/milestone/1).
+The first release since `0.9` to add capability rather than only correct: three
+options, one new block type, and two clarifications that the format's own
+conformance vectors had been contradicting. Scope and reasoning in
+[docs/RELEASE-0.13-PLAN.md](docs/RELEASE-0.13-PLAN.md); every item is a closed
+issue on the [`0.13` milestone](https://github.com/adamkjonsson/zipline/milestone/1).
+
+**There is no *Changed* section, and that is the useful thing to know.** Every
+entry below is *Clarified*, *Added*, *Fixed* or *Removed*, so **no file that is
+conformant under `0.12` stops being conformant** and no writer is obliged to
+change. A reader is the other story: one built on the letter of the old text may
+have been rejecting valid files, which is what the two *Clarified* entries are
+about — read those first.
+
+The one thing to carry into a `1.0` reader: the new
+[Discontinuity](docs/zipline-payload-format.md#discontinuity-0x22) block is **not
+safe to skip**, the only block of which that is true.
 
 ### Clarified
 
@@ -712,7 +724,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...HEAD
+[0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13
 [0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12
 [0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...v0.11
 [0.10]: https://github.com/adamkjonsson/zipline/compare/v0.9...v0.10

@@ -100,8 +100,9 @@ tier, size, the specification section each comes from, and what a reader must do
 | Vector | What it exercises |
 |--------|-------------------|
 | `raw-minimal` | The whole container in 196 bytes. Identical to the specification's worked example. |
-| `decoded-basic` | A decode stage: `spans` provenance, `content_type`, an Undecoded tail, an End block. |
+| `decoded-basic` | A decode stage: `spans` provenance, `content_type`, an Undecoded tail, an End block. Its Session End declares `input_extents`, so the coverage guarantee is checkable from this file alone — and it is the suite's only **Session End** block. |
 | `passthrough-transport` | A pass-through preserving a transport layer: `origin`, byte-run records, `SEQUENCED`. |
+| `broken-chain` | The provenance walk that **fails**: a `zpf-input` Source naming a `missing.zpf` that is deliberately not in the tree, with a bytes-exist Undecoded block pointing into it. `accept` tier — the file breaks no rule; what is absent is a sibling. See [the provenance chain](#the-provenance-chain). |
 
 ### The four escapes
 
@@ -128,13 +129,21 @@ naive implementation most often fails by treating extension as corruption.
 | `merge-timestamp-tie` | Two concurrent records from different participants with **identical timestamps**, stored in the *opposite* order to the one the merge must produce. Before `0.12` this tie was unresolved and two conformant readers could disagree; the tie-break is now ascending `participant_id`. |
 | `partially-hinted-sequenced` | A `SEQUENCED` session where **one** record carries `seq_start` and the rest carry nothing. A single hint anywhere means the session is not hint-less, so no `sequenced_basis` is required — even though most of the order rests on timestamps. Pins the answer to the question that took longest to settle. |
 
+### Added in `0.13`
+
+| Vector | What it exercises |
+|--------|-------------------|
+| `external-session-id` | A session carrying an identity assigned outside the format — a 16-byte binary UUID. The value is **opaque bytes, not a string**: it projects as base64 and must not be spelled out, or one id acquires two spellings. |
+| `discontinuity-unknown-width` | A `tls-records` stage that lost a TCP segment. The plaintext length is unknowable, so the Discontinuity carries **no `width`** and contributes 0 to the positional arithmetic — output offsets stay `[0,50)` and `[50,80)`. The block's job is to say those two records **do not join**. |
+| `discontinuity-known-width` | A QUIC stream decoder, where the gap **can** be counted. `width = 25` is a term in the arithmetic, so the second record occupies `[75,105)`, not `[50,80)`. **A reader that skips the block, or reads it but ignores `width`, computes a different range for every later record** — the failure the block exists to prevent. |
+
 ### Reject tier
 
 | Vector | Defect |
 |--------|--------|
 | `reject-bad-magic` | Byte-swapped magic. |
 | `reject-unknown-major` | `version_major` this reader does not implement. |
-| `reject-unknown-minor` | `version_minor` 13 while major is 0. **The vector that distinguishes a `0.x`-aware reader from one assuming minors are always skippable.** |
+| `reject-unknown-minor` | **The minor after this one** while major is 0 — `build.py` derives it from the version the tree stamps, so it always names a version no reader implements. **The vector that distinguishes a `0.x`-aware reader from one assuming minors are always skippable.** |
 | `reject-length-misaligned` | A block `length` that is not a multiple of 4. |
 | `reject-payload-len-overrun` | `payload_len` running past its own block. |
 
@@ -147,6 +156,8 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-coverage-gap` | A decode stage leaving an input range neither covered by `spans` nor marked Undecoded. |
 | `isolate-sequenced-no-basis` | A hint-less `SEQUENCED` session with no `sequenced_basis`. Recording is unconditional — the trivially-sound cases write `trivial` rather than omitting it. **A reader can only raise this at Session End**, since hint-lessness is a property of the records. |
 | `isolate-unknown-source-kind` | An undefined Source `kind` — load-bearing, unlike `tcp_role`, because it decides how span offsets are read. |
+| `isolate-extent-exceeds-coverage` | A Session End declaring an input stream 40 bytes long while `spans` plus Undecoded blocks account for only `[0,20)`. A **trailing** gap — invisible without `input_extents`, which is what distinguishes it from `isolate-coverage-gap`'s interior one. |
+| `isolate-discontinuity-in-raw` | A Discontinuity block in a **raw** file. A transport offset space is already hole-inclusive, so the sequence numbers and a declared `width` are two accounts of the same missing bytes, with no rule for which to believe. |
 
 ### The provenance chain
 
