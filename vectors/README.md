@@ -184,14 +184,18 @@ What only this fixture can test:
   declares its inputs' lengths itself, so the same arithmetic works on a lone
   decoded file. The fixture keeps the cross-check honest.
 
+**Its counterpart is [`broken-chain/`](broken-chain).** This fixture is the walk
+that *succeeds*; that vector is the walk that fails, citing a `missing.zpf` that
+is deliberately not in the tree. Together they cover the distinction `0.10` made
+normative — *no bytes exist* versus *bytes unavailable* — which a consumer MUST
+NOT report identically. Note it is an `accept` vector: the file breaks no rule,
+and what is absent is a sibling, so the requirement it tests is about a
+consumer's recovery walk rather than about the file.
+
 ## Coverage this does not have
 
 Stated so nobody mistakes the suite for complete:
 
-- **No broken chain.** `chain/` exercises a walk that succeeds; nothing
-  exercises one that fails, so the two distinct failure modes — *no bytes exist*
-  versus *bytes unavailable because an intermediate file is missing* — are
-  untested. A fourth fixture citing an absent file would cover it.
 - No causal-merge vectors: no skewed two-file capture, no tie-break case.
 - No truncation vectors, which need a file that ends mid-block.
 - No tunnelled `endpoint` list, no `spans` chunked across several occurrences,

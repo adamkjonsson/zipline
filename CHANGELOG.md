@@ -192,7 +192,18 @@ built on the letter of the old text may have been rejecting valid files.
   is Finding 3's stage 1 verbatim; `discontinuity-known-width` picks numbers where
   a reader ignoring `width` computes visibly different ranges (`[75,105)` versus
   `[50,80)`); `isolate-discontinuity-in-raw` puts the block in a raw file, where
-  the sequence numbers already state the same gap. 31 in total.
+  the sequence numbers already state the same gap.
+- **A `broken-chain` vector** — the provenance walk that **fails**. `chain/`
+  exercises one that succeeds; nothing exercised one that does not, so the two
+  outcomes `0.10` made normative and a consumer MUST NOT report identically were
+  untested: *no bytes exist* (chain resolved, region genuinely empty) versus
+  *bytes unavailable* (chain broke). The vector declares a `zpf-input` Source for
+  a `missing.zpf` that is deliberately not in the tree, and an Undecoded block of
+  the bytes-exist class pointing into it — so the reference promises fetchable
+  bytes and the walk cannot deliver them. It is an **`accept`** vector, not a
+  negative one: the file breaks no rule, and what is absent is a sibling. The
+  requirement under test belongs to a consumer's recovery walk, not to the file.
+  32 vectors in total.
 
 ### Removed
 

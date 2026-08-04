@@ -82,6 +82,16 @@
       "has_jsonl": true
     },
     {
+      "name": "broken-chain",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 404,
+      "summary": "The provenance walk that FAILS. This file is conformant and reads fine on its own -- what is absent is its input: missing.zpf is not in the tree and never was. Its Undecoded block is the bytes-exist class, so it promises a consumer MAY follow the reference and fetch those bytes; the walk hits the first hop and cannot. The two outcomes a consumer MUST NOT report identically are 'no bytes exist' (chain resolved, region genuinely empty) and 'bytes unavailable' (chain broke). chain/ tests the walk that succeeds; this tests the one that does not.",
+      "spec_section": "Undecoded (0x21) -- Recovering the bytes",
+      "expect": "ACCEPT the file and produce the .jsonl projection -- it is conformant, and a decoded file stands alone for its decoded content. The test is what happens NEXT, if a consumer chooses to recover the undecoded region's bytes: the walk resolves source_id 1 to missing.zpf, which is not there, so it MUST report the region as BYTES UNAVAILABLE and MUST NOT report it as empty or as a hole. Reporting 'no bytes here' asserts something the consumer never established, and is the silent data loss the coverage guarantee exists to prevent. A reader that never walks provenance passes this vector trivially and has tested nothing -- the distinction is only observable in a consumer that recovers bytes.",
+      "has_jsonl": true
+    },
+    {
       "name": "undecoded-skipped",
       "tier": "accept",
       "violations": 0,

@@ -572,6 +572,69 @@ vector(
 )
 
 vector(
+    "broken-chain", "accept",
+    "The provenance walk that FAILS. This file is conformant and reads fine on "
+    "its own -- what is absent is its input: missing.zpf is not in the tree and "
+    "never was. Its Undecoded block is the bytes-exist class, so it promises a "
+    "consumer MAY follow the reference and fetch those bytes; the walk hits the "
+    "first hop and cannot. The two outcomes a consumer MUST NOT report "
+    "identically are 'no bytes exist' (chain resolved, region genuinely empty) "
+    "and 'bytes unavailable' (chain broke). chain/ tests the walk that "
+    "succeeds; this tests the one that does not.",
+    "Undecoded (0x21) -- Recovering the bytes",
+    [
+        file_header(options=[o_produced_by("zpf-decode 0.4"),
+                             o_produced_at(1719600000)]),
+        # The digest is real for a file that is simply not here. A consumer
+        # cannot verify it, and MUST NOT conclude anything from that.
+        source(1, 1, [o_uri("missing.zpf"), o_digest("sha256:d1e5")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"REQ", options=[
+            o_decoder_id(1), o_spans([(1, 0, 7, 0, 18)]),
+            o_content_type("dec:request")]),
+        undecoded(1, 0, 7, 18, 60, [o_reason("undecodable"), o_decoder_id(1)]),
+        session_end(7, [o_input_extents([(1, 0, 7, 60)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "produced_by": "zpf-decode 0.4", "produced_at": 1719600000},
+        {"type": "source", "source_id": 1, "kind": "zpf-input",
+         "uri": "missing.zpf", "digest": "sha256:d1e5"},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 7, "proto": "http"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "payload": b64(b"REQ"), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 0,
+                    "off_start": 0, "off_end": 18}],
+         "content_type": "dec:request"},
+        {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 0,
+         "off_start": 18, "off_end": 60, "reason": "undecodable",
+         "decoder_id": 1},
+        {"type": "session_end", "session_id": 7,
+         "input_extents": [
+             {"source_id": 1, "session_id": 7, "pid": 0, "extent": 60}]},
+        {"type": "end"},
+    ],
+    expect="ACCEPT the file and produce the .jsonl projection -- it is "
+           "conformant, and a decoded file stands alone for its decoded "
+           "content. The test is what happens NEXT, if a consumer chooses to "
+           "recover the undecoded region's bytes: the walk resolves source_id "
+           "1 to missing.zpf, which is not there, so it MUST report the region "
+           "as BYTES UNAVAILABLE and MUST NOT report it as empty or as a hole. "
+           "Reporting 'no bytes here' asserts something the consumer never "
+           "established, and is the silent data loss the coverage guarantee "
+           "exists to prevent. A reader that never walks provenance passes "
+           "this vector trivially and has tested nothing -- the distinction is "
+           "only observable in a consumer that recovers bytes.",
+    violations=0,
+)
+
+vector(
     "undecoded-skipped", "accept",
     "A decode stage that deliberately declines a region -- a byte-order mark -- "
     "and says so with reason = skipped rather than claiming a parse failure.",
