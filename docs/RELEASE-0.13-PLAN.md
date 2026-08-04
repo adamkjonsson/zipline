@@ -170,23 +170,36 @@ Do this **first**, not last. Every subsequent vector change regenerates the
 files anyway; bumping at the end means one large mechanical diff landing on top
 of the substantive ones, which is where review attention goes to die.
 
-### Phase 1 — corrections with no new syntax (C1, C2)
+### Phase 1 — corrections with no new syntax (C1, C2) — **done**
 
-Prose only. No option ids, no vector regeneration beyond Phase 0.
+Prose only. No option ids, no vector regeneration beyond Phase 0. Shipped as #50
+and #51; C3's shape was also settled here, as the risk table required.
 
-### Phase 2 — additive options (#47, #36, #35)
+### Phase 2 — additive options (#47, #36, #35) — **done**
 
 Each is one option plus its touch list. #35 last, after C2 is settled. Also here:
 the one-sentence disposability statement replacing #37 — prose, no touch list.
 
-### Phase 3 — the one new block (C3)
+Note the touch list won over the phase list: each option's **vector shipped with
+it**, not batched into Phase 4. Missing one of the seven is how the `0.12` defects
+happened, and the checklist only works if it is applied whole.
 
-The only genuinely new syntax in the release, and the only item that can slip
-without taking anything else with it. Its shape is deliberately still open.
+### Phase 3 — the one new block (C3) — **done**
 
-### Phase 4 — vectors (#38, #39, #40, plus one per new feature)
+The only genuinely new syntax in the release, and the only item that could slip
+without taking anything else with it. It did not. Shape settled in Phase 1 as a
+new block type `0x22`; #45 was checked before minting and does not overlap.
 
-### Phase 5 — changelog, conformance sweep, release
+### Phase 4 — vectors (#38, #39, #40, plus one per new feature) — **done**
+
+#38 moved to Phase 0, and the per-feature vectors to Phase 2, so this phase was
+#39 and #40 alone.
+
+### Phase 5 — changelog, conformance sweep, release — **done**
+
+The sweep was not a formality: it found six vectors added in Phases 2–4 and never
+listed in `vectors/README.md`, and a README row still describing
+`reject-unknown-minor` as stamping `13` after Phase 0 made it derive `MINOR + 1`.
 
 ---
 
@@ -513,22 +526,52 @@ commit that carries its fix rather than done in a batch.
 
 ## Definition of done
 
-- [ ] Every issue at its terminal state per [Issue tracker](#issue-tracker) — six
+- [x] Every issue at its terminal state per [Issue tracker](#issue-tracker) — six
       closed on delivery, #37 closed unshipped, #41 split into six, #42 and the
-      #41 umbrella on a `0.14` milestone that exists.
-- [ ] The `0.11` re-stamp promise at `CHANGELOG.md:131` corrected in the `0.13`
-      notes, not left to rot.
-- [x] `python3 vectors/check.py` green; every vector stamps `0.13`. *(Phase 0.
-      Re-check at release — every later phase regenerates the tree.)*
-- [ ] `manifest.json` `format` reads `zipline-payload/0.13` *(done, Phase 0)*,
-      every entry has `violations`.
-- [ ] Each new option appears in all seven places on the touch list.
-- [ ] `CHANGELOG.md` `[0.13]` complete, with **Clarified** entries separated from
+      #41 umbrella on a `0.14` milestone that exists. *The `0.13` milestone reads
+      0 open, 10 closed.*
+- [x] The `0.11` re-stamp promise at `CHANGELOG.md:131` corrected in the `0.13`
+      notes, not left to rot. *(Phase 2, under **Removed**.)*
+- [x] `python3 vectors/check.py` green; every vector stamps `0.13`. *(Re-checked
+      at release: 32 vectors.)*
+- [x] `manifest.json` `format` reads `zipline-payload/0.13` *(Phase 0)*,
+      every entry has `violations` *(Phase 4)*.
+- [x] Each new option appears in all seven places on the touch list. *Audited at
+      release across `0x0054`, `0x0015`, `0x00C1`, `0x00D0`, `0x00D1` and the
+      `0x22` block — no gaps.*
+- [x] `CHANGELOG.md` `[0.13]` complete, with **Clarified** entries separated from
       **Changed** — the distinction tells an implementer whether existing code was
       wrong or merely incomplete, and C1 is a *Clarified*, not a *Changed*.
-- [ ] The spec's "Planned, tracked elsewhere" table (2227–2235) drops the rows
-      that shipped.
+      *There is no **Changed** section at all, and the preamble says so: nothing
+      conformant under `0.12` stops being conformant.*
+- [x] The spec's "Planned, tracked elsewhere" table drops the rows that shipped.
+      *#35 and #36 dropped, #37 dropped as closed-unshipped, #41 reworded to name
+      only what remains.*
 - [x] `docs/VECTOR-DEFECTS.md` marks defect 1 fixed *(Phase 0; defect 2 too — it
       was already fixed in the tree, only its status was stale)*.
-- [ ] No spec sentence still says a decoder only frames, and no reachable text
+- [x] No spec sentence still says a decoder only frames, and no reachable text
       claims a decode-stage output is byte-identical to the region it spans.
+      *(Phase 1; re-checked at release.)*
+
+## What execution changed
+
+Recorded because a plan that is only ever read forwards teaches nothing. Three
+things this document got wrong, and one it deliberately left open:
+
+- **#40's tier.** This plan and the issue both said `isolate`. It shipped
+  `accept`. Enforcing #39's one-violation rule first forced the question, and the
+  file has no violation to declare: it is conformant, it declares its input as
+  *Conformance* requires, and nothing obliges that input to exist at read time.
+  What is absent is a *sibling file*, not a property of the file under test.
+- **#40's shape.** Planned as a fourth file in `chain/`, needing `check_chain()`
+  guarded. Shipped standalone, so `check_chain()` was untouched and `chain/` goes
+  on meaning one thing.
+- **When per-feature vectors land.** The Phases list said Phase 4; the touch list
+  said with the option. The touch list was right and won.
+- **C3's shape**, left open here on purpose, was settled in Phase 1 as block type
+  `0x22` — early enough that a slip decision would have come early too.
+
+One item was deferred rather than dropped: the cross-stage discontinuity splice
+fixture, which cannot be a standalone vector because the break lives in the
+*previous* stage's output. It is [#60](https://github.com/adamkjonsson/zipline/issues/60)
+on `0.14`.
