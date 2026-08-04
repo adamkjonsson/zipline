@@ -16,6 +16,9 @@ verify the fixture against itself, not the specification against anything.
 
 What it does verify:
   * every committed file matches what build.py produces (no drift)
+  * every vector's declared violation count agrees with its declared tier --
+    accept 0, reject 1, isolate 1. The count is declared, never computed from
+    the file; see VIOLATIONS_BY_TIER
   * accept/isolate vectors are well-framed: block walk lands exactly on EOF,
     every length is a multiple of 4, magic and version are what this version
     defines
@@ -37,6 +40,14 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAGIC = 0x5A495046
 MAJOR, MINOR = 0, 13
+
+# How many violations each tier must declare. A negative vector carrying two
+# silently tests whichever the reader detects first, and passes implementations
+# that never exercised the rule it was built for -- isolate-coverage-gap did
+# exactly that through 0.12. This compares the *declared* count against the
+# *declared* tier; it never inspects a file to count them, because a checker that
+# ruled on semantics would become a second normative authority.
+VIOLATIONS_BY_TIER = {'accept': 0, 'reject': 1, 'isolate': 1}
 
 
 class Corrupt(Exception):
@@ -151,6 +162,20 @@ def main():
     failures = []
     for v in manifest['vectors']:
         name, tier = v['name'], v['tier']
+
+        # Every vector declares a violation count, and it must agree with its
+        # tier. Checked before anything else, and for the chain too, so a
+        # fixture cannot dodge it by being shaped differently.
+        if 'violations' not in v:
+            failures.append(f"{name}: no declared violation count")
+        elif v['violations'] != VIOLATIONS_BY_TIER[tier]:
+            failures.append(
+                f"{name}: declares {v['violations']} violation(s) but tier "
+                f"'{tier}' requires exactly {VIOLATIONS_BY_TIER[tier]}. A "
+                f"negative vector carries exactly one violation -- with two it "
+                f"tests whichever a reader detects first. Split it, or fix the "
+                f"vector so it carries only the one it was built for.")
+
         if 'files' in v:          # the chain fixture; check_chain handles it
             continue
         raw = open(os.path.join(HERE, name, f"{name}.zpf"), 'rb').read()

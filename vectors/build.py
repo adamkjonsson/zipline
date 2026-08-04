@@ -275,9 +275,21 @@ def b64(x):
 
 VECTORS = []
 
-def vector(name, tier, summary, spec, blocks, jsonl=None, expect=None):
+def vector(name, tier, summary, spec, blocks, jsonl=None, expect=None, *,
+           violations):
+    """Register a vector.
+
+    `violations` is keyword-only and has NO default, deliberately: a negative
+    vector must carry exactly one violation, and the only way to keep that true
+    is to make every author state the number. Omitting it is a TypeError, so
+    build.py will not run at all -- which is a better moment to find out than a
+    downstream port. check.py then verifies the declared count against the
+    declared tier; nothing here or there inspects the file to count them, because
+    a checker that ruled on semantics would become a second normative authority.
+    """
     VECTORS.append(dict(name=name, tier=tier, summary=summary, spec=spec,
-                        blocks=blocks, jsonl=jsonl, expect=expect))
+                        blocks=blocks, jsonl=jsonl, expect=expect,
+                        violations=violations))
 
 
 # --- baseline -------------------------------------------------------------
@@ -305,6 +317,7 @@ vector(
          "ts": 1000, "flags": ["psh"], "payload": b64(GET),
          "seq_start": 1001, "ack": 5001},
     ],
+    violations=0,
 )
 
 vector(
@@ -366,6 +379,7 @@ vector(
              {"source_id": 1, "session_id": 7, "pid": 1, "extent": 139}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -398,6 +412,7 @@ vector(
          "seq_start": 1001, "ack": 5001},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 # --- the four escapes ------------------------------------------------------
@@ -421,6 +436,7 @@ vector(
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -447,6 +463,7 @@ vector(
          "options": [{"id": "0x0200", "value": b64(b"\xaa\xbb")}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -469,6 +486,7 @@ vector(
          "endpoint": ["10.0.0.1:51000"], "tcp_role": 7},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -494,6 +512,7 @@ vector(
          "ts": 1000, "flags": ["psh", "0x0020"], "payload": b64(b"hi")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 # --- 0.10 constructs -------------------------------------------------------
@@ -549,6 +568,70 @@ vector(
          "decoder_id": 1},
         {"type": "end"},
     ],
+    violations=0,
+)
+
+vector(
+    "broken-chain", "accept",
+    "The provenance walk that FAILS. This file is conformant and reads fine on "
+    "its own -- what is absent is its input: missing.zpf is not in the tree and "
+    "never was. Its Undecoded block is the bytes-exist class, so it promises a "
+    "consumer MAY follow the reference and fetch those bytes; the walk hits the "
+    "first hop and cannot. The two outcomes a consumer MUST NOT report "
+    "identically are 'no bytes exist' (chain resolved, region genuinely empty) "
+    "and 'bytes unavailable' (chain broke). chain/ tests the walk that "
+    "succeeds; this tests the one that does not.",
+    "Undecoded (0x21) -- Recovering the bytes",
+    [
+        file_header(options=[o_produced_by("zpf-decode 0.4"),
+                             o_produced_at(1719600000)]),
+        # The digest is real for a file that is simply not here. A consumer
+        # cannot verify it, and MUST NOT conclude anything from that.
+        source(1, 1, [o_uri("missing.zpf"), o_digest("sha256:d1e5")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"REQ", options=[
+            o_decoder_id(1), o_spans([(1, 0, 7, 0, 18)]),
+            o_content_type("dec:request")]),
+        undecoded(1, 0, 7, 18, 60, [o_reason("undecodable"), o_decoder_id(1)]),
+        session_end(7, [o_input_extents([(1, 0, 7, 60)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "produced_by": "zpf-decode 0.4", "produced_at": 1719600000},
+        {"type": "source", "source_id": 1, "kind": "zpf-input",
+         "uri": "missing.zpf", "digest": "sha256:d1e5"},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 7, "proto": "http"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "payload": b64(b"REQ"), "decoder_id": 1,
+         "spans": [{"source_id": 1, "session_id": 7, "pid": 0,
+                    "off_start": 0, "off_end": 18}],
+         "content_type": "dec:request"},
+        {"type": "undecoded", "source_id": 1, "session_id": 7, "pid": 0,
+         "off_start": 18, "off_end": 60, "reason": "undecodable",
+         "decoder_id": 1},
+        {"type": "session_end", "session_id": 7,
+         "input_extents": [
+             {"source_id": 1, "session_id": 7, "pid": 0, "extent": 60}]},
+        {"type": "end"},
+    ],
+    expect="ACCEPT the file and produce the .jsonl projection -- it is "
+           "conformant, and a decoded file stands alone for its decoded "
+           "content. The test is what happens NEXT, if a consumer chooses to "
+           "recover the undecoded region's bytes: the walk resolves source_id "
+           "1 to missing.zpf, which is not there, so it MUST report the region "
+           "as BYTES UNAVAILABLE and MUST NOT report it as empty or as a hole. "
+           "Reporting 'no bytes here' asserts something the consumer never "
+           "established, and is the silent data loss the coverage guarantee "
+           "exists to prevent. A reader that never walks provenance passes "
+           "this vector trivially and has tested nothing -- the distinction is "
+           "only observable in a consumer that recovers bytes.",
+    violations=0,
 )
 
 vector(
@@ -587,6 +670,7 @@ vector(
                     "off_start": 3, "off_end": 7}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -619,6 +703,7 @@ vector(
          "reason_class": "hole", "decoder_id": 1},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -674,6 +759,7 @@ vector(
              {"source_id": 1, "session_id": 7, "pid": 0, "extent": 200}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -728,6 +814,7 @@ vector(
              {"source_id": 1, "session_id": 9, "pid": 0, "extent": 105}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 UUID = bytes.fromhex("3f2504e04f8911d39a0c0305e82c3301")
@@ -758,6 +845,7 @@ vector(
          "ts": 1000, "payload": b64(b"hi")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -789,6 +877,7 @@ vector(
          "ts": 2100, "payload": b64(b"yo")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -841,6 +930,7 @@ vector(
          "content_type": "dec:response"},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -878,6 +968,7 @@ vector(
          "ts": 2100, "payload": b64(b"a2")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -911,6 +1002,7 @@ vector(
          "ts": 2000, "payload": b64(b"from-alice")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -947,6 +1039,7 @@ vector(
          "ts": 3200, "payload": b64(b"plain2")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 # --- negative: the reject tier --------------------------------------------
@@ -972,6 +1065,7 @@ vector(
            "Descriptor precedes them. A checker that raises this at the "
            "descriptor is guessing; one that never raises it has not deferred "
            "the check.",
+    violations=1,
 )
 
 
@@ -984,6 +1078,7 @@ vector(
     [file_header(magic=0x46495A5A), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file. A reader SHOULD report that the magic looks "
            "byte-swapped, which is a more useful diagnostic than 'not a zpf'.",
+    violations=1,
 )
 
 vector(
@@ -993,6 +1088,7 @@ vector(
     "File Header -- version numbering",
     [file_header(major=1, minor=0), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file.",
+    violations=1,
 )
 
 vector(
@@ -1006,6 +1102,7 @@ vector(
     [file_header(minor=MINOR + 1), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file. This is the vector that distinguishes a 0.x-aware "
            "reader from one that assumes minors are always skippable.",
+    violations=1,
 )
 
 vector(
@@ -1023,6 +1120,7 @@ vector(
       P(u8(0), "_reserved"),
       P(b"\x00\x00", "two bytes to reach the claimed length")]],
     expect="Reject the file.",
+    violations=1,
 )
 
 vector(
@@ -1036,6 +1134,7 @@ vector(
      record(7, 0, 1, 1000, b"hi", payload_len=9999)],
     expect="Reject the file. payload_len exceeds the bytes the block's own "
            "length makes available.",
+    violations=1,
 )
 
 # --- negative: the isolate tier -------------------------------------------
@@ -1056,6 +1155,7 @@ vector(
            "MUST NOT silently drop it without a diagnostic, and MUST NOT "
            "invent the missing declaration. A reader that discards only the "
            "second record and keeps the first is behaving correctly.",
+    violations=1,
 )
 
 vector(
@@ -1068,6 +1168,7 @@ vector(
      session(7, [o_proto("tcp")]),
      end_block()],
     expect="MAY reject the file, or isolate. MUST NOT silently pick one.",
+    violations=1,
 )
 
 vector(
@@ -1089,6 +1190,7 @@ vector(
     expect="MAY reject the file, or isolate the session. The range [10,20) of "
            "input stream (session 7, pid 0) is covered by neither a record's "
            "spans nor an Undecoded block, so the coverage guarantee fails.",
+    violations=1,
 )
 
 vector(
@@ -1114,6 +1216,7 @@ vector(
            "blocks cover only [0,20), so the coverage guarantee fails against "
            "the file's own declaration. A reader that ignores input_extents "
            "sees nothing wrong here, which is what this vector is for.",
+    violations=1,
 )
 
 vector(
@@ -1139,6 +1242,7 @@ vector(
            "at 1076 -- so the Discontinuity is a second, redundant and "
            "potentially contradicting account of the same 25 bytes. A reader "
            "MUST NOT sum the two.",
+    violations=1,
 )
 
 vector(
@@ -1156,6 +1260,7 @@ vector(
     expect="MAY reject the file, or discard the Source together with "
            "everything referencing it. MUST NOT guess a kind. Note this is "
            "the enum case that is NOT a free extension point.",
+    violations=1,
 )
 
 
@@ -1416,7 +1521,8 @@ def main():
                 with open(os.path.join(d, fn), 'wb') as f:
                     f.write(data)
         manifest.append({
-            'name': v['name'], 'tier': v['tier'], 'bytes': len(raw),
+            'name': v['name'], 'tier': v['tier'],
+            'violations': v['violations'], 'bytes': len(raw),
             'summary': v['summary'], 'spec_section': v['spec'],
             'expect': v['expect'] or (
                 'Accept. The .jsonl file is the expected projection.'),
@@ -1424,7 +1530,7 @@ def main():
         })
 
     manifest.append({
-        'name': 'chain', 'tier': 'accept', 'bytes': sum(
+        'name': 'chain', 'tier': 'accept', 'violations': 0, 'bytes': sum(
             len(v) for k, v in chain_files.items() if k.endswith('.zpf')),
         'summary': 'A three-file provenance chain whose digests and offsets '
                    'genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. '
