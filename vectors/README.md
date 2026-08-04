@@ -69,6 +69,15 @@ exercised the rule it was built for. `isolate-coverage-gap` carried two through
 reader could pass it without implementing coverage checking at all. Fixed in
 `0.13`.
 
+Since `0.13` this is **enforced, not just stated**. Every vector declares a
+`violations` count in [`manifest.json`](manifest.json), and `check.py` requires it
+to agree with the tier — 0 for `accept`, 1 for `reject`, 1 for `isolate`. The
+count is declared in [`build.py`](build.py), never computed by inspecting the
+file: a checker that ruled on semantics would become a second normative
+authority, which ground rule 2 forbids. Declaring it is mandatory, so a new
+vector cannot be written without confronting the number, and adding a second
+defect to an existing one fails the build rather than quietly weakening it.
+
 ## Layout
 
 Each vector is a directory:
@@ -170,9 +179,10 @@ What only this fixture can test:
   *input's* streams, and nothing in a decoded file records how long those were —
   so a lone decoded file cannot be verified. Here the parent is present, so
   `check.py` reconstructs `raw.zpf`'s extents from `seq_start - (isn + 1)` and
-  confirms `decoded.zpf` accounts for every byte. That is a concrete
-  demonstration of why *input stream extents* is on the list for a future
-  version.
+  confirms `decoded.zpf` accounts for every byte. That workaround is what
+  `input_extents` (`0x00C1`, added in `0.13`) removes the need for: a file now
+  declares its inputs' lengths itself, so the same arithmetic works on a lone
+  decoded file. The fixture keeps the cross-check honest.
 
 ## Coverage this does not have
 

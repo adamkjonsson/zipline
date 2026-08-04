@@ -275,9 +275,21 @@ def b64(x):
 
 VECTORS = []
 
-def vector(name, tier, summary, spec, blocks, jsonl=None, expect=None):
+def vector(name, tier, summary, spec, blocks, jsonl=None, expect=None, *,
+           violations):
+    """Register a vector.
+
+    `violations` is keyword-only and has NO default, deliberately: a negative
+    vector must carry exactly one violation, and the only way to keep that true
+    is to make every author state the number. Omitting it is a TypeError, so
+    build.py will not run at all -- which is a better moment to find out than a
+    downstream port. check.py then verifies the declared count against the
+    declared tier; nothing here or there inspects the file to count them, because
+    a checker that ruled on semantics would become a second normative authority.
+    """
     VECTORS.append(dict(name=name, tier=tier, summary=summary, spec=spec,
-                        blocks=blocks, jsonl=jsonl, expect=expect))
+                        blocks=blocks, jsonl=jsonl, expect=expect,
+                        violations=violations))
 
 
 # --- baseline -------------------------------------------------------------
@@ -305,6 +317,7 @@ vector(
          "ts": 1000, "flags": ["psh"], "payload": b64(GET),
          "seq_start": 1001, "ack": 5001},
     ],
+    violations=0,
 )
 
 vector(
@@ -366,6 +379,7 @@ vector(
              {"source_id": 1, "session_id": 7, "pid": 1, "extent": 139}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -398,6 +412,7 @@ vector(
          "seq_start": 1001, "ack": 5001},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 # --- the four escapes ------------------------------------------------------
@@ -421,6 +436,7 @@ vector(
         {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -447,6 +463,7 @@ vector(
          "options": [{"id": "0x0200", "value": b64(b"\xaa\xbb")}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -469,6 +486,7 @@ vector(
          "endpoint": ["10.0.0.1:51000"], "tcp_role": 7},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -494,6 +512,7 @@ vector(
          "ts": 1000, "flags": ["psh", "0x0020"], "payload": b64(b"hi")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 # --- 0.10 constructs -------------------------------------------------------
@@ -549,6 +568,7 @@ vector(
          "decoder_id": 1},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -587,6 +607,7 @@ vector(
                     "off_start": 3, "off_end": 7}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -619,6 +640,7 @@ vector(
          "reason_class": "hole", "decoder_id": 1},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -674,6 +696,7 @@ vector(
              {"source_id": 1, "session_id": 7, "pid": 0, "extent": 200}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -728,6 +751,7 @@ vector(
              {"source_id": 1, "session_id": 9, "pid": 0, "extent": 105}]},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 UUID = bytes.fromhex("3f2504e04f8911d39a0c0305e82c3301")
@@ -758,6 +782,7 @@ vector(
          "ts": 1000, "payload": b64(b"hi")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -789,6 +814,7 @@ vector(
          "ts": 2100, "payload": b64(b"yo")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -841,6 +867,7 @@ vector(
          "content_type": "dec:response"},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -878,6 +905,7 @@ vector(
          "ts": 2100, "payload": b64(b"a2")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -911,6 +939,7 @@ vector(
          "ts": 2000, "payload": b64(b"from-alice")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 vector(
@@ -947,6 +976,7 @@ vector(
          "ts": 3200, "payload": b64(b"plain2")},
         {"type": "end"},
     ],
+    violations=0,
 )
 
 # --- negative: the reject tier --------------------------------------------
@@ -972,6 +1002,7 @@ vector(
            "Descriptor precedes them. A checker that raises this at the "
            "descriptor is guessing; one that never raises it has not deferred "
            "the check.",
+    violations=1,
 )
 
 
@@ -984,6 +1015,7 @@ vector(
     [file_header(magic=0x46495A5A), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file. A reader SHOULD report that the magic looks "
            "byte-swapped, which is a more useful diagnostic than 'not a zpf'.",
+    violations=1,
 )
 
 vector(
@@ -993,6 +1025,7 @@ vector(
     "File Header -- version numbering",
     [file_header(major=1, minor=0), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file.",
+    violations=1,
 )
 
 vector(
@@ -1006,6 +1039,7 @@ vector(
     [file_header(minor=MINOR + 1), source(1, 0, [o_uri("c.pcap")])],
     expect="Reject the file. This is the vector that distinguishes a 0.x-aware "
            "reader from one that assumes minors are always skippable.",
+    violations=1,
 )
 
 vector(
@@ -1023,6 +1057,7 @@ vector(
       P(u8(0), "_reserved"),
       P(b"\x00\x00", "two bytes to reach the claimed length")]],
     expect="Reject the file.",
+    violations=1,
 )
 
 vector(
@@ -1036,6 +1071,7 @@ vector(
      record(7, 0, 1, 1000, b"hi", payload_len=9999)],
     expect="Reject the file. payload_len exceeds the bytes the block's own "
            "length makes available.",
+    violations=1,
 )
 
 # --- negative: the isolate tier -------------------------------------------
@@ -1056,6 +1092,7 @@ vector(
            "MUST NOT silently drop it without a diagnostic, and MUST NOT "
            "invent the missing declaration. A reader that discards only the "
            "second record and keeps the first is behaving correctly.",
+    violations=1,
 )
 
 vector(
@@ -1068,6 +1105,7 @@ vector(
      session(7, [o_proto("tcp")]),
      end_block()],
     expect="MAY reject the file, or isolate. MUST NOT silently pick one.",
+    violations=1,
 )
 
 vector(
@@ -1089,6 +1127,7 @@ vector(
     expect="MAY reject the file, or isolate the session. The range [10,20) of "
            "input stream (session 7, pid 0) is covered by neither a record's "
            "spans nor an Undecoded block, so the coverage guarantee fails.",
+    violations=1,
 )
 
 vector(
@@ -1114,6 +1153,7 @@ vector(
            "blocks cover only [0,20), so the coverage guarantee fails against "
            "the file's own declaration. A reader that ignores input_extents "
            "sees nothing wrong here, which is what this vector is for.",
+    violations=1,
 )
 
 vector(
@@ -1139,6 +1179,7 @@ vector(
            "at 1076 -- so the Discontinuity is a second, redundant and "
            "potentially contradicting account of the same 25 bytes. A reader "
            "MUST NOT sum the two.",
+    violations=1,
 )
 
 vector(
@@ -1156,6 +1197,7 @@ vector(
     expect="MAY reject the file, or discard the Source together with "
            "everything referencing it. MUST NOT guess a kind. Note this is "
            "the enum case that is NOT a free extension point.",
+    violations=1,
 )
 
 
@@ -1416,7 +1458,8 @@ def main():
                 with open(os.path.join(d, fn), 'wb') as f:
                     f.write(data)
         manifest.append({
-            'name': v['name'], 'tier': v['tier'], 'bytes': len(raw),
+            'name': v['name'], 'tier': v['tier'],
+            'violations': v['violations'], 'bytes': len(raw),
             'summary': v['summary'], 'spec_section': v['spec'],
             'expect': v['expect'] or (
                 'Accept. The .jsonl file is the expected projection.'),
@@ -1424,7 +1467,7 @@ def main():
         })
 
     manifest.append({
-        'name': 'chain', 'tier': 'accept', 'bytes': sum(
+        'name': 'chain', 'tier': 'accept', 'violations': 0, 'bytes': sum(
             len(v) for k, v in chain_files.items() if k.endswith('.zpf')),
         'summary': 'A three-file provenance chain whose digests and offsets '
                    'genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. '

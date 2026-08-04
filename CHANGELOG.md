@@ -228,6 +228,20 @@ built on the letter of the old text may have been rejecting valid files.
 - **`reject-unknown-minor` now stamps the minor after this one.** It stamped
   `13`, which this release makes valid; it is derived from the current version so
   it keeps testing an unimplemented minor at every future bump.
+- **"One violation per negative vector" is now enforced, not just stated.** It
+  has been a ground rule since the suite began and was never checked — and
+  `isolate-coverage-gap` broke it through `0.12`, carrying both the coverage gap
+  it existed to test and a missing `produced_by`, so a reader could trip on the
+  provenance error and pass it **with coverage checking entirely unimplemented**.
+  Every vector now declares a `violations` count in `manifest.json`, and
+  `check.py` requires it to agree with the tier: 0 for `accept`, 1 for `reject`,
+  1 for `isolate`. Declaring it is mandatory — omitting it fails the build rather
+  than defaulting — so a new vector cannot be written without confronting the
+  number, and adding a second defect to an existing one fails rather than quietly
+  weakening it. The count is **declared, never computed** from the file:
+  `check.py` is deliberately not a conformant reader, and one that ruled on
+  semantics would become a second normative authority. Affects the vector suite
+  only; no change to the format.
 
 ---
 
