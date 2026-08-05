@@ -67,9 +67,11 @@ A corrective release, like `0.11` and `0.12`: it fixes what
 option and no block. Scope and reasoning in
 [docs/RELEASE-0.14-PLAN.md](docs/RELEASE-0.14-PLAN.md).
 
-**Unlike `0.13`, expect a *Changed* section.** Two findings tighten conformance
-rather than clarify it, and burying that under *Clarified* would repeat the kind
-of dishonesty this release exists to correct.
+**Unlike `0.13`, this release has a *Changed* section.** Two findings tighten
+conformance rather than clarify it, and burying that under *Clarified* would
+repeat the kind of dishonesty this release exists to correct. Read those two
+first: a reader that was conformant under `0.13` may not be now. Everything else
+either loosens a rule or fixes text that contradicted itself.
 
 ### Changed
 
@@ -131,6 +133,12 @@ and filing them as one would misreport what an implementer has to do.
 
 ### Fixed
 
+- **`input_extents` states its entry size.** Entries are **20 bytes**, so
+  `count = len / 20` — which the specification had never said. `spans` pins the
+  equivalent down ("each 28 bytes … `count = len / 28`"), and the only place the
+  20 was implied was the chunking cap in the repeatable-ids list, which is not
+  where a parser author looks. A packed type whose entry size a reader has to
+  infer is one an off-by-one hides in.
 - **A decoded stream's offset space is defined once, and now counts declared
   widths.** `0.13` added `width` as a term in the positional arithmetic and
   updated **one** of the three places that say what a decoded stream's offset

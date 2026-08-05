@@ -1383,8 +1383,11 @@ itself. This option supplies the missing number. Each entry is:
 source_id: u16, pid: u16, session_id: u64, extent: u64
 ```
 
-The two u16s lead so the u64s stay 4-byte aligned, as in a
-[span-list](#tlv-option-framing--id-registry) entry. The triple
+Entries are **20 bytes** each, so a parser derives their number as
+`count = len / 20` — stated here for the same reason a
+[span-list](#tlv-option-framing--id-registry) states its 28, since a packed type
+whose entry size a reader has to infer is one an off-by-one hides in. The two u16s
+lead so the u64s stay 4-byte aligned, as in a span-list entry. The triple
 `(source_id, session_id, pid)` names an input participant stream **in the
 source's id namespace**, never this file's — the same rule that governs `spans`
 and `origin`. `extent` is that stream's length in **its own** offset space, as
