@@ -86,8 +86,12 @@ RULES = {
     ),
     "session-fan-out": (
         "a stage's output sessions need not mirror its input's",
-        None,
-    ),  # tracked by issue #66
+        "session-fan-out",
+    ),
+    "coverage-at-least-once": (
+        "two records MAY cite one input region; coverage is at least once",
+        "session-fan-out",
+    ),
     "discontinuity-known-width": (
         "a declared width is a term in the positional arithmetic",
         "discontinuity-known-width",
@@ -107,8 +111,8 @@ RULES = {
     "discontinuity-no-splice": (
         "a stage MUST NOT emit a unit whose spans cross a declared break "
         "without declaring one of its own",
-        None,
-    ),  # tracked by issue #60 -- needs a two-file fixture
+        "splice",
+    ),
     "discontinuity-passthrough-renumber": (
         "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
         "passthrough-discontinuity",
@@ -349,49 +353,77 @@ def check_violations(v: dict) -> list[str]:
     return []
 
 
-def check_jsonl(v: dict, block_count: int) -> list[str]:
-    """Check an accept vector's projection parses and has one line per block."""
-    name = v["name"]
-    path = os.path.join(HERE, name, f"{name}.jsonl")
+def check_jsonl(label: str, path: str, block_count: int) -> list[str]:
+    """Check a projection parses and has one line per block."""
     jl = [x for x in read_text(path).splitlines() if x.strip()]
     out = []
     for i, line in enumerate(jl, 1):
         try:
             json.loads(line)
         except json.JSONDecodeError as e:
-            out.append(f"{name}:{i}: invalid JSON -- {e}")
+            out.append(f"{label}:{i}: invalid JSON -- {e}")
     if len(jl) != block_count:
-        out.append(f"{name}: {block_count} blocks but {len(jl)} JSONL lines")
+        out.append(f"{label}: {block_count} blocks but {len(jl)} JSONL lines")
     return out
 
 
-def check_vector(v: dict) -> list[str]:
-    """Check one vector's bytes against the tier and size the manifest declares."""
-    name, tier = v["name"], v["tier"]
-    out = []
-    raw = read_bytes(os.path.join(HERE, name, f"{name}.zpf"))
-    if len(raw) != v["bytes"]:
-        out.append(f"{name}: manifest says {v['bytes']} bytes, file has {len(raw)}")
+def fixture_files(v: dict) -> list[tuple[str, str]]:
+    """Yield (label, .zpf path) for every file in a fixture.
 
+    A single-file vector lives at <name>/<name>.zpf; a multi-file fixture lists
+    its members in the manifest. Both are walked identically -- before 0.14
+    anything with a `files` key was skipped entirely, so a second multi-file
+    fixture would have been checked by nothing at all.
+    """
+    name = v["name"]
+    if "files" not in v:
+        return [(name, os.path.join(HERE, name, f"{name}.zpf"))]
+    return [
+        (f"{name}/{fn}", os.path.join(HERE, name, fn)) for fn in v["files"] if fn.endswith(".zpf")
+    ]
+
+
+def check_one_file(label: str, path: str, tier: str, has_jsonl: bool) -> list[str]:
+    """Walk one .zpf and check it behaves as its tier says."""
+    out = []
     try:
-        blocks = list(walk(raw))
+        blocks = list(walk(read_bytes(path)))
         corrupt = None
     except Corrupt as e:
         blocks, corrupt = None, str(e)
 
     if tier == "reject":
         if corrupt is None:
-            out.append(f"{name}: claims the reject tier but walks cleanly")
+            out.append(f"{label}: claims the reject tier but walks cleanly")
         else:
-            print(f"  {name}: correctly rejected -- {corrupt}")
+            print(f"  {label}: correctly rejected -- {corrupt}")
         return out
 
     if corrupt is not None:
-        out.append(f"{name}: must be well-framed but {corrupt}")
+        out.append(f"{label}: must be well-framed but {corrupt}")
         return out
-    if v["has_jsonl"]:
-        out += check_jsonl(v, len(blocks))
-    print(f"  {name}: {len(blocks)} blocks, well-framed")
+    if has_jsonl:
+        out += check_jsonl(label, path[: -len(".zpf")] + ".jsonl", len(blocks))
+    print(f"  {label}: {len(blocks)} blocks, well-framed")
+    return out
+
+
+def check_vector(v: dict) -> list[str]:
+    """Check a fixture's bytes against the tier and size the manifest declares.
+
+    Handles single-file vectors and multi-file fixtures alike; `bytes` is the
+    total across the fixture, so it is checked once rather than per file.
+    """
+    name, tier = v["name"], v["tier"]
+    files = fixture_files(v)
+    out = []
+
+    total = sum(len(read_bytes(p)) for _, p in files)
+    if total != v["bytes"]:
+        out.append(f"{name}: manifest says {v['bytes']} bytes, files total {total}")
+
+    for label, path in files:
+        out += check_one_file(label, path, tier, v["has_jsonl"])
     return out
 
 
@@ -412,8 +444,6 @@ def main() -> int:
     failures = []
     for v in manifest["vectors"]:
         failures += check_violations(v)
-        if "files" in v:  # the chain fixture; check_chain handles it
-            continue
         failures += check_vector(v)
 
     failures += check_chain()

@@ -133,6 +133,37 @@ and filing them as one would misreport what an implementer has to do.
 
 ### Fixed
 
+- **Finding 3 is tested end to end**, by the new `splice/` fixture — the
+  conformance test for the MUST NOT above. It could not be a standalone vector:
+  the break lives in stage 1's *output*, so a reader handed only stage 2 has
+  nothing to detect the violation from. `tls-records.zpf` declares a
+  Discontinuity at 50; `http.zpf` emits one record spanning `[0,80)` of that
+  output — straight across it — and declares nothing. The violation belongs to
+  **the pair**: stage 1 breaks no rule, and stage 2 is well-framed with complete
+  coverage and nothing wrong on its face, so **a harness that tests files
+  individually will pass it**.
+
+  It is also the first fixture the checker actually walks. `check.py` skipped any
+  entry with a `files` key and handed it to the chain-specific arithmetic, so the
+  chain's own files had never been checked for framing or projection either, and
+  a second multi-file fixture would have been checked by nothing at all.
+- **Session fan-out is exercised at last**, by `session-fan-out` — one input
+  participant stream demultiplexed into two output sessions. It shipped in `0.13`
+  as a *Clarified* item with nothing testing it, and the gap survived a whole
+  release. It mattered more than an untested permission usually would, because
+  fan-out and `input_extents` interact: **the obvious implementation — accumulate
+  coverage per output session, compare against the extent that session declared —
+  passes every other vector in the suite**, since `session-fan-out` is the only
+  one with more than one output session, and then fails on the first HTTP/2 file
+  it meets. Neither of its sessions covers the extent 200 it declares; only the
+  union across both does.
+
+  Its `[0,80)` is spanned by **both** sessions — one ciphertext record's framing
+  fed an inner unit in each, which is the case that justified permitting overlap
+  in the first place — so it is also the only file exercising *at least once*.
+  Paired with `isolate-extents-disagree`, where two sessions declare **different**
+  extents for one stream, which an input stream having one length makes a
+  contradiction. Both are reachable only because fan-out is legal.
 - **`input_extents` states its entry size.** Entries are **20 bytes**, so
   `count = len / 20` — which the specification had never said. `spans` pins the
   equivalent down ("each 28 bytes … `count = len / 28`"), and the only place the

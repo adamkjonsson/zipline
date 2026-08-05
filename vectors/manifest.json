@@ -398,6 +398,72 @@
       "has_jsonl": true
     },
     {
+      "name": "session-fan-out",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 684,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x00C1"
+      ],
+      "summary": "ONE input participant stream demultiplexed into TWO output sessions -- the capability 0.13 clarified and nothing exercised. A decrypt-and-demux stage: the ciphertext record at [0,80) carries framing that feeds an inner unit in EACH session, so both sessions' records span it and the spans OVERLAP. That is legal since 0.14: coverage requires every offset to be covered at least once, not exactly once, and both units genuinely needed that record's nonce and tag to exist. [80,140) is session 100's alone and [140,200) is session 101's, so NEITHER session covers the extent 200 it declares -- only the union across both does. A checker that accumulates coverage per output session fails here and passes every other vector in the suite; one keyed on the input stream passes.",
+      "spec_section": "Layers -- a stage's sessions need not line up with its input's",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
+      "name": "isolate-extents-disagree",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 508,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x00C1"
+      ],
+      "summary": "Two output sessions drawing on ONE input stream, each declaring a DIFFERENT extent for it: session 100 says 200, session 101 says 160. Both cannot be true -- an input stream has one length, and under fan-out every consuming session declares that whole length, so the two Session Ends contradict each other. Only reachable once fan-out is legal, which is why nothing tested it before 0.14.",
+      "spec_section": "Session End (0x12) -- input_extents under fan-out",
+      "expect": "MAY reject the file, or isolate. Input stream (session 7, pid 0) is declared 200 bytes long by session 100 and 160 by session 101. The specification says every session consuming a stream declares that stream's whole extent, so two sessions declaring different extents for one stream is a contradiction a reader MAY treat as a semantic violation. A reader that checks extents per session, rather than unioning across the sessions that name a stream, will not notice.",
+      "has_jsonl": false
+    },
+    {
       "name": "discontinuity-known-width",
       "tier": "accept",
       "violations": 0,
@@ -983,6 +1049,52 @@
         "raw.hex",
         "raw.jsonl",
         "raw.zpf"
+      ]
+    },
+    {
+      "name": "splice",
+      "tier": "isolate",
+      "violations": 1,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x22",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00A0",
+        "0x00C1",
+        "0x00D1"
+      ],
+      "bytes": 984,
+      "summary": "A decode stage reading across a declared Discontinuity without declaring one of its own. tls-records.zpf is stage 1 and is entirely conformant: two records with a Discontinuity between them, no width, because a lost TLS record's plaintext length is unknowable. http.zpf is stage 2, and it is the violation: one record whose spans cover [0,80) of stage 1's output -- straight across the break at 50 -- with no Discontinuity of its own anywhere. The break is visible at stage 1 and gone at stage 2, which is the original defect one hop along.",
+      "spec_section": "Discontinuity (0x22) -- what a consumer owes the block",
+      "expect": "Accept tls-records.zpf; it breaks no rule. ISOLATE or reject http.zpf: its record splices two regions the input declared non-contiguous, so it reads as one HTTP message where the wire carried two fragments of different ones. Note a reader handed ONLY http.zpf cannot judge it -- the file is well-framed, its coverage is complete, and nothing in it is wrong on its face. The violation is only visible with tls-records.zpf in hand, which is exactly why this is a two-file fixture.",
+      "has_jsonl": true,
+      "files": [
+        "http.hex",
+        "http.jsonl",
+        "http.zpf",
+        "tls-records.hex",
+        "tls-records.jsonl",
+        "tls-records.zpf"
       ]
     }
   ]

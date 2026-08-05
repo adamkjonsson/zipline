@@ -145,6 +145,7 @@ naive implementation most often fails by treating extension as corruption.
 |--------|-------------------|
 | `annotator-decoded` | A pass-through preserving a **decoded** layer — the construct `0.9` could not express. Records keep `decoder_id` and carry no `spans`; the inherited Undecoded block forces the grandparent Source to be declared. |
 | `passthrough-discontinuity` | The **two re-emission rules side by side**: an inherited Undecoded block copied *verbatim* (its statement is about a file further up the chain) next to a Discontinuity *renumbered* to this file's ids (its statement is about the stream carrying it). The input's `(7, 0)` becomes `(42, 1)`, so a verbatim copy is visibly wrong rather than accidentally right. |
+| `session-fan-out` | **One input stream demultiplexed into two output sessions** — the capability `0.13` clarified and nothing exercised. Its `[0,80)` is spanned by *both* sessions, since one ciphertext record's framing fed an inner unit in each, so the spans **overlap** — legal since `0.14`, where coverage became *at least once*. Neither session covers the extent 200 it declares; only the union across both does. **A checker that accumulates coverage per output session fails here and passes every other vector in the suite.** |
 | `undecoded-skipped` | `reason = skipped` for a deliberately-declined region (a BOM). |
 | `undecoded-reason-class` | A non-canonical `reason` carrying the required `reason_class`. |
 | `sequenced-basis` | A hint-less `SEQUENCED` session with its mandatory `sequenced_basis`. |
@@ -181,7 +182,31 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-sequenced-no-basis` | A hint-less `SEQUENCED` session with no `sequenced_basis`. Recording is unconditional — the trivially-sound cases write `trivial` rather than omitting it. **A reader can only raise this at Session End**, since hint-lessness is a property of the records. |
 | `isolate-unknown-source-kind` | An undefined Source `kind` — load-bearing, unlike `tcp_role`, because it decides how span offsets are read. |
 | `isolate-extent-exceeds-coverage` | A Session End declaring an input stream 40 bytes long while `spans` plus Undecoded blocks account for only `[0,20)`. A **trailing** gap — invisible without `input_extents`, which is what distinguishes it from `isolate-coverage-gap`'s interior one. |
+| `isolate-extents-disagree` | Two output sessions drawing on one input stream, declaring **different** extents for it — 200 and 160. An input stream has one length, and under fan-out every consuming session declares that whole length, so the two Session Ends contradict each other. Only reachable once fan-out is legal. |
 | `isolate-discontinuity-in-raw` | A Discontinuity block in a **raw** file. A transport offset space is already hole-inclusive, so the sequence numbers and a declared `width` are two accounts of the same missing bytes, with no rule for which to believe. |
+
+### The splice fixture
+
+`splice/` is the second **multi-file fixture**, and the only negative one. It
+exists because Finding 3 of the `0.13` review cannot be expressed in one file:
+the break lives in stage 1's *output*, so a reader handed only stage 2 has
+nothing to detect the violation from.
+
+```
+tls-records.zpf   stage 1, conformant     http.zpf   stage 2, the violation
+  record   [0,50)                           record spans [0,80) of stage 1's
+  BREAK at 50, no width                     output -- straight across the
+  record   [50,80)                          break -- declaring nothing
+```
+
+Tier `isolate`, and the violation belongs to **the pair**: `tls-records.zpf`
+breaks no rule, and `http.zpf` is well-framed with complete coverage and nothing
+wrong on its face. That is the point — it is only judgeable with its input in
+hand, and a harness that tests files individually will pass it.
+
+It is the conformance test for the MUST NOT added in `0.14`: a decode stage
+reading an input that carries a Discontinuity must not emit a unit whose `spans`
+cross it without declaring one of its own.
 
 ### The provenance chain
 
