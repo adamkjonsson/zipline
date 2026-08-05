@@ -71,6 +71,27 @@ option and no block. Scope and reasoning in
 rather than clarify it, and burying that under *Clarified* would repeat the kind
 of dishonesty this release exists to correct.
 
+### Changed
+
+**These tighten conformance.** A reader or a stage that was conformant under
+`0.13` may not be under `0.14`. Both are corrective in spirit — each forbids
+something the format already intended to forbid — but neither is a *Clarified*,
+and filing them as one would misreport what an implementer has to do.
+
+- **A consumer MUST NOT splice across a Discontinuity.** `0.13` described the
+  block's central duty and never required it: everything about the two sides not
+  joining was descriptive, with no MUST anywhere, in a document otherwise precise
+  about reader duties. A downstream stage could read a Discontinuity, compute
+  every offset correctly, emit a unit whose `spans` cross the break, satisfy the
+  coverage guarantee, **and remain conformant** — leaving the release's flagship
+  block present in files and inert in practice. Two duties now: a consumer MUST
+  NOT treat the records either side as contiguous, and **a decode stage reading an
+  input that carries one MUST NOT emit a unit whose `spans` cross it without
+  emitting a Discontinuity of its own in the corresponding position of its
+  output.** The second is what carries the property down a chain; without it a
+  break is visible at one stage and gone at the next, which is the original defect
+  one hop along.
+
 ### Fixed
 
 - **A decoded stream's offset space is defined once, and now counts declared

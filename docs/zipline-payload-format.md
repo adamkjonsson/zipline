@@ -1680,6 +1680,24 @@ the whole remainder of a stream rather than one hole in it. What the block asser
 is not a length. It asserts that the two sides **do not join**, which is the actual
 defect: a consumer that splices them reads a message that was never sent.
 
+**What a consumer owes the block.** A consumer **MUST NOT** treat the records
+either side of a Discontinuity as contiguous. A decode stage reading an input that
+carries one **MUST NOT** emit a unit whose `spans` cross it without emitting a
+Discontinuity of its own in the corresponding position of its output.
+
+The second duty is what carries the property down a chain, and it is the one worth
+stating explicitly because it is easy to think the first covers it. It does not: a
+stage that honours only the first still consumes the break and emits an output in
+which nothing records it, so the discontinuity is visible at one stage and gone at
+the next — the original defect, one hop along. A stage that genuinely cannot
+express the break in its own output has not satisfied this by staying silent; it
+has to leave the crossing undone.
+
+Without these, the block is inert. A stage could read a Discontinuity, compute
+every offset correctly, splice across it, satisfy the coverage guarantee, and
+remain conformant — which would leave the information recorded and nothing obliged
+to act on it.
+
 **Placement and ordering.** A Discontinuity has no `timestamp`; it takes its
 position from stored order alone, between the records it separates, and it is not
 a record — the [merge](#merge-algorithm) interleaves records and does not emit it
