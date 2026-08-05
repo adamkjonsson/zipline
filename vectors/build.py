@@ -932,6 +932,108 @@ vector(
 )
 
 vector(
+    "passthrough-discontinuity",
+    "accept",
+    "A pass-through preserving a DECODED layer whose input carried a "
+    "Discontinuity. The two re-emission rules sit side by side here: the "
+    "Undecoded block is copied VERBATIM, ids and all, because its statement was "
+    "always about a file further up the chain -- while the Discontinuity is "
+    "RENUMBERED to this file's own ids, because its statement is about the "
+    "stream in the file that carries it. The input's (session 7, pid 0) becomes "
+    "this file's (session 42, pid 1), so a transform that copied the ids "
+    "verbatim produces visibly wrong output rather than accidentally-correct "
+    "output. Note the declared width of 25 is carried forward unchanged: it is "
+    "a term in the positional arithmetic, so dropping it would change the very "
+    "offsets a pass-through exists to preserve.",
+    "Discontinuity (0x22) -- pass-through re-emission",
+    [
+        file_header(options=[o_produced_by("zpf-annotate 0.2"), o_produced_at(1719610000)]),
+        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
+        source(2, 1, [o_uri("tls-records.zpf"), o_digest("sha256:8b3a")]),
+        decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
+        session(42, [o_proto("tls")]),
+        # origin maps this file's 42/1 back to the input's 7/0.
+        participant(42, 1, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
+        record(42, 1, 2, 1000, b"A" * 50, options=[o_decoder_id(1)]),
+        # Inherited: names the GRANDPARENT raw.zpf, copied verbatim.
+        undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
+        # Renumbered: names THIS file's stream, not the input's 7/0.
+        discontinuity(42, 1, [o_width(25), o_disc_reason("tls-record-lost")]),
+        record(42, 1, 2, 1100, b"B" * 30, options=[o_decoder_id(1)]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-annotate 0.2",
+            "produced_at": 1719610000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "raw.zpf",
+            "digest": "sha256:9f2c",
+        },
+        {
+            "type": "source",
+            "source_id": 2,
+            "kind": "zpf-input",
+            "uri": "tls-records.zpf",
+            "digest": "sha256:8b3a",
+        },
+        {"type": "decoder", "decoder_id": 1, "name": "tls-records", "version": "0.2"},
+        {"type": "session", "session_id": 42, "proto": "tls"},
+        {
+            "type": "participant",
+            "session_id": 42,
+            "pid": 1,
+            "endpoint": ["10.0.0.1:51000"],
+            "origin": {"source_id": 2, "session_id": 7, "pid": 0},
+        },
+        {
+            "type": "record",
+            "session_id": 42,
+            "sender_pid": 1,
+            "source_id": 2,
+            "ts": 1000,
+            "payload": b64(b"A" * 50),
+            "decoder_id": 1,
+        },
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 7,
+            "pid": 0,
+            "off_start": 100,
+            "off_end": 139,
+            "reason": "gap",
+            "decoder_id": 1,
+        },
+        {
+            "type": "discontinuity",
+            "session_id": 42,
+            "pid": 1,
+            "width": 25,
+            "reason": "tls-record-lost",
+        },
+        {
+            "type": "record",
+            "session_id": 42,
+            "sender_pid": 1,
+            "source_id": 2,
+            "ts": 1100,
+            "payload": b64(b"B" * 30),
+            "decoder_id": 1,
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
     "broken-chain",
     "accept",
     "The provenance walk that FAILS. This file is conformant and reads fine on "

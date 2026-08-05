@@ -86,6 +86,20 @@ of dishonesty this release exists to correct.
   one normative statement and the other sites refer to it. One consequence is
   spelled out because nothing exercises it: a **decoded** input stream's
   `input_extents` counts declared widths too.
+- **The pass-through rule for Discontinuity is stated once.** §Discontinuity said
+  a pass-through re-emits these "unchanged, exactly as it re-emits Undecoded
+  blocks"; §Conformance said it **renumbers** them, each invoking the comparison
+  to Undecoded to make its point. §Conformance was right, and the wrong copy was
+  in the block's own section — the first place an implementer looks — where it
+  produced references into the *input's* namespace among ids that are otherwise
+  all the pass-through's own, dangling wherever it minted fresh ones. The rule now
+  lives in §Discontinuity alone and §Conformance refers to it. Nothing had tested
+  it: `annotator-decoded` carries an inherited *Undecoded* block only.
+- **A `passthrough-discontinuity` vector**, which would have caught that. It puts
+  both re-emission rules in one file — an Undecoded block copied verbatim beside a
+  Discontinuity renumbered from the input's `(session 7, pid 0)` to this file's
+  `(session 42, pid 1)` — so a transform that copies ids verbatim produces visibly
+  wrong output rather than accidentally-correct output. 36 vectors in total.
 - **Capability coverage is enforced.** `check.py` now parses the option-id
   registry and the block-type table out of the specification and requires every
   entry to appear in some vector, so **new syntax cannot ship uncovered**. Rules —

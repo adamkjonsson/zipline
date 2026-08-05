@@ -1697,10 +1697,23 @@ Undecoded block naming the input range, and a Discontinuity naming its own.
 **A raw file MUST NOT carry one.** A transport stream's offset space is already
 hole-inclusive — a gap occupies a real range that no payload covers — so the break
 is expressible without any block, and the two mechanisms would contradict each
-other. The same goes for a pass-through preserving a transport layer. A
-pass-through preserving a **decoded** layer MUST re-emit its input's Discontinuity
-blocks unchanged, exactly as it re-emits Undecoded blocks: it is obliged to
-preserve logical offsets, and dropping one changes them.
+other. The same goes for a pass-through preserving a transport layer.
+
+**A pass-through preserving a decoded layer carries these forward, renumbered.**
+This is the whole of the rule; *Conformance* refers here rather than restating it.
+Such a transform MUST re-emit every Discontinuity in its input, in its position in
+the participant's stored order and with its `width` unchanged — a declared width is
+a term in the positional arithmetic, so dropping one changes the very offsets a
+pass-through exists to preserve.
+
+**But it re-emits these differently from Undecoded blocks, and the difference is
+the point.** An Undecoded block is copied *verbatim*, ids and all, because its
+statement was always about a file further up the chain. A Discontinuity's ids name
+the stream in the file that carries it, so a pass-through **renumbers** them to
+its own `session_id`/`participant_id` — the same stream, named in the namespace of
+the file now making the statement. Copying them verbatim leaves references into
+the *input's* namespace among ids that are all the pass-through's own, and where
+it minted fresh ones those references dangle.
 
 > **This block is not safe to skip, and it is the only one that is not.** A reader
 > that does not implement type `0x22` MUST skip it by `length` — and then computes
@@ -2070,16 +2083,10 @@ reference, not because this file was derived from it.
   than its immediate input, and it does so because the *statement* being carried
   forward was always about that file.
 
-  It MUST also carry every [Discontinuity](#discontinuity-0x22) block forward, in
-  its position in the participant's stored order and with its `width` unchanged —
-  a declared width is a term in the positional arithmetic, so dropping one changes
-  the very offsets a pass-through exists to preserve. **But it re-emits these
-  differently from Undecoded blocks, and the difference is the point:** an
-  Undecoded block is copied *verbatim*, ids and all, because its statement was
-  always about a file further up the chain. A Discontinuity's ids name the stream
-  in the file that carries it, so a pass-through **renumbers** them to its own
-  `session_id`/`participant_id` — the same stream, named in the namespace of the
-  file now making the statement.
+  It MUST also carry every [Discontinuity](#discontinuity-0x22) block forward,
+  **renumbered to its own ids** — unlike the Undecoded blocks above, which are
+  copied verbatim. See [Discontinuity](#discontinuity-0x22), which states that
+  rule and why the two differ.
 
 **Ordering and sequencing.** A writer **MUST** store each participant's records
 in `seq_start` (logical stream) order; this is what guarantees an unsequenced
