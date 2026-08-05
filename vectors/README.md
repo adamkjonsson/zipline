@@ -7,6 +7,11 @@ failure, for testing an implementation of the
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
 
+Both use **only the standard library**, deliberately: regenerating or verifying
+the vectors must not depend on anything being installed. The linter is the one
+development dependency — `pip install -r ../requirements.txt`, then
+`ruff check .` from the repository root.
+
 ## Ground rules
 
 These four decide whether the vectors are worth anything, so they come first.

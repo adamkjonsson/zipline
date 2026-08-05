@@ -1,0 +1,10 @@
+# Development dependencies for the vector suite.
+#
+#   python3 -m venv .venv && . .venv/bin/activate
+#   pip install -r requirements.txt
+#   ruff check .
+#
+# The suite itself has none: build.py and check.py use only the standard
+# library, deliberately, so that regenerating or verifying the vectors needs
+# nothing installed. This file is for the linter alone.
+ruff==0.16.1
