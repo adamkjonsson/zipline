@@ -73,6 +73,19 @@ of dishonesty this release exists to correct.
 
 ### Fixed
 
+- **A decoded stream's offset space is defined once, and now counts declared
+  widths.** `0.13` added `width` as a term in the positional arithmetic and
+  updated **one** of the three places that say what a decoded stream's offset
+  space *is* — leaving the *defining* statement in *Layers* and the `extent` gloss
+  in *Session End* saying "the concatenation of that participant's record
+  payloads". A consumer following either computed every later range short by
+  `Σ width`; the `discontinuity-known-width` vector exists precisely because the
+  two answers differ visibly (`[75,105)` versus `[50,80)`). The "**not**
+  hole-inclusive" clause was outright false — a known-width Discontinuity makes a
+  decoded stream hole-inclusive in exactly that region. *Layers* now carries the
+  one normative statement and the other sites refer to it. One consequence is
+  spelled out because nothing exercises it: a **decoded** input stream's
+  `input_extents` counts declared widths too.
 - **Capability coverage is enforced.** `check.py` now parses the option-id
   registry and the block-type table out of the specification and requires every
   entry to appear in some vector, so **new syntax cannot ship uncovered**. Rules —
