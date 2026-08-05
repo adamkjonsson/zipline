@@ -103,6 +103,32 @@ and filing them as one would misreport what an implementer has to do.
   narrows the gap between writers that opt in and writers whose output most needs
   checking; it does not close it, and the text now says so.
 
+### Clarified
+
+- **A region is cited by the output unit whose emission it *completed*, and two
+  records MAY cite the same region.** `0.13` put two rules in one sentence that
+  pull apart for exactly the decoders it invokes to justify itself: a region
+  "belongs in a unit's span set when it **fed** that unit", and "every input
+  offset is still accounted for **exactly once**". Under deflate an early region
+  feeds every later unit, so "fed" read literally is the O(n)-spans-per-record
+  explosion the same paragraph had just rejected — and putting it in many span
+  sets contradicts "exactly once". The workable rule, and the one an implementer
+  will reach for, is narrower: the unit it *delivered*, not every unit it
+  influenced.
+
+  The coverage guarantee accordingly requires every offset to be covered **at
+  least once**, not exactly once. **Never both** — spanned *and* marked Undecoded
+  — stays absolute, because that is a contradiction rather than a duplication.
+  Overlap is permitted because a real case needs it: a decryptor's nonce and auth
+  tag *fed* the plaintext, so an inner record honestly spans the whole ciphertext
+  packet, and where one such packet carries **two** output units both were
+  genuinely computed from that same framing. Requiring exactness would force a
+  producer to award those bytes to one of them arbitrarily. The guarantee exists
+  to stop bytes being silently *dropped*; overlap drops nothing.
+
+  **Nothing becomes non-conformant** — this is the one finding in the release that
+  loosens rather than tightens, which is why it is here and not under *Changed*.
+
 ### Fixed
 
 - **A decoded stream's offset space is defined once, and now counts declared

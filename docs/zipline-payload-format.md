@@ -888,11 +888,15 @@ with an explicit **[Undecoded block](#undecoded-0x21)** rather than silently
 dropping bytes. An Undecoded block names a `[off_start, off_end)` range of a
 predecessor stream and a `reason`; it carries **no payload**, only a reference, so
 a consumer that wants the bytes follows the span back toward the raw file. This
-gives the **coverage guarantee**: in a decode stage's output, every region of an input
-participant stream is either covered by a decoded record's `spans` *or* marked
-Undecoded — never silently dropped, never both. Both sides name the input
-stream in the input's own id namespace, so the guarantee is checkable stream
-by stream. A consumer can thus distinguish bytes that exist upstream — "a
+gives the **coverage guarantee**: in a decode stage's output, every region of an
+input participant stream is covered **at least once** by a decoded record's
+`spans` *or* marked Undecoded — never silently dropped, and never both. *At least
+once* is deliberate: two records MAY cite one region (see
+[`spans`](#tlv-option-framing--id-registry)), and overlap drops nothing. *Never
+both* is the part that stays absolute, because a region that is simultaneously
+decoded and declared undecoded is a contradiction rather than a duplication. Both
+sides name the input stream in the input's own id namespace, so the guarantee is
+checkable stream by stream. A consumer can thus distinguish bytes that exist upstream — "a
 message we could not parse" (`reason` = `undecodable`) or "bytes we chose not to
 interpret" (`skipped`) — from "no data here" (`gap`/`truncated`, the offset
 range is a hole with no bytes anywhere), and a re-derivation can target just the
@@ -1902,11 +1906,35 @@ span 16, or 16 000. Decoders that transform — gzip, HPACK, any decryption — 
 expressible for exactly this reason, and the alternative reading is unimplementable:
 deflate is stateful, so a byte mid-stream depends on the whole preceding window,
 and a decoder asserting *everything this unit was computed from* would emit O(n)
-spans per record, with HPACK worse. The rule is instead that a region belongs in a
-unit's span set when it **fed** that unit — which is what makes the
+spans per record, with HPACK worse.
+
+**The workable rule is narrower than "fed".** A region is cited by the output unit
+**whose emission it completed** — the one it finished, not every one it
+influenced. Under deflate an early region feeds every later unit, so "fed" read
+literally is the O(n) explosion this paragraph has just rejected; under the narrow
+reading each region is named once, by the unit it delivered. That is what an
+implementer will do, and it is what makes the
 [coverage guarantee](#coverage-honesty-undecoded-blocks) meaningful without making
-it impossible: every input offset is still accounted for exactly once, by a span or
-by an Undecoded block, whatever the decoder did to the bytes in between.
+it impossible: every input offset is accounted for, by a span or by an Undecoded
+block, whatever the decoder did to the bytes in between.
+
+It is stated as what a producer SHOULD do rather than as a hard rule, because the
+next paragraph permits the case where it cannot be followed exactly.
+
+**Two records MAY cite the same input region.** The coverage guarantee requires
+every offset to be covered **at least once**; it does not require exactly once,
+and overlap between two records' span sets is not a violation. What remains
+forbidden is a region being both spanned and marked Undecoded, which is a
+contradiction rather than a duplication.
+
+The reason to permit it is concrete. A decryptor's nonce and authentication tag
+*fed* the plaintext — they are inputs to the computation — so an inner record
+honestly spans the whole ciphertext packet, framing included. Where one such
+packet decrypts to plaintext carrying **two** output units, both were genuinely
+computed from that same framing, and requiring exactly-once would force a producer
+to award those bytes to one of them arbitrarily. The guarantee exists to stop
+bytes being **silently dropped**; overlap drops nothing, so exactness was doing
+work it was never needed for.
 
 **A span's — and an [Undecoded](#undecoded-0x21) body's — `session_id`/`pid` are
 in the referenced *source's* id namespace, never the current file's.** They name
@@ -2073,9 +2101,10 @@ reference, not because this file was derived from it.
   Source. In a **decode stage's** output it MUST also carry `spans`, and that
   file MUST declare every Decoder it references and account for every input
   region it did not decode with an **Undecoded** block rather than dropping it:
-  within each input participant stream, every offset MUST be covered either by
-  some decoded record's `spans` or by an Undecoded block naming that stream in
-  the source's id namespace (**the coverage guarantee**). The covering spans MAY
+  within each input participant stream, every offset MUST be covered **at least
+  once** by some decoded record's `spans` or by an Undecoded block naming that
+  stream in the source's id namespace, and MUST NOT be both (**the coverage
+  guarantee** — see [Coverage honesty](#coverage-honesty-undecoded-blocks)). The covering spans MAY
   come from records in **different output sessions**: the stage's output sessions
   need not correspond one-to-one with its input's, in either direction, and the
   guarantee is per input participant stream rather than per session exactly so
