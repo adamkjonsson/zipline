@@ -1407,12 +1407,23 @@ so the total they must add up to has to be the same number wherever it is
 declared. Two sessions declaring **different** extents for one stream is a
 contradiction, and a reader MAY treat it as a semantic violation.
 
-A writer that does not know a stream's extent omits the entry. Declaring an
-extent larger than the file's own coverage accounts for is the honest way to say
-"this decode stopped early"; declaring one smaller is a contradiction of the same
-kind as above. Note this is the moment the writer already knows: declare-on-first-use
-puts the Participant Descriptor before any record, when a live decode cannot yet
-know how long a stream will be, whereas at Session End it does.
+**A decode stage that knows an input stream's extent SHOULD declare it.** A writer
+that does not know omits the entry. Declaring an extent larger than the file's own
+coverage accounts for is the honest way to say "this decode stopped early";
+declaring one smaller is a contradiction of the same kind as above. Note Session
+End is the moment the writer already knows: declare-on-first-use puts the
+Participant Descriptor before any record, when a live decode cannot yet know how
+long a stream will be, whereas at Session End it does.
+
+**An absent entry asserts nothing.** It does not mean the extent is unknown, that
+the stage consumed the whole stream, or that it did not. A consumer cannot
+distinguish a writer that did not know, one that did not bother, and one that
+predates this option — and for some time the third will be the common case. So
+absence is neither reassurance nor alarm, and a consumer MUST NOT read it as
+either. That is also the limit of what this option buys: the self-verifiability it
+gives is obtainable only from writers that opt in, which are not the writers whose
+output most needs checking. The `SHOULD` is there to narrow that gap, not to close
+it.
 
 The option is meaningless in a raw file, whose records are the stream rather than
 a derivation of one; a raw file MUST NOT carry it.

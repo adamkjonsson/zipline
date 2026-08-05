@@ -91,6 +91,17 @@ and filing them as one would misreport what an implementer has to do.
   output.** The second is what carries the property down a chain; without it a
   break is visible at one stage and gone at the next, which is the original defect
   one hop along.
+- **A decode stage that knows an input stream's extent SHOULD declare it.**
+  `input_extents` was optional twice over — Session End is `SHOULD`, and the
+  option carried neither `MUST` nor `SHOULD` — so the self-verifiability it exists
+  to give was available only from writers who volunteered. Now also stated, and it
+  is the part a consumer actually needs: **an absent entry asserts nothing.** It
+  does not mean the extent is unknown, that the stage consumed the whole stream,
+  or that it did not; a consumer cannot tell "did not know" from "did not bother"
+  from "predates `0.13`", and for some time the third will be the common case. A
+  consumer MUST NOT read absence as either reassurance or alarm. The `SHOULD`
+  narrows the gap between writers that opt in and writers whose output most needs
+  checking; it does not close it, and the text now says so.
 
 ### Fixed
 
