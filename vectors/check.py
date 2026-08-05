@@ -9,10 +9,11 @@ implementation's test harness; nothing here adjudicates them, because a checker
 that ruled on semantics would become a second normative authority, which is
 exactly what the README says a vector must never be.
 
-The one exception is the `chain` fixture, where a little arithmetic is
-unavoidable: its entire value is that the digests and offsets agree, and a
-fixture whose numbers have silently drifted is worse than none. Those checks
-verify the fixture against itself, not the specification against anything.
+The one exception is `chain/`, where a little arithmetic is unavoidable: its
+entire value is that the digests and offsets agree, and a fixture whose numbers
+have silently drifted is worse than none. Those checks verify the fixture against
+itself, not the specification against anything, and they are specific to those
+three files -- every other check here applies to any fixture.
 
 What it does verify:
   * every committed file matches what build.py produces (no drift)
@@ -25,12 +26,12 @@ What it does verify:
     built the bytes -- nothing here parses a block body
   * accept/isolate vectors are well-framed: block walk lands exactly on EOF,
     every length is a multiple of 4, magic and version are what this version
-    defines
+    defines. Multi-file fixtures are walked file by file, same as any vector
   * reject vectors actually contain the structural defect they claim
   * each accept vector's .jsonl parses and has one line per block
-  * for the chain: every declared digest is the real SHA-256 of the sibling
-    file it names, and decoded.zpf's spans plus Undecoded blocks cover exactly
-    the streams raw.zpf actually contains
+  * for chain/ specifically: every declared digest is the real SHA-256 of the
+    sibling file it names, and decoded.zpf's spans plus Undecoded blocks cover
+    exactly the streams raw.zpf actually contains
 
 Usage:  python3 check.py
 """

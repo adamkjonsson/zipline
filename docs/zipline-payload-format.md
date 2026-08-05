@@ -6,8 +6,9 @@
 > specification that has survived implementation, and this one has not yet.
 > `0.10` was the first revision informed by a real implementation; `0.11` and
 > `0.12` corrected what successive reviews of them found; `0.13` was the first
-> since `0.9` to *add* capability rather than only correct, and `0.14` corrects
-> what the review of it found. More are expected.
+> since `0.9` to *add* capability rather than only correct, and `0.14` corrected
+> what the review of it found — mostly rules this document had stated in more
+> than one place, updating only some of the copies. More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
@@ -2671,7 +2672,7 @@ state and a milestone rather than drifting in prose:
 
 | Extension | Issue |
 |-----------|-------|
-| Decrypted tunnels — **provenance and layer as independent axes**, and sessionization modelled as a reassembly decoder. `0.13` shipped the corrective parts of this: byte-transforming decode, session fan-out, and the [Discontinuity](#discontinuity-0x22) block. What remains rewrites the conceptual model, so it changes what existing files *mean*. | [#41](https://github.com/adamkjonsson/zipline/issues/41) |
+| Decrypted tunnels — **provenance and layer as independent axes**, and sessionization modelled as a reassembly decoder. `0.13` shipped the corrective parts of this: byte-transforming decode, session fan-out, and the [Discontinuity](#discontinuity-0x22) block. What remains rewrites the conceptual model, so it changes what existing files *mean*, and is scheduled together on the `0.15` milestone. | [#41](https://github.com/adamkjonsson/zipline/issues/41) |
 | Per-session integrity counts on Session End | [#43](https://github.com/adamkjonsson/zipline/issues/43) |
 | Random-access index block | [#44](https://github.com/adamkjonsson/zipline/issues/44) |
 | SCTP support | [#45](https://github.com/adamkjonsson/zipline/issues/45) |
