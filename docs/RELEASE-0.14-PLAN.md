@@ -103,7 +103,7 @@ demonstrate.
 
 ## Phases
 
-### Phase 0 — stamp and tooling
+### Phase 0 — stamp and tooling — **done**
 
 1. `MAJOR, MINOR = 0, 14` in `vectors/build.py`; `check.py` to match; regenerate;
    the spec's version sites; open `## [0.14] — unreleased`.
@@ -116,7 +116,7 @@ Stamp first, as `0.13` proved: every later phase regenerates the tree anyway, an
 bumping at the end lands one large mechanical diff on top of the diffs that need
 reading.
 
-### Phase 1 — the contradictions (#63, #64)
+### Phase 1 — the contradictions (#63, #64) — **done**
 
 The two `high` spec findings, and the two that produce wrong output rather than
 ambiguity. #64 ships with its vector — a decoded-layer pass-through carrying an
@@ -128,7 +128,7 @@ single normative statement, including declared widths and the narrowed
 hole-inclusive clause, and reduce the `input_extents` gloss to a reference. Three
 copies is what caused the finding; fixing two of them leaves the third to rot.
 
-### Phase 2 — the precision fixes (#65, #67, #68, #69)
+### Phase 2 — the precision fixes (#65, #67, #68, #69) — **done**
 
 Prose. #65 and #67 are the two that tighten conformance, so draft their changelog
 entries as **Changed** while writing them, not at release.
@@ -136,7 +136,7 @@ entries as **Changed** while writing them, not at release.
 #68 also decides span-on-span overlap and, if it is a violation, adds an
 `isolate` vector for it.
 
-### Phase 3 — vectors (#66, #60)
+### Phase 3 — vectors (#66, #60) — **done**
 
 After #63 has settled the arithmetic and #65 the duty.
 
@@ -147,7 +147,7 @@ After #63 has settled the arithmetic and #65 the duty.
   different extents for one stream.
 - **#60** — the two-file splice fixture, on the generalised multi-file shape.
 
-### Phase 4 — changelog, conformance sweep, release
+### Phase 4 — changelog, conformance sweep, release — **done**
 
 Run #70's tool over the finished release. Then the sweep, with the restatement
 grep as a required step rather than a good intention.
@@ -168,20 +168,63 @@ grep as a required step rather than a good intention.
 
 ## Definition of done
 
-- [ ] All nine issues closed, each in the commit that finishes it.
-- [ ] A decoded stream's offset space is defined **once**, includes declared
+- [x] All nine issues closed, each in the commit that finishes it.
+- [x] A decoded stream's offset space is defined **once**, includes declared
       widths, and the other two sites reference it rather than re-glossing it.
-- [ ] §Discontinuity and §Conformance agree on pass-through re-emission, and a
-      vector demonstrates the renumbering.
-- [ ] A consumer's duty at a Discontinuity is a **MUST NOT**, and the chain-carrying
+      *The grep found two further partial copies in §Discontinuity that the
+      review had not listed — three was an undercount.*
+- [x] §Discontinuity and §Conformance agree on pass-through re-emission, and a
+      vector demonstrates the renumbering. *Fixed by collapsing to one statement
+      rather than making the copies agree.*
+- [x] A consumer's duty at a Discontinuity is a **MUST NOT**, and the chain-carrying
       half of it is too.
-- [ ] Span-on-span overlap is settled explicitly, either way.
-- [ ] Fan-out is exercised: a demux vector on which a per-session coverage checker
-      fails and a per-stream one passes.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.14`.
-- [ ] #70's tool reports no capability added or clarified in `0.14` without a
-      vector naming it.
-- [ ] `CHANGELOG.md` `[0.14]` complete, **with a `Changed` section** covering #65
+- [x] Span-on-span overlap is settled explicitly, either way. *Permitted; the
+      guarantee became at-least-once.*
+- [x] Fan-out is exercised: a demux vector on which a per-session coverage checker
+      fails and a per-stream one passes. *Both checkers were implemented and run
+      against the shipped file rather than reasoned about.*
+- [x] `python3 vectors/check.py` green; every vector stamps `0.14`. *39 entries.*
+- [x] #70's tool reports no capability added or clarified in `0.14` without a
+      vector naming it. *37 options, 12 blocks, 9 rules, all exercised.*
+- [x] `CHANGELOG.md` `[0.14]` complete, **with a `Changed` section** covering #65
       and #67.
-- [ ] Every vector in `manifest.json` appears in `vectors/README.md` — the check
+- [x] Every vector in `manifest.json` appears in `vectors/README.md` — the check
       `0.13`'s sweep had to invent after finding six missing.
+
+## What execution changed
+
+Recorded because a plan only ever read forwards teaches nothing. Six things this
+document or the review got wrong, and one the plan did not anticipate:
+
+- **#64's fix.** The review asked to correct the wrong copy so the two agreed.
+  Shipped by collapsing to one normative statement in §Discontinuity, because two
+  statements of one rule is the condition that produced the finding. Same
+  treatment as #63, in the same phase.
+- **#60's shape**, and what building it exposed. It shipped as a self-contained
+  pair rather than riding on `chain/` — and writing it revealed that `check.py`
+  skipped *any* entry with a `files` key, so **`chain/`'s own three files had
+  never been walked** for framing or projection either. Fixed first, in its own
+  commit, before the fixture that needed it.
+- **#66's demux vector overlaps rather than partitions.** The review proposed a
+  clean partition; #68 landed first and made coverage *at least once*, so a
+  partitioning vector would have left the loosened rule exercised by nothing.
+  Complete overlap would have been worse than either — each session would cover
+  its declared extent alone and a per-session checker would pass.
+- **#68's open sub-question answered as *permitted*.** The review could not settle
+  it from the text. The deciding case came from `0.13`'s own correspondence
+  clarification: a decryptor's nonce and tag *fed* the plaintext, so where one
+  ciphertext record yields two output units both genuinely span the framing.
+- **#70's first run found eight coverage gaps, not the five estimated.** The
+  estimate had counted helper *definitions* in `build.py` as uses. The notable
+  one: `params_digest`, the option the whole reproducibility contract is stated
+  against, had never appeared in a vector.
+- **The restatement grep can miss a line-wrapped copy.** The `0.14` sweep nearly
+  missed a third statement of the coverage guarantee because the phrase spanned a
+  line break. The check is worth keeping and worth distrusting; grep for the rule,
+  then read the section.
+
+Not anticipated by the plan: **#65's `RULES` entry deliberately left the suite red
+for two phases**, from Phase 2 until #60 landed in Phase 3. That was the right
+state — the rule existed in the specification and its vector did not — but it
+means "green" was not a usable signal mid-release, and a future plan should say so
+up front rather than discovering it.

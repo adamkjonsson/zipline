@@ -185,10 +185,17 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-extents-disagree` | Two output sessions drawing on one input stream, declaring **different** extents for it — 200 and 160. An input stream has one length, and under fan-out every consuming session declares that whole length, so the two Session Ends contradict each other. Only reachable once fan-out is legal. |
 | `isolate-discontinuity-in-raw` | A Discontinuity block in a **raw** file. A transport offset space is already hole-inclusive, so the sequence numbers and a declared `width` are two accounts of the same missing bytes, with no rule for which to believe. |
 
+## Multi-file fixtures
+
+Two directories are **fixtures** rather than vectors: several files that only mean
+anything together, because what they test is a relationship *between* files.
+`check.py` walks each member exactly as it walks a single-file vector — framing,
+projection, the lot — and adds arithmetic specific to `chain/` on top.
+
 ### The splice fixture
 
-`splice/` is the second **multi-file fixture**, and the only negative one. It
-exists because Finding 3 of the `0.13` review cannot be expressed in one file:
+`splice/` is the negative one. It exists because Finding 3 of the `0.13` review
+cannot be expressed in one file:
 the break lives in stage 1's *output*, so a reader handed only stage 2 has
 nothing to detect the violation from.
 
@@ -210,8 +217,8 @@ cross it without declaring one of its own.
 
 ### The provenance chain
 
-`chain/` is not a vector but a **fixture**: three files whose digests and offsets
-genuinely agree, so the things a single file cannot exercise become testable.
+`chain/` is the positive one: three files whose digests and offsets genuinely
+agree, so the things a single file cannot exercise become testable.
 
 ```
 cap.pcap ──[sessionize]──▶ raw.zpf ──[http decode]──▶ decoded.zpf

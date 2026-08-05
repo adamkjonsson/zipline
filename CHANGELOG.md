@@ -60,12 +60,20 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.14] — unreleased
+## [0.14] — 2026-08-06
 
-A corrective release, like `0.11` and `0.12`: it fixes what
-[python-zipline's review of `0.13`](docs/SPEC-0.13-REVIEW.md) found and adds no
-option and no block. Scope and reasoning in
-[docs/RELEASE-0.14-PLAN.md](docs/RELEASE-0.14-PLAN.md).
+A corrective release, like `0.11` and `0.12`: it fixes all seven findings of
+[python-zipline's review of `0.13`](docs/SPEC-0.13-REVIEW.md) and adds no option
+and no block. Scope and reasoning in
+[docs/RELEASE-0.14-PLAN.md](docs/RELEASE-0.14-PLAN.md); every item is a closed
+issue on the [`0.14` milestone](https://github.com/adamkjonsson/zipline/milestone/2).
+
+Three of the seven were **rules the specification stated in more than one place,
+with only some copies updated** when `0.13` changed them — one of which
+contradicted itself outright. That is the pattern worth taking away from this
+release, and the reason `check.py` now enforces capability coverage and the
+release checklist requires grepping every restatement of a rule before it is
+called done.
 
 **Unlike `0.13`, this release has a *Changed* section.** Two findings tighten
 conformance rather than clarify it, and burying that under *Clarified* would
@@ -132,44 +140,6 @@ and filing them as one would misreport what an implementer has to do.
   loosens rather than tightens, which is why it is here and not under *Changed*.
 
 ### Fixed
-
-- **Finding 3 is tested end to end**, by the new `splice/` fixture — the
-  conformance test for the MUST NOT above. It could not be a standalone vector:
-  the break lives in stage 1's *output*, so a reader handed only stage 2 has
-  nothing to detect the violation from. `tls-records.zpf` declares a
-  Discontinuity at 50; `http.zpf` emits one record spanning `[0,80)` of that
-  output — straight across it — and declares nothing. The violation belongs to
-  **the pair**: stage 1 breaks no rule, and stage 2 is well-framed with complete
-  coverage and nothing wrong on its face, so **a harness that tests files
-  individually will pass it**.
-
-  It is also the first fixture the checker actually walks. `check.py` skipped any
-  entry with a `files` key and handed it to the chain-specific arithmetic, so the
-  chain's own files had never been checked for framing or projection either, and
-  a second multi-file fixture would have been checked by nothing at all.
-- **Session fan-out is exercised at last**, by `session-fan-out` — one input
-  participant stream demultiplexed into two output sessions. It shipped in `0.13`
-  as a *Clarified* item with nothing testing it, and the gap survived a whole
-  release. It mattered more than an untested permission usually would, because
-  fan-out and `input_extents` interact: **the obvious implementation — accumulate
-  coverage per output session, compare against the extent that session declared —
-  passes every other vector in the suite**, since `session-fan-out` is the only
-  one with more than one output session, and then fails on the first HTTP/2 file
-  it meets. Neither of its sessions covers the extent 200 it declares; only the
-  union across both does.
-
-  Its `[0,80)` is spanned by **both** sessions — one ciphertext record's framing
-  fed an inner unit in each, which is the case that justified permitting overlap
-  in the first place — so it is also the only file exercising *at least once*.
-  Paired with `isolate-extents-disagree`, where two sessions declare **different**
-  extents for one stream, which an input stream having one length makes a
-  contradiction. Both are reachable only because fan-out is legal.
-- **`input_extents` states its entry size.** Entries are **20 bytes**, so
-  `count = len / 20` — which the specification had never said. `spans` pins the
-  equivalent down ("each 28 bytes … `count = len / 28`"), and the only place the
-  20 was implied was the chunking cap in the repeatable-ids list, which is not
-  where a parser author looks. A packed type whose entry size a reader has to
-  infer is one an off-by-one hides in.
 - **A decoded stream's offset space is defined once, and now counts declared
   widths.** `0.13` added `width` as a term in the positional arithmetic and
   updated **one** of the three places that say what a decoded stream's offset
@@ -197,6 +167,12 @@ and filing them as one would misreport what an implementer has to do.
   Discontinuity renumbered from the input's `(session 7, pid 0)` to this file's
   `(session 42, pid 1)` — so a transform that copies ids verbatim produces visibly
   wrong output rather than accidentally-correct output. 36 vectors in total.
+- **`input_extents` states its entry size.** Entries are **20 bytes**, so
+  `count = len / 20` — which the specification had never said. `spans` pins the
+  equivalent down ("each 28 bytes … `count = len / 28`"), and the only place the
+  20 was implied was the chunking cap in the repeatable-ids list, which is not
+  where a parser author looks. A packed type whose entry size a reader has to
+  infer is one an off-by-one hides in.
 - **Capability coverage is enforced.** `check.py` now parses the option-id
   registry and the block-type table out of the specification and requires every
   entry to appear in some vector, so **new syntax cannot ship uncovered**. Rules —
@@ -215,6 +191,37 @@ and filing them as one would misreport what an implementer has to do.
   `decoded-basic`'s Decoder gains `params_digest` — **the option the whole
   reproducibility contract is stated against, and it had never appeared in a
   vector.** 35 in total.
+- **Session fan-out is exercised at last**, by `session-fan-out` — one input
+  participant stream demultiplexed into two output sessions. It shipped in `0.13`
+  as a *Clarified* item with nothing testing it, and the gap survived a whole
+  release. It mattered more than an untested permission usually would, because
+  fan-out and `input_extents` interact: **the obvious implementation — accumulate
+  coverage per output session, compare against the extent that session declared —
+  passes every other vector in the suite**, since `session-fan-out` is the only
+  one with more than one output session, and then fails on the first HTTP/2 file
+  it meets. Neither of its sessions covers the extent 200 it declares; only the
+  union across both does.
+
+  Its `[0,80)` is spanned by **both** sessions — one ciphertext record's framing
+  fed an inner unit in each, which is the case that justified permitting overlap
+  in the first place — so it is also the only file exercising *at least once*.
+  Paired with `isolate-extents-disagree`, where two sessions declare **different**
+  extents for one stream, which an input stream having one length makes a
+  contradiction. Both are reachable only because fan-out is legal.
+- **Finding 3 is tested end to end**, by the new `splice/` fixture — the
+  conformance test for the MUST NOT above. It could not be a standalone vector:
+  the break lives in stage 1's *output*, so a reader handed only stage 2 has
+  nothing to detect the violation from. `tls-records.zpf` declares a
+  Discontinuity at 50; `http.zpf` emits one record spanning `[0,80)` of that
+  output — straight across it — and declares nothing. The violation belongs to
+  **the pair**: stage 1 breaks no rule, and stage 2 is well-framed with complete
+  coverage and nothing wrong on its face, so **a harness that tests files
+  individually will pass it**.
+
+  It is also the first fixture the checker actually walks. `check.py` skipped any
+  entry with a `files` key and handed it to the chain-specific arithmetic, so the
+  chain's own files had never been checked for framing or projection either, and
+  a second multi-file fixture would have been checked by nothing at all.
 
 ---
 
@@ -882,7 +889,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...HEAD
+[0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14
 [0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13
 [0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12
 [0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...v0.11
