@@ -104,6 +104,11 @@ RULES = {
         "bytes unavailable is not the same as no bytes exist",
         "broken-chain",
     ),
+    "discontinuity-no-splice": (
+        "a stage MUST NOT emit a unit whose spans cross a declared break "
+        "without declaring one of its own",
+        None,
+    ),  # tracked by issue #60 -- needs a two-file fixture
     "discontinuity-passthrough-renumber": (
         "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
         "passthrough-discontinuity",

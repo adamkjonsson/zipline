@@ -67,12 +67,78 @@ A corrective release, like `0.11` and `0.12`: it fixes what
 option and no block. Scope and reasoning in
 [docs/RELEASE-0.14-PLAN.md](docs/RELEASE-0.14-PLAN.md).
 
-**Unlike `0.13`, expect a *Changed* section.** Two findings tighten conformance
-rather than clarify it, and burying that under *Clarified* would repeat the kind
-of dishonesty this release exists to correct.
+**Unlike `0.13`, this release has a *Changed* section.** Two findings tighten
+conformance rather than clarify it, and burying that under *Clarified* would
+repeat the kind of dishonesty this release exists to correct. Read those two
+first: a reader that was conformant under `0.13` may not be now. Everything else
+either loosens a rule or fixes text that contradicted itself.
+
+### Changed
+
+**These tighten conformance.** A reader or a stage that was conformant under
+`0.13` may not be under `0.14`. Both are corrective in spirit — each forbids
+something the format already intended to forbid — but neither is a *Clarified*,
+and filing them as one would misreport what an implementer has to do.
+
+- **A consumer MUST NOT splice across a Discontinuity.** `0.13` described the
+  block's central duty and never required it: everything about the two sides not
+  joining was descriptive, with no MUST anywhere, in a document otherwise precise
+  about reader duties. A downstream stage could read a Discontinuity, compute
+  every offset correctly, emit a unit whose `spans` cross the break, satisfy the
+  coverage guarantee, **and remain conformant** — leaving the release's flagship
+  block present in files and inert in practice. Two duties now: a consumer MUST
+  NOT treat the records either side as contiguous, and **a decode stage reading an
+  input that carries one MUST NOT emit a unit whose `spans` cross it without
+  emitting a Discontinuity of its own in the corresponding position of its
+  output.** The second is what carries the property down a chain; without it a
+  break is visible at one stage and gone at the next, which is the original defect
+  one hop along.
+- **A decode stage that knows an input stream's extent SHOULD declare it.**
+  `input_extents` was optional twice over — Session End is `SHOULD`, and the
+  option carried neither `MUST` nor `SHOULD` — so the self-verifiability it exists
+  to give was available only from writers who volunteered. Now also stated, and it
+  is the part a consumer actually needs: **an absent entry asserts nothing.** It
+  does not mean the extent is unknown, that the stage consumed the whole stream,
+  or that it did not; a consumer cannot tell "did not know" from "did not bother"
+  from "predates `0.13`", and for some time the third will be the common case. A
+  consumer MUST NOT read absence as either reassurance or alarm. The `SHOULD`
+  narrows the gap between writers that opt in and writers whose output most needs
+  checking; it does not close it, and the text now says so.
+
+### Clarified
+
+- **A region is cited by the output unit whose emission it *completed*, and two
+  records MAY cite the same region.** `0.13` put two rules in one sentence that
+  pull apart for exactly the decoders it invokes to justify itself: a region
+  "belongs in a unit's span set when it **fed** that unit", and "every input
+  offset is still accounted for **exactly once**". Under deflate an early region
+  feeds every later unit, so "fed" read literally is the O(n)-spans-per-record
+  explosion the same paragraph had just rejected — and putting it in many span
+  sets contradicts "exactly once". The workable rule, and the one an implementer
+  will reach for, is narrower: the unit it *delivered*, not every unit it
+  influenced.
+
+  The coverage guarantee accordingly requires every offset to be covered **at
+  least once**, not exactly once. **Never both** — spanned *and* marked Undecoded
+  — stays absolute, because that is a contradiction rather than a duplication.
+  Overlap is permitted because a real case needs it: a decryptor's nonce and auth
+  tag *fed* the plaintext, so an inner record honestly spans the whole ciphertext
+  packet, and where one such packet carries **two** output units both were
+  genuinely computed from that same framing. Requiring exactness would force a
+  producer to award those bytes to one of them arbitrarily. The guarantee exists
+  to stop bytes being silently *dropped*; overlap drops nothing.
+
+  **Nothing becomes non-conformant** — this is the one finding in the release that
+  loosens rather than tightens, which is why it is here and not under *Changed*.
 
 ### Fixed
 
+- **`input_extents` states its entry size.** Entries are **20 bytes**, so
+  `count = len / 20` — which the specification had never said. `spans` pins the
+  equivalent down ("each 28 bytes … `count = len / 28`"), and the only place the
+  20 was implied was the chunking cap in the repeatable-ids list, which is not
+  where a parser author looks. A packed type whose entry size a reader has to
+  infer is one an off-by-one hides in.
 - **A decoded stream's offset space is defined once, and now counts declared
   widths.** `0.13` added `width` as a term in the positional arithmetic and
   updated **one** of the three places that say what a decoded stream's offset
