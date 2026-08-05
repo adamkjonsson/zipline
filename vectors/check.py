@@ -111,8 +111,8 @@ RULES = {
     "discontinuity-no-splice": (
         "a stage MUST NOT emit a unit whose spans cross a declared break "
         "without declaring one of its own",
-        None,
-    ),  # tracked by issue #60 -- needs a two-file fixture
+        "splice",
+    ),
     "discontinuity-passthrough-renumber": (
         "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
         "passthrough-discontinuity",
@@ -379,9 +379,7 @@ def fixture_files(v: dict) -> list[tuple[str, str]]:
     if "files" not in v:
         return [(name, os.path.join(HERE, name, f"{name}.zpf"))]
     return [
-        (f"{name}/{fn}", os.path.join(HERE, name, fn))
-        for fn in v["files"]
-        if fn.endswith(".zpf")
+        (f"{name}/{fn}", os.path.join(HERE, name, fn)) for fn in v["files"] if fn.endswith(".zpf")
     ]
 
 

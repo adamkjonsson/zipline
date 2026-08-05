@@ -2284,16 +2284,56 @@ TAIL = b"\x00\x01\x02\x03"  # 4, undecodable
 DEC_REQ = b"REQ:GET /"  # 9  -> decoded pid 0 offsets [0,9)
 DEC_RESP = b"RESP:200"  # 8  -> decoded pid 1 offsets [0,8)
 
-CHAIN = []
+# Multi-file fixtures. Some things a single file cannot express -- a provenance
+# walk, or one stage's output being another stage's input -- so a fixture is a
+# directory of files that only mean anything together. FIXTURES maps the
+# directory to its manifest entry; each member file is appended by member().
+FIXTURES: dict[str, dict] = {}
+
+
+def member(fixture: str, name: str, summary: str, blocks: list[Blk], jsonl: list[dict]) -> bytes:
+    """Add one file to a multi-file fixture.
+
+    Returns its bytes, so the next file in the fixture can cite its digest.
+    """
+    FIXTURES[fixture]["members"].append(
+        {"name": name, "summary": summary, "blocks": blocks, "jsonl": jsonl}
+    )
+    return to_bytes(assemble(blocks))
+
+
+def fixture(name: str, tier: str, summary: str, spec: str, expect: str, *, violations: int) -> None:
+    """Declare a multi-file fixture. Its files are added by member()."""
+    FIXTURES[name] = {
+        "name": name,
+        "tier": tier,
+        "summary": summary,
+        "spec": spec,
+        "expect": expect,
+        "violations": violations,
+        "members": [],
+    }
 
 
 def chain_file(name: str, summary: str, blocks: list[Blk], jsonl: list[dict]) -> bytes:
-    CHAIN.append({"name": name, "summary": summary, "blocks": blocks, "jsonl": jsonl})
-    return to_bytes(assemble(blocks))
+    return member("chain", name, summary, blocks, jsonl)
 
 
 def build_chain() -> None:
     """Build the three files in order, hashing each so the next can cite it."""
+    fixture(
+        "chain",
+        "accept",
+        "A three-file provenance chain whose digests and offsets genuinely "
+        "agree: raw.zpf -> decoded.zpf -> annotated.zpf. The only fixture where "
+        "the recovery walk, two-hop resolution and digest verification can be "
+        "exercised.",
+        "Layers; Coverage honesty; Annotating a decoded file",
+        "Accept all three. Each .jsonl is the expected projection. Each declared "
+        "digest is the real SHA-256 of the sibling file it names, so a reader "
+        "can verify the chain.",
+        violations=0,
+    )
     raw_blocks = [
         file_header(options=[o_creator("zpf-sessionize 1.0")]),
         source(1, 0, [o_uri("cap.pcap")]),
@@ -2551,6 +2591,189 @@ def build_chain() -> None:
     )
 
 
+def build_splice() -> None:
+    """Build Finding 3 end to end: a stage splicing across a declared break.
+
+    This cannot be a standalone vector. The break lives in stage 1's OUTPUT, so
+    a reader handed only stage 2's file has nothing to detect the violation
+    from -- which is why it needs two files and why it waited for a fixture
+    shape that supports them.
+    """
+    fixture(
+        "splice",
+        "isolate",
+        "A decode stage reading across a declared Discontinuity without "
+        "declaring one of its own. tls-records.zpf is stage 1 and is entirely "
+        "conformant: two records with a Discontinuity between them, no width, "
+        "because a lost TLS record's plaintext length is unknowable. http.zpf "
+        "is stage 2, and it is the violation: one record whose spans cover "
+        "[0,80) of stage 1's output -- straight across the break at 50 -- with "
+        "no Discontinuity of its own anywhere. The break is visible at stage 1 "
+        "and gone at stage 2, which is the original defect one hop along.",
+        "Discontinuity (0x22) -- what a consumer owes the block",
+        "Accept tls-records.zpf; it breaks no rule. ISOLATE or reject "
+        "http.zpf: its record splices two regions the input declared "
+        "non-contiguous, so it reads as one HTTP message where the wire "
+        "carried two fragments of different ones. Note a reader handed ONLY "
+        "http.zpf cannot judge it -- the file is well-framed, its coverage is "
+        "complete, and nothing in it is wrong on its face. The violation is "
+        "only visible with tls-records.zpf in hand, which is exactly why this "
+        "is a two-file fixture.",
+        violations=1,
+    )
+
+    # Stage 1: the tls-records decoder. Conformant.
+    stage1_blocks = [
+        file_header(options=[o_produced_by("zpf-tls 0.2"), o_produced_at(1719640000)]),
+        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
+        decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
+        session(7, [o_proto("tls")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
+        undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
+        # No width: the plaintext length the lost ciphertext would have
+        # produced is not recoverable, so it contributes 0 and the two records
+        # remain numerically adjacent at 50 -- which is the whole hazard.
+        discontinuity(7, 0, [o_disc_reason("tls-record-lost")]),
+        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 0, 7, 139, 200)])]),
+        session_end(7, [o_input_extents([(1, 0, 7, 200)])]),
+        end_block(),
+    ]
+    stage1 = member(
+        "splice",
+        "tls-records",
+        "Stage 1. Conformant: it declares the break its decoder found.",
+        stage1_blocks,
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-tls 0.2",
+                "produced_at": 1719640000,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "raw.zpf",
+                "digest": "sha256:9f2c",
+            },
+            {"type": "decoder", "decoder_id": 1, "name": "tls-records", "version": "0.2"},
+            {"type": "session", "session_id": 7, "proto": "tls"},
+            {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+            {
+                "type": "record",
+                "session_id": 7,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000,
+                "payload": b64(b"A" * 50),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 7, "pid": 0, "off_start": 0, "off_end": 100}
+                ],
+            },
+            {
+                "type": "undecoded",
+                "source_id": 1,
+                "session_id": 7,
+                "pid": 0,
+                "off_start": 100,
+                "off_end": 139,
+                "reason": "gap",
+                "decoder_id": 1,
+            },
+            {"type": "discontinuity", "session_id": 7, "pid": 0, "reason": "tls-record-lost"},
+            {
+                "type": "record",
+                "session_id": 7,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1100,
+                "payload": b64(b"B" * 30),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 7, "pid": 0, "off_start": 139, "off_end": 200}
+                ],
+            },
+            {
+                "type": "session_end",
+                "session_id": 7,
+                "input_extents": [{"source_id": 1, "session_id": 7, "pid": 0, "extent": 200}],
+            },
+            {"type": "end"},
+        ],
+    )
+    stage1_dg = "sha256:" + hashlib.sha256(stage1).hexdigest()
+
+    # Stage 2: the http decoder, reading stage 1's OUTPUT space. The violation.
+    stage2_blocks = [
+        file_header(options=[o_produced_by("zpf-http 0.4"), o_produced_at(1719650000)]),
+        source(1, 1, [o_uri("tls-records.zpf"), o_digest(stage1_dg)]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        # THE VIOLATION: [0,80) crosses the break at 50, and this file declares
+        # no Discontinuity of its own.
+        record(
+            7,
+            0,
+            1,
+            1000,
+            b"GET /spliced",
+            options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 80)]), o_content_type("dec:request")],
+        ),
+        session_end(7, [o_input_extents([(1, 0, 7, 80)])]),
+        end_block(),
+    ]
+    member(
+        "splice",
+        "http",
+        "Stage 2. The violation: one record spanning [0,80) of stage 1's "
+        "output, straight across the break at 50, declaring nothing.",
+        stage2_blocks,
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-http 0.4",
+                "produced_at": 1719650000,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "tls-records.zpf",
+                "digest": stage1_dg,
+            },
+            {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+            {"type": "session", "session_id": 7, "proto": "http"},
+            {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+            {
+                "type": "record",
+                "session_id": 7,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000,
+                "payload": b64(b"GET /spliced"),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 7, "pid": 0, "off_start": 0, "off_end": 80}
+                ],
+                "content_type": "dec:request",
+            },
+            {
+                "type": "session_end",
+                "session_id": 7,
+                "input_extents": [{"source_id": 1, "session_id": 7, "pid": 0, "extent": 80}],
+            },
+            {"type": "end"},
+        ],
+    )
+
+
 # ------------------------------------------------------------------ emitters
 
 
@@ -2647,23 +2870,40 @@ def emit(d: str, files: dict[str, bytes], label: str, check: bool) -> list[str]:
 def main() -> int:
     check = "--check" in sys.argv
     build_chain()
+    build_splice()
     manifest = []
     problems = []
 
     # The chain lives in one directory: its three files are a single fixture,
     # and only together do the digests and offsets mean anything.
-    cdir = os.path.join(HERE, "chain")
-    chain_files = {}
-    chain_blocks, chain_options = set(), set()
-    for c in CHAIN:
-        pieces = assemble(c["blocks"])
-        b_types, o_ids = exercised(pieces)
-        chain_blocks.update(b_types)
-        chain_options.update(o_ids)
-        chain_files[f"{c['name']}.zpf"] = to_bytes(pieces)
-        chain_files[f"{c['name']}.hex"] = to_hexdump(pieces, f"chain/{c['name']}").encode()
-        chain_files[f"{c['name']}.jsonl"] = jsonl_bytes(c["jsonl"])
-    problems += emit(cdir, chain_files, "chain", check)
+    fixture_entries = []
+    for fx in FIXTURES.values():
+        fdir = os.path.join(HERE, fx["name"])
+        files, f_blocks, f_options = {}, set(), set()
+        for c in fx["members"]:
+            pieces = assemble(c["blocks"])
+            b_types, o_ids = exercised(pieces)
+            f_blocks.update(b_types)
+            f_options.update(o_ids)
+            files[f"{c['name']}.zpf"] = to_bytes(pieces)
+            files[f"{c['name']}.hex"] = to_hexdump(pieces, f"{fx['name']}/{c['name']}").encode()
+            files[f"{c['name']}.jsonl"] = jsonl_bytes(c["jsonl"])
+        problems += emit(fdir, files, fx["name"], check)
+        fixture_entries.append(
+            {
+                "name": fx["name"],
+                "tier": fx["tier"],
+                "violations": fx["violations"],
+                "blocks": sorted(f_blocks),
+                "options": sorted(f_options),
+                "bytes": sum(len(v) for k, v in files.items() if k.endswith(".zpf")),
+                "summary": fx["summary"],
+                "spec_section": fx["spec"],
+                "expect": fx["expect"],
+                "has_jsonl": True,
+                "files": sorted(files),
+            }
+        )
     for v in VECTORS:
         pieces = assemble(v["blocks"])
         raw = to_bytes(pieces)
@@ -2691,26 +2931,7 @@ def main() -> int:
             }
         )
 
-    manifest.append(
-        {
-            "name": "chain",
-            "tier": "accept",
-            "violations": 0,
-            "blocks": sorted(chain_blocks),
-            "options": sorted(chain_options),
-            "bytes": sum(len(v) for k, v in chain_files.items() if k.endswith(".zpf")),
-            "summary": "A three-file provenance chain whose digests and offsets "
-            "genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. "
-            "The only fixture where the recovery walk, two-hop "
-            "resolution and digest verification can be exercised.",
-            "spec_section": "Layers; Coverage honesty; Annotating a decoded file",
-            "expect": "Accept all three. Each .jsonl is the expected projection. "
-            "Each declared digest is the real SHA-256 of the sibling "
-            "file it names, so a reader can verify the chain.",
-            "has_jsonl": True,
-            "files": sorted(chain_files),
-        }
-    )
+    manifest += fixture_entries
 
     mtext = json.dumps({"format": FORMAT, "vectors": manifest}, indent=2) + "\n"
     mpath = os.path.join(HERE, "manifest.json")
@@ -2720,11 +2941,12 @@ def main() -> int:
         if problems:
             print("\n".join(problems))
             return 1
-        print(f"{len(VECTORS)} vectors + chain up to date")
+        print(f"{len(VECTORS)} vectors + {len(FIXTURES)} fixtures up to date")
         return 0
     with open(mpath, "w") as f:
         f.write(mtext)
-    print(f"wrote {len(VECTORS)} vectors + a {len(CHAIN)}-file chain")
+    n = sum(len(f["members"]) for f in FIXTURES.values())
+    print(f"wrote {len(VECTORS)} vectors + {len(FIXTURES)} fixtures ({n} files)")
     return 0
 
 

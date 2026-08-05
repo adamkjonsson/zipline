@@ -1050,6 +1050,52 @@
         "raw.jsonl",
         "raw.zpf"
       ]
+    },
+    {
+      "name": "splice",
+      "tier": "isolate",
+      "violations": 1,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x22",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00A0",
+        "0x00C1",
+        "0x00D1"
+      ],
+      "bytes": 984,
+      "summary": "A decode stage reading across a declared Discontinuity without declaring one of its own. tls-records.zpf is stage 1 and is entirely conformant: two records with a Discontinuity between them, no width, because a lost TLS record's plaintext length is unknowable. http.zpf is stage 2, and it is the violation: one record whose spans cover [0,80) of stage 1's output -- straight across the break at 50 -- with no Discontinuity of its own anywhere. The break is visible at stage 1 and gone at stage 2, which is the original defect one hop along.",
+      "spec_section": "Discontinuity (0x22) -- what a consumer owes the block",
+      "expect": "Accept tls-records.zpf; it breaks no rule. ISOLATE or reject http.zpf: its record splices two regions the input declared non-contiguous, so it reads as one HTTP message where the wire carried two fragments of different ones. Note a reader handed ONLY http.zpf cannot judge it -- the file is well-framed, its coverage is complete, and nothing in it is wrong on its face. The violation is only visible with tls-records.zpf in hand, which is exactly why this is a two-file fixture.",
+      "has_jsonl": true,
+      "files": [
+        "http.hex",
+        "http.jsonl",
+        "http.zpf",
+        "tls-records.hex",
+        "tls-records.jsonl",
+        "tls-records.zpf"
+      ]
     }
   ]
 }
