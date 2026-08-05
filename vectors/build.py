@@ -19,6 +19,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import struct
 import sys
 
@@ -201,6 +202,19 @@ def name_block(session_id, pid, options=()):
     return block(0x30, "Name/Identity Resolution", body, options)
 
 
+def custom(pen, subtype, payload):
+    """0xFF -- a vendor block. Recognised, not unknown: a reader without
+    knowledge of pen/subtype skips it by length, but a converter still projects
+    it as `custom` rather than through the unknown-block escape."""
+    body = [
+        P(u32(pen), f"pen = {pen}  (IANA Private Enterprise Number)"),
+        P(u16(subtype), f"subtype = {subtype}  (vendor-defined)"),
+        P(u16(0), "_reserved"),
+        P(payload, _describe(payload)),
+    ]
+    return block(0xFF, "Custom", body)
+
+
 def end_block():
     body = [P(u32(0x5A454E44), 'end_magic = 0x5A454E44  ("ZEND")')]
     return block(0x41, "End of file", body)
@@ -236,6 +250,10 @@ def o_seq_basis(v):      return option(0x0053, s(v), "sequenced_basis")
 def o_external_sid(v):
     return option(0x0054, v, "external_session_id", f"{len(v)} opaque bytes")
 def o_endpoint(v):       return option(0x0060, s(v), "endpoint")
+def o_time_epoch(v):     return option(0x0010, i64(v), "time_epoch", str(v))
+def o_link_type(v):      return option(0x0022, u16(v), "link_type", str(v))
+def o_identity(v):       return option(0x0062, s(v), "identity")
+def o_ts_first(v):       return option(0x0073, i64(v), "ts_first", str(v))
 def o_isn(v):            return option(0x0061, u32(v), "isn", str(v))
 def o_tcp_role(v):       return option(0x0063, u8(v), "tcp_role", str(v))
 def o_origin(src, pid, sess):
@@ -332,7 +350,8 @@ vector(
         file_header(options=[o_produced_by("zpf-decode 0.4"),
                              o_produced_at(1719500000)]),
         source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
-        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4"),
+                    o_params_digest("sha256:00ab")]),
         session(7, [o_proto("http")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
         participant(7, 1, [o_endpoint("93.184.216.34:80")]),
@@ -354,7 +373,8 @@ vector(
          "produced_by": "zpf-decode 0.4", "produced_at": 1719500000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4",
+         "params_digest": "sha256:00ab"},
         {"type": "session", "session_id": 7, "proto": "http"},
         {"type": "participant", "session_id": 7, "pid": 0,
          "endpoint": ["10.0.0.1:51000"]},
@@ -843,6 +863,100 @@ vector(
          "endpoint": ["10.0.0.1:51000"]},
         {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
          "ts": 1000, "payload": b64(b"hi")},
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "file-clock-metadata", "accept",
+    "The File Header's two clock-related options, which no vector carried "
+    "before 0.14. time_epoch moves the origin, so wall time is "
+    "(time_epoch + timestamp) / tick_hz -- here 1719500000 + 1000 ticks at "
+    "1 MHz, i.e. 1719500000.001 s. SINGLE_CLOCK asserts every record in the "
+    "file was stamped against one trustworthy clock, so timestamps are "
+    "globally comparable; it is a clock assertion, NOT an ordering one.",
+    "File Header (0x01) -- file flags",
+    [
+        file_header(options=[o_time_epoch(1719500000000000),
+                             o_file_flags(0x0001),
+                             o_creator("zpf-capture 2.1")]),
+        source(1, 0, [o_uri("c.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"hi"),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "time_epoch": 1719500000000000, "single_clock": True,
+         "creator": "zpf-capture 2.1"},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "payload": b64(b"hi")},
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "descriptive-metadata", "accept",
+    "Four optional descriptive options that no vector carried before 0.14, one "
+    "per block that defines one: link_type on a capture Source, flow_key on a "
+    "Session, identity on a Participant, ts_first on a Record. None changes "
+    "how anything else is read -- they project straight through, and the point "
+    "is that a converter carries them rather than dropping them.",
+    "TLV option framing & id registry",
+    [
+        file_header(),
+        source(1, 0, [o_uri("c.pcap"), o_link_type(1)]),
+        session(7, [o_proto("tcp"), o_flow_key("10.0.0.1:51000 <-> 93.184.216.34:80")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"),
+                           o_identity("alice@example.com")]),
+        # ts_first is the FIRST contributing packet; timestamp is the last, so
+        # the reassembled record spans 1000..1100.
+        record(7, 0, 1, 1100, b"hi", options=[o_ts_first(1000)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap",
+         "link_type": 1},
+        {"type": "session", "session_id": 7, "proto": "tcp",
+         "key": "10.0.0.1:51000 <-> 93.184.216.34:80"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"], "identity": "alice@example.com"},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1100, "payload": b64(b"hi"), "ts_first": 1000},
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "custom-block", "accept",
+    "A Custom (0xFF) vendor block. It is RECOGNISED, not unknown: a reader "
+    "without knowledge of this pen/subtype skips it by frame length, but a "
+    "converter still projects it as a `custom` line carrying pen, subtype and "
+    "a base64 payload -- not through the unknown-block escape, which would "
+    "lose the field structure.",
+    "Custom (0xFF)",
+    [
+        file_header(),
+        source(1, 0, [o_uri("c.pcap")]),
+        custom(32473, 7, b"\x01\x02\x03\x04"),   # 32473 = the example-use PEN
+        session(7, [o_proto("tcp")]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
+        {"type": "custom", "pen": 32473, "subtype": 7,
+         "payload": b64(b"\x01\x02\x03\x04")},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
         {"type": "end"},
     ],
     violations=0,
@@ -1443,6 +1557,20 @@ def assemble(blocks):
     return pieces
 
 
+# Which block types and option ids a vector actually emits, read back out of the
+# annotations that option() and block() generate from those very ids. Recovering
+# them this way rather than tracking them in a global keeps it exact: the
+# annotation is produced *from* the id, so the two cannot drift, and it works
+# identically for the chain fixture, whose blocks are built later than the rest.
+#
+# check.py compares this against the option registry and block-type table parsed
+# out of the specification, so a capability cannot ship unexercised. It is the
+# same declared-not-computed principle as `violations`: nothing here parses a
+# block body, which would make the checker the conformant reader it must not be.
+_BLOCK_ANN = re.compile(r'^type   = 0x([0-9A-F]{4})')
+_OPT_ANN = re.compile(r'^option 0x([0-9A-F]{4}) ')
+
+
 def exercised(pieces):
     blocks, options = set(), set()
     for _data, ann in pieces:
@@ -1490,8 +1618,12 @@ def main():
     # and only together do the digests and offsets mean anything.
     cdir = os.path.join(HERE, 'chain')
     chain_files = {}
+    chain_blocks, chain_options = set(), set()
     for c in CHAIN:
         pieces = assemble(c['blocks'])
+        b_types, o_ids = exercised(pieces)
+        chain_blocks.update(b_types)
+        chain_options.update(o_ids)
         chain_files[f"{c['name']}.zpf"] = to_bytes(pieces)
         chain_files[f"{c['name']}.hex"] = to_hexdump(pieces, f"chain/{c['name']}").encode()
         chain_files[f"{c['name']}.jsonl"] = (
@@ -1533,9 +1665,11 @@ def main():
             for fn, data in files.items():
                 with open(os.path.join(d, fn), 'wb') as f:
                     f.write(data)
+        b_types, o_ids = exercised(pieces)
         manifest.append({
             'name': v['name'], 'tier': v['tier'],
             'violations': v['violations'], 'bytes': len(raw),
+            'blocks': b_types, 'options': o_ids,
             'summary': v['summary'], 'spec_section': v['spec'],
             'expect': v['expect'] or (
                 'Accept. The .jsonl file is the expected projection.'),
@@ -1543,7 +1677,9 @@ def main():
         })
 
     manifest.append({
-        'name': 'chain', 'tier': 'accept', 'violations': 0, 'bytes': sum(
+        'name': 'chain', 'tier': 'accept', 'violations': 0,
+        'blocks': sorted(chain_blocks), 'options': sorted(chain_options),
+        'bytes': sum(
             len(v) for k, v in chain_files.items() if k.endswith('.zpf')),
         'summary': 'A three-file provenance chain whose digests and offsets '
                    'genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. '

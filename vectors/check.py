@@ -19,6 +19,10 @@ What it does verify:
   * every vector's declared violation count agrees with its declared tier --
     accept 0, reject 1, isolate 1. The count is declared, never computed from
     the file; see VIOLATIONS_BY_TIER
+  * every capability the format defines is exercised by some vector: option ids
+    and block types parsed from the specification's own tables, plus the rules
+    declared in RULES. What each vector exercises is recorded by build.py, which
+    built the bytes -- nothing here parses a block body
   * accept/isolate vectors are well-framed: block walk lands exactly on EOF,
     every length is a multiple of 4, magic and version are what this version
     defines
@@ -33,6 +37,7 @@ Usage:  python3 check.py
 
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -48,6 +53,65 @@ MAJOR, MINOR = 0, 14
 # *declared* tier; it never inspects a file to count them, because a checker that
 # ruled on semantics would become a second normative authority.
 VIOLATIONS_BY_TIER = {'accept': 0, 'reject': 1, 'isolate': 1}
+
+SPEC = os.path.join(HERE, os.pardir, 'docs', 'zipline-payload-format.md')
+
+# Capabilities that are RULES rather than syntax, and the vector exercising each.
+# Session fan-out shipped in 0.13 as a Clarified item with nothing exercising it,
+# and nobody noticed until an implementation reviewed the release -- so a purely
+# mechanical check over the registry would not have caught the very thing that
+# motivated this one. A rule has no id to derive, so it is declared here.
+#
+# Add a rule when the specification gains one. Adding it with no vector fails,
+# which is the point: the failure is what makes the gap impossible to forget.
+RULES = {
+    'spans-correspondence': (
+        'a decoder may transform; spans name what a unit corresponds to',
+        'chain'),
+    'session-fan-out': (
+        "a stage's output sessions need not mirror its input's",
+        None),                                   # tracked by issue #66
+    'discontinuity-known-width': (
+        'a declared width is a term in the positional arithmetic',
+        'discontinuity-known-width'),
+    'discontinuity-unknown-width': (
+        'an absent width contributes 0; the join is still marked',
+        'discontinuity-unknown-width'),
+    'extents-self-verifiable': (
+        'input_extents makes the coverage guarantee checkable from one file',
+        'isolate-extent-exceeds-coverage'),
+    'broken-provenance-walk': (
+        'bytes unavailable is not the same as no bytes exist',
+        'broken-chain'),
+}
+
+
+def spec_tables():
+    """Every option id and block type the specification defines.
+
+    Parsed from the two tables by their header rows, not by row shape: the flags
+    enum table has rows of the same shape (`| 0x0002 | \\`fin\\` | ...`) and a
+    looser match silently swallows them.
+    """
+    opts, blocks = {}, {}
+    table, header = None, None
+    for line in open(SPEC):
+        if line.startswith('| Type | Name'):
+            table, header = blocks, True
+            continue
+        if line.startswith('| Id       | Name'):
+            table, header = opts, True
+            continue
+        if table is not None:
+            m = re.match(r'^\| `?(0x[0-9A-F]{2,4})`? +\| ([^ |]+)', line)
+            if m:
+                table[m.group(1)] = m.group(2).strip('`')
+                header = False
+            elif not line.startswith('|'):
+                table, header = None, None
+            elif header and set(line.strip()) <= set('|- '):
+                continue           # the ---- separator row
+    return opts, blocks
 
 
 class Corrupt(Exception):
@@ -150,6 +214,50 @@ def check_chain():
     return out
 
 
+def check_capability_coverage(manifest):
+    """Every capability the format defines must be exercised by some vector.
+
+    Fan-out shipped in 0.13 with nothing exercising it, and the gap survived a
+    release. This is the check that would have caught it -- and it hard-fails
+    rather than warning, because an advisory line is exactly what gets scrolled
+    past. A capability with no vector should stop the build until either a vector
+    exists or the capability does not.
+
+    Syntax comes from the specification, so a new option or block cannot ship
+    uncovered. Rules are declared in RULES, since a permission has no id to
+    derive. Neither half inspects a file: what a vector exercises is recorded by
+    build.py, which built the bytes.
+    """
+    opts, blocks = spec_tables()
+    if not opts or not blocks:
+        return ["capability coverage: could not parse the specification's tables"]
+
+    used_o, used_b = set(), set()
+    for v in manifest['vectors']:
+        used_o.update(v.get('options', ()))
+        used_b.update(v.get('blocks', ()))
+
+    out = []
+    for oid, name in sorted(opts.items()):
+        if oid not in used_o:
+            out.append(f"option {oid} ({name}) is in the registry "
+                       f"but no vector exercises it")
+    for btype, name in sorted(blocks.items()):
+        if btype not in used_b:
+            out.append(f"block {btype} ({name}) is defined "
+                       f"but no vector exercises it")
+    for rule, (what, vector) in sorted(RULES.items()):
+        if vector is None:
+            out.append(f"rule '{rule}' has no vector -- {what}")
+        elif not any(x['name'] == vector for x in manifest['vectors']):
+            out.append(f"rule '{rule}' names vector '{vector}', which does not exist")
+
+    if not out:
+        print(f"  capabilities: {len(opts)} options, {len(blocks)} blocks, "
+              f"{len(RULES)} rules -- all exercised")
+    return out
+
+
 def main():
     r = subprocess.run([sys.executable, os.path.join(HERE, 'build.py'), '--check'],
                        capture_output=True, text=True)
@@ -211,6 +319,7 @@ def main():
             print(f"  {name}: {len(blocks)} blocks, well-framed")
 
     failures += check_chain()
+    failures += check_capability_coverage(manifest)
 
     if failures:
         print("\nFAILURES:")

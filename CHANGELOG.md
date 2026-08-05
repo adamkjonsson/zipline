@@ -71,6 +71,27 @@ option and no block. Scope and reasoning in
 rather than clarify it, and burying that under *Clarified* would repeat the kind
 of dishonesty this release exists to correct.
 
+### Fixed
+
+- **Capability coverage is enforced.** `check.py` now parses the option-id
+  registry and the block-type table out of the specification and requires every
+  entry to appear in some vector, so **new syntax cannot ship uncovered**. Rules —
+  permissions with no id to derive — are declared beside the vector exercising
+  each. It **hard-fails**: session fan-out shipped in `0.13` as a *Clarified* item
+  with nothing exercising it and the gap survived a whole release, and an advisory
+  warning is what gets scrolled past. What a vector exercises is recorded by
+  `build.py`, which built the bytes, so `check.py` still parses no block body and
+  remains deliberately not a conformant reader.
+- **Three vectors, and one option added to a fourth, for capabilities the suite
+  had never exercised** — found by the check above on its first run.
+  `file-clock-metadata` carries `time_epoch` and the File Header **SINGLE_CLOCK**
+  flag; `descriptive-metadata` carries `link_type`, `flow_key`, `identity` and
+  `ts_first`; `custom-block` carries a Custom (`0xFF`) vendor block, which is
+  *recognised* rather than unknown and projects as `pen`/`subtype`/`payload`. And
+  `decoded-basic`'s Decoder gains `params_digest` — **the option the whole
+  reproducibility contract is stated against, and it had never appeared in a
+  vector.** 35 in total.
+
 ---
 
 ## [0.13] — 2026-08-04
