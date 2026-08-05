@@ -2,10 +2,15 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.13`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.14`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
+
+Both use **only the standard library**, deliberately: regenerating or verifying
+the vectors must not depend on anything being installed. The linter is the one
+development dependency — `pip install -r ../requirements.txt`, then
+`ruff check .` from the repository root.
 
 ## Ground rules
 
@@ -78,6 +83,21 @@ authority, which ground rule 2 forbids. Declaring it is mandatory, so a new
 vector cannot be written without confronting the number, and adding a second
 defect to an existing one fails the build rather than quietly weakening it.
 
+**Every capability the format defines is exercised by some vector**, and since
+`0.14` that is enforced too. `check.py` parses the option-id registry and the
+block-type table out of the specification and requires each entry to appear in
+some vector, so **new syntax cannot ship uncovered**. Rules — permissions with no
+id to derive, like session fan-out — are declared in `check.py`'s `RULES` beside
+the vector exercising each.
+
+It hard-fails rather than warning. Session fan-out shipped in `0.13` as a
+*Clarified* item with nothing exercising it, and the gap survived a whole release
+until an implementation reviewed it; an advisory line is exactly what gets
+scrolled past. What a vector exercises is recorded by [`build.py`](build.py),
+which built the bytes, so the record cannot drift from them — and `check.py` still
+parses no block body, which would make it the conformant reader ground rule 2
+forbids.
+
 ## Layout
 
 Each vector is a directory:
@@ -100,6 +120,9 @@ tier, size, the specification section each comes from, and what a reader must do
 | Vector | What it exercises |
 |--------|-------------------|
 | `raw-minimal` | The whole container in 196 bytes. Identical to the specification's worked example. |
+| `file-clock-metadata` | The File Header's clock options: `time_epoch` moves the origin, so wall time is `(time_epoch + timestamp) / tick_hz`; **SINGLE_CLOCK** asserts one trustworthy clock across the file — a clock assertion, *not* an ordering one. |
+| `descriptive-metadata` | Four optional pass-through options, one per block that defines one: `link_type`, `flow_key`, `identity`, `ts_first`. None changes how anything else is read; the point is that a converter carries them rather than dropping them. |
+| `custom-block` | A Custom (`0xFF`) vendor block. **Recognised, not unknown** — a reader skips it by length, but a converter projects `pen`, `subtype` and a base64 `payload` rather than routing it through the unknown-block escape. |
 | `decoded-basic` | A decode stage: `spans` provenance, `content_type`, an Undecoded tail, an End block. Its Session End declares `input_extents`, so the coverage guarantee is checkable from this file alone — and it is the suite's only **Session End** block. |
 | `passthrough-transport` | A pass-through preserving a transport layer: `origin`, byte-run records, `SEQUENCED`. |
 | `broken-chain` | The provenance walk that **fails**: a `zpf-input` Source naming a `missing.zpf` that is deliberately not in the tree, with a bytes-exist Undecoded block pointing into it. `accept` tier — the file breaks no rule; what is absent is a sibling. See [the provenance chain](#the-provenance-chain). |

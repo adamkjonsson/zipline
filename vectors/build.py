@@ -19,36 +19,54 @@ import base64
 import hashlib
 import json
 import os
+import re
 import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+
+def read_bytes(path: str) -> bytes:
+    """Read a file whole, in binary."""
+    with open(path, 'rb') as f:
+        return f.read()
+
+
+def read_text(path: str) -> str:
+    """Read a file whole, as UTF-8 text."""
+    with open(path, encoding='utf-8') as f:
+        return f.read()
+
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 13
+MAJOR, MINOR = 0, 14
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
 
-def u8(v):  return struct.pack('<B', v)
-def u16(v): return struct.pack('<H', v)
-def u32(v): return struct.pack('<I', v)
-def u64(v): return struct.pack('<Q', v)
-def i64(v): return struct.pack('<q', v)
+def u8(v: int) -> bytes:  return struct.pack('<B', v)
+def u16(v: int) -> bytes: return struct.pack('<H', v)
+def u32(v: int) -> bytes: return struct.pack('<I', v)
+def u64(v: int) -> bytes: return struct.pack('<Q', v)
+def i64(v: int) -> bytes: return struct.pack('<q', v)
 
-def pad4(n):
+def pad4(n: int) -> int:
     """Bytes of padding needed to reach a 4-byte boundary."""
     return (-n) % 4
 
 # A "piece" is (bytes, annotation). Annotation "" means it is padding or a
 # continuation line and needs no separate explanation.
-def P(b, ann=""):
+Piece = tuple[bytes, str]
+Opt = list[Piece]          # what an o_*() helper returns
+Blk = list[Piece]          # what a block builder returns
+
+
+def P(b: bytes, ann: str = "") -> Piece:
     return (b, ann)
 
 
-def option(oid, value, name, note=""):
+def option(oid: int, value: bytes, name: str, note: str = "") -> Opt:
     """TLV option: id u16, len u16, value, padded to a 4-byte boundary.
 
     len counts the value only, never the 4-byte option header or the padding.
@@ -65,7 +83,7 @@ def option(oid, value, name, note=""):
     return out
 
 
-def _describe(value):
+def _describe(value: bytes) -> str:
     try:
         s = value.decode('ascii')
         if s.isprintable():
@@ -75,7 +93,8 @@ def _describe(value):
     return ""
 
 
-def block(btype, name, body, options=()):
+def block(btype: int, name: str, body: list[Piece],
+          options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     """Frame a block: type u16, reserved u16, length u32, then content.
 
     length counts body + options + padding -- everything after the length
@@ -101,7 +120,9 @@ def block(btype, name, body, options=()):
 
 # --------------------------------------------------------------- block kinds
 
-def file_header(tick_hz=1_000_000, major=MAJOR, minor=MINOR, options=(), magic=0x5A495046):
+def file_header(tick_hz: int = 1_000_000, major: int = MAJOR, minor: int = MINOR,
+                options: tuple[Opt, ...] | list[Opt] = (),
+                magic: int = 0x5A495046) -> Blk:
     body = [
         P(u32(magic), f'magic  = 0x{magic:08X}  ("ZIPF")'),
         P(u16(major), f"version_major = {major}"),
@@ -111,7 +132,7 @@ def file_header(tick_hz=1_000_000, major=MAJOR, minor=MINOR, options=(), magic=0
     return block(0x01, "File Header", body, options)
 
 
-def source(source_id, kind, options=()):
+def source(source_id: int, kind: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     kind_name = {0: "capture", 1: "zpf-input"}.get(kind, "UNDEFINED")
     body = [
         P(u16(source_id), f"source_id = {source_id}"),
@@ -121,7 +142,7 @@ def source(source_id, kind, options=()):
     return block(0x02, "Source Descriptor", body, options)
 
 
-def decoder(decoder_id, options=()):
+def decoder(decoder_id: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [
         P(u16(decoder_id), f"decoder_id = {decoder_id}"),
         P(u16(0), "_reserved"),
@@ -129,17 +150,18 @@ def decoder(decoder_id, options=()):
     return block(0x03, "Decoder Descriptor", body, options)
 
 
-def session(session_id, options=()):
+def session(session_id: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [P(u64(session_id), f"session_id = {session_id}  (u64)")]
     return block(0x10, "Session Descriptor", body, options)
 
 
-def session_end(session_id, options=()):
+def session_end(session_id: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [P(u64(session_id), f"session_id = {session_id}  (u64)")]
     return block(0x12, "Session End", body, options)
 
 
-def participant(session_id, pid, options=()):
+def participant(session_id: int, pid: int,
+                options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [
         P(u64(session_id), f"session_id = {session_id}  (u64)"),
         P(u16(pid), f"participant_id = {pid}"),
@@ -148,10 +170,15 @@ def participant(session_id, pid, options=()):
     return block(0x11, "Participant Descriptor", body, options)
 
 
-def record(session_id, sender_pid, source_id, timestamp, payload,
-           flags=0, options=(), payload_len=None):
-    """payload_len defaults to len(payload); override it to build a
-    deliberately corrupt vector."""
+def record(session_id: int, sender_pid: int, source_id: int, timestamp: int,
+           payload: bytes, flags: int = 0,
+           options: tuple[Opt, ...] | list[Opt] = (),
+           payload_len: int | None = None) -> Blk:
+    """Build a Record block.
+
+    payload_len defaults to len(payload); override it to build a deliberately
+    corrupt vector.
+    """
     declared = len(payload) if payload_len is None else payload_len
     body = [
         P(u64(session_id), f"session_id = {session_id}  (u64)"),
@@ -170,7 +197,8 @@ def record(session_id, sender_pid, source_id, timestamp, payload,
     return block(0x20, "Record", body, options)
 
 
-def undecoded(source_id, pid, session_id, off_start, off_end, options=()):
+def undecoded(source_id: int, pid: int, session_id: int, off_start: int,
+              off_end: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [
         P(u16(source_id), f"source_id = {source_id}  (in the input's namespace)"),
         P(u16(pid), f"participant_id = {pid}"),
@@ -181,9 +209,13 @@ def undecoded(source_id, pid, session_id, off_start, off_end, options=()):
     return block(0x21, "Undecoded", body, options)
 
 
-def discontinuity(session_id, pid, options=()):
-    """0x22 -- a break in THIS file's own output stream. Note the ids are this
-    file's, unlike Undecoded's, which are the input's."""
+def discontinuity(session_id: int, pid: int,
+                  options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
+    """Build a Discontinuity (0x22) block.
+
+    A break in THIS file's own output stream. Note the ids are this file's,
+    unlike Undecoded's, which are the input's.
+    """
     body = [
         P(u64(session_id), f"session_id = {session_id}  (in THIS file)"),
         P(u16(pid), f"participant_id = {pid}  (in THIS file)"),
@@ -192,7 +224,8 @@ def discontinuity(session_id, pid, options=()):
     return block(0x22, "Discontinuity", body, options)
 
 
-def name_block(session_id, pid, options=()):
+def name_block(session_id: int, pid: int,
+               options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [
         P(u64(session_id), f"session_id = {session_id}"),
         P(u16(pid), f"participant_id = {pid}"),
@@ -201,67 +234,89 @@ def name_block(session_id, pid, options=()):
     return block(0x30, "Name/Identity Resolution", body, options)
 
 
-def end_block():
+def custom(pen: int, subtype: int, payload: bytes) -> Blk:
+    """Build a Custom (0xFF) vendor block.
+
+    Recognised, not unknown: a reader without knowledge of pen/subtype skips it
+    by length, but a converter still projects it as `custom` rather than through
+    the unknown-block escape.
+    """
+    body = [
+        P(u32(pen), f"pen = {pen}  (IANA Private Enterprise Number)"),
+        P(u16(subtype), f"subtype = {subtype}  (vendor-defined)"),
+        P(u16(0), "_reserved"),
+        P(payload, _describe(payload)),
+    ]
+    return block(0xFF, "Custom", body)
+
+
+def end_block() -> Blk:
     body = [P(u32(0x5A454E44), 'end_magic = 0x5A454E44  ("ZEND")')]
     return block(0x41, "End of file", body)
 
 
-def unknown_block(btype, content_bytes):
-    """A block of a type this document does not define -- the forward
-    compatibility case a reader must skip by length."""
+def unknown_block(btype: int, content_bytes: bytes) -> Blk:
+    """Build a block of a type this document does not define.
+
+    The forward-compatibility case a reader must skip by length.
+    """
     return block(btype, "UNKNOWN to this version", [P(content_bytes, "opaque content")])
 
 
 # ------------------------------------------------------------ option helpers
 
-def s(x):
+def s(x: str) -> bytes:
     return x.encode('utf-8')
 
-def o_comment(v):        return option(0x0001, s(v), "comment")
-def o_creator(v):        return option(0x0011, s(v), "creator")
-def o_produced_by(v):    return option(0x0012, s(v), "produced_by")
-def o_produced_at(v):    return option(0x0013, i64(v), "produced_at", str(v))
-def o_file_flags(v):     return option(0x0014, u16(v), "flags", f"0x{v:04X}")
-def o_transform_params_digest(v):
+def o_comment(v: str) -> Opt:        return option(0x0001, s(v), "comment")
+def o_creator(v: str) -> Opt:        return option(0x0011, s(v), "creator")
+def o_produced_by(v: str) -> Opt:    return option(0x0012, s(v), "produced_by")
+def o_produced_at(v: str) -> Opt:    return option(0x0013, i64(v), "produced_at", str(v))
+def o_file_flags(v: str) -> Opt:     return option(0x0014, u16(v), "flags", f"0x{v:04X}")
+def o_transform_params_digest(v: str) -> Opt:
     return option(0x0015, s(v), "transform_params_digest")
-def o_uri(v):            return option(0x0020, s(v), "uri")
-def o_digest(v):         return option(0x0021, s(v), "digest")
-def o_dec_name(v):       return option(0x0041, s(v), "name")
-def o_dec_version(v):    return option(0x0042, s(v), "version")
-def o_params_digest(v):  return option(0x0043, s(v), "params_digest")
-def o_proto(v):          return option(0x0050, s(v), "proto")
-def o_flow_key(v):       return option(0x0051, s(v), "flow_key")
-def o_sess_flags(v):     return option(0x0052, u16(v), "flags", f"0x{v:04X}")
-def o_seq_basis(v):      return option(0x0053, s(v), "sequenced_basis")
-def o_external_sid(v):
+def o_uri(v: str) -> Opt:            return option(0x0020, s(v), "uri")
+def o_digest(v: str) -> Opt:         return option(0x0021, s(v), "digest")
+def o_dec_name(v: str) -> Opt:       return option(0x0041, s(v), "name")
+def o_dec_version(v: str) -> Opt:    return option(0x0042, s(v), "version")
+def o_params_digest(v: str) -> Opt:  return option(0x0043, s(v), "params_digest")
+def o_proto(v: str) -> Opt:          return option(0x0050, s(v), "proto")
+def o_flow_key(v: str) -> Opt:       return option(0x0051, s(v), "flow_key")
+def o_sess_flags(v: str) -> Opt:     return option(0x0052, u16(v), "flags", f"0x{v:04X}")
+def o_seq_basis(v: str) -> Opt:      return option(0x0053, s(v), "sequenced_basis")
+def o_external_sid(v: str) -> Opt:
     return option(0x0054, v, "external_session_id", f"{len(v)} opaque bytes")
-def o_endpoint(v):       return option(0x0060, s(v), "endpoint")
-def o_isn(v):            return option(0x0061, u32(v), "isn", str(v))
-def o_tcp_role(v):       return option(0x0063, u8(v), "tcp_role", str(v))
-def o_origin(src, pid, sess):
+def o_endpoint(v: str) -> Opt:       return option(0x0060, s(v), "endpoint")
+def o_time_epoch(v: str) -> Opt:     return option(0x0010, i64(v), "time_epoch", str(v))
+def o_link_type(v: str) -> Opt:      return option(0x0022, u16(v), "link_type", str(v))
+def o_identity(v: str) -> Opt:       return option(0x0062, s(v), "identity")
+def o_ts_first(v: str) -> Opt:       return option(0x0073, i64(v), "ts_first", str(v))
+def o_isn(v: str) -> Opt:            return option(0x0061, u32(v), "isn", str(v))
+def o_tcp_role(v: str) -> Opt:       return option(0x0063, u8(v), "tcp_role", str(v))
+def o_origin(src: int, pid: int, sess: int) -> Opt:
     return option(0x0064, u16(src) + u16(pid) + u64(sess), "origin",
                   f"source {src}, pid {pid}, session {sess}")
-def o_seq_start(v):      return option(0x0070, u32(v), "seq_start", str(v))
-def o_ack(v):            return option(0x0072, u32(v), "ack", str(v))
-def o_spans(entries):
+def o_seq_start(v: str) -> Opt:      return option(0x0070, u32(v), "seq_start", str(v))
+def o_ack(v: str) -> Opt:            return option(0x0072, u32(v), "ack", str(v))
+def o_spans(entries: list[tuple[int, int, int, int, int]]) -> Opt:
     packed = b''.join(u16(sr) + u16(pid) + u64(se) + u64(a) + u64(b)
                       for sr, pid, se, a, b in entries)
     return option(0x0080, packed, "spans", f"{len(entries)} entry/entries")
-def o_decoder_id(v):     return option(0x0090, u16(v), "decoder_id", str(v))
-def o_content_type(v):   return option(0x0091, s(v), "content_type")
-def o_reason(v):         return option(0x00A0, s(v), "reason")
-def o_reason_class(v):   return option(0x00A1, s(v), "reason_class")
-def o_end_reason(v):     return option(0x00C0, s(v), "reason")
-def o_input_extents(entries):
+def o_decoder_id(v: str) -> Opt:     return option(0x0090, u16(v), "decoder_id", str(v))
+def o_content_type(v: str) -> Opt:   return option(0x0091, s(v), "content_type")
+def o_reason(v: str) -> Opt:         return option(0x00A0, s(v), "reason")
+def o_reason_class(v: str) -> Opt:   return option(0x00A1, s(v), "reason_class")
+def o_end_reason(v: str) -> Opt:     return option(0x00C0, s(v), "reason")
+def o_input_extents(entries: list[tuple[int, int, int, int]]) -> Opt:
     packed = b''.join(u16(src) + u16(pid) + u64(sess) + u64(ext)
                       for src, pid, sess, ext in entries)
     return option(0x00C1, packed, "input_extents",
                   f"{len(entries)} entry/entries")
-def o_width(v):          return option(0x00D0, u64(v), "width", str(v))
-def o_disc_reason(v):    return option(0x00D1, s(v), "reason")
-def o_label(v):          return option(0x00B0, s(v), "label")
-def o_name_kind(v):      return option(0x00B1, s(v), "kind")
-def o_unregistered(oid, v):
+def o_width(v: str) -> Opt:          return option(0x00D0, u64(v), "width", str(v))
+def o_disc_reason(v: str) -> Opt:    return option(0x00D1, s(v), "reason")
+def o_label(v: str) -> Opt:          return option(0x00B0, s(v), "label")
+def o_name_kind(v: str) -> Opt:      return option(0x00B1, s(v), "kind")
+def o_unregistered(oid: int, v: bytes) -> Opt:
     return option(oid, v, "UNREGISTERED")
 
 
@@ -269,14 +324,15 @@ def o_unregistered(oid, v):
 
 GET = b"GET / HTTP/1.1\r\n\r\n"
 
-def b64(x):
+def b64(x: bytes) -> str:
     return base64.b64encode(x).decode('ascii')
 
 
 VECTORS = []
 
-def vector(name, tier, summary, spec, blocks, jsonl=None, expect=None, *,
-           violations):
+def vector(name: str, tier: str, summary: str, spec: str, blocks: list[Blk],
+           jsonl: list[dict] | None = None, expect: str | None = None, *,
+           violations: int) -> None:
     """Register a vector.
 
     `violations` is keyword-only and has NO default, deliberately: a negative
@@ -287,9 +343,9 @@ def vector(name, tier, summary, spec, blocks, jsonl=None, expect=None, *,
     declared tier; nothing here or there inspects the file to count them, because
     a checker that ruled on semantics would become a second normative authority.
     """
-    VECTORS.append(dict(name=name, tier=tier, summary=summary, spec=spec,
-                        blocks=blocks, jsonl=jsonl, expect=expect,
-                        violations=violations))
+    VECTORS.append({'name': name, 'tier': tier, 'summary': summary,
+                    'spec': spec, 'blocks': blocks, 'jsonl': jsonl,
+                    'expect': expect, 'violations': violations})
 
 
 # --- baseline -------------------------------------------------------------
@@ -332,7 +388,8 @@ vector(
         file_header(options=[o_produced_by("zpf-decode 0.4"),
                              o_produced_at(1719500000)]),
         source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
-        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4"),
+                    o_params_digest("sha256:00ab")]),
         session(7, [o_proto("http")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
         participant(7, 1, [o_endpoint("93.184.216.34:80")]),
@@ -354,7 +411,8 @@ vector(
          "produced_by": "zpf-decode 0.4", "produced_at": 1719500000},
         {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "raw.zpf",
          "digest": "sha256:9f2c"},
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4",
+         "params_digest": "sha256:00ab"},
         {"type": "session", "session_id": 7, "proto": "http"},
         {"type": "participant", "session_id": 7, "pid": 0,
          "endpoint": ["10.0.0.1:51000"]},
@@ -849,6 +907,100 @@ vector(
 )
 
 vector(
+    "file-clock-metadata", "accept",
+    "The File Header's two clock-related options, which no vector carried "
+    "before 0.14. time_epoch moves the origin, so wall time is "
+    "(time_epoch + timestamp) / tick_hz -- here 1719500000 + 1000 ticks at "
+    "1 MHz, i.e. 1719500000.001 s. SINGLE_CLOCK asserts every record in the "
+    "file was stamped against one trustworthy clock, so timestamps are "
+    "globally comparable; it is a clock assertion, NOT an ordering one.",
+    "File Header (0x01) -- file flags",
+    [
+        file_header(options=[o_time_epoch(1719500000000000),
+                             o_file_flags(0x0001),
+                             o_creator("zpf-capture 2.1")]),
+        source(1, 0, [o_uri("c.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"hi"),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000,
+         "time_epoch": 1719500000000000, "single_clock": True,
+         "creator": "zpf-capture 2.1"},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"]},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1000, "payload": b64(b"hi")},
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "descriptive-metadata", "accept",
+    "Four optional descriptive options that no vector carried before 0.14, one "
+    "per block that defines one: link_type on a capture Source, flow_key on a "
+    "Session, identity on a Participant, ts_first on a Record. None changes "
+    "how anything else is read -- they project straight through, and the point "
+    "is that a converter carries them rather than dropping them.",
+    "TLV option framing & id registry",
+    [
+        file_header(),
+        source(1, 0, [o_uri("c.pcap"), o_link_type(1)]),
+        session(7, [o_proto("tcp"), o_flow_key("10.0.0.1:51000 <-> 93.184.216.34:80")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"),
+                           o_identity("alice@example.com")]),
+        # ts_first is the FIRST contributing packet; timestamp is the last, so
+        # the reassembled record spans 1000..1100.
+        record(7, 0, 1, 1100, b"hi", options=[o_ts_first(1000)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap",
+         "link_type": 1},
+        {"type": "session", "session_id": 7, "proto": "tcp",
+         "key": "10.0.0.1:51000 <-> 93.184.216.34:80"},
+        {"type": "participant", "session_id": 7, "pid": 0,
+         "endpoint": ["10.0.0.1:51000"], "identity": "alice@example.com"},
+        {"type": "record", "session_id": 7, "sender_pid": 0, "source_id": 1,
+         "ts": 1100, "payload": b64(b"hi"), "ts_first": 1000},
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "custom-block", "accept",
+    "A Custom (0xFF) vendor block. It is RECOGNISED, not unknown: a reader "
+    "without knowledge of this pen/subtype skips it by frame length, but a "
+    "converter still projects it as a `custom` line carrying pen, subtype and "
+    "a base64 payload -- not through the unknown-block escape, which would "
+    "lose the field structure.",
+    "Custom (0xFF)",
+    [
+        file_header(),
+        source(1, 0, [o_uri("c.pcap")]),
+        custom(32473, 7, b"\x01\x02\x03\x04"),   # 32473 = the example-use PEN
+        session(7, [o_proto("tcp")]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
+        {"type": "custom", "pen": 32473, "subtype": 7,
+         "payload": b64(b"\x01\x02\x03\x04")},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
     "sequenced-basis", "accept",
     "A hint-less UDP session marked SEQUENCED. Because it carries no seq/ack, "
     "sequenced_basis is mandatory and states what the order rests on.",
@@ -1289,12 +1441,14 @@ DEC_RESP = b"RESP:200"                   # 8  -> decoded pid 1 offsets [0,8)
 
 CHAIN = []
 
-def chain_file(name, summary, blocks, jsonl):
-    CHAIN.append(dict(name=name, summary=summary, blocks=blocks, jsonl=jsonl))
+def chain_file(name: str, summary: str, blocks: list[Blk],
+               jsonl: list[dict]) -> bytes:
+    CHAIN.append({'name': name, 'summary': summary,
+                  'blocks': blocks, 'jsonl': jsonl})
     return to_bytes(assemble(blocks))
 
 
-def build_chain():
+def build_chain() -> None:
     """Build the three files in order, hashing each so the next can cite it."""
     raw_blocks = [
         file_header(options=[o_creator("zpf-sessionize 1.0")]),
@@ -1435,7 +1589,7 @@ def build_chain():
 
 # ------------------------------------------------------------------ emitters
 
-def assemble(blocks):
+def assemble(blocks: list[Blk]) -> list[Piece]:
     pieces = []
     for b in blocks:
         pieces.extend(b)
@@ -1443,11 +1597,38 @@ def assemble(blocks):
     return pieces
 
 
-def to_bytes(pieces):
+# Which block types and option ids a vector actually emits, read back out of the
+# annotations that option() and block() generate from those very ids. Recovering
+# them this way rather than tracking them in a global keeps it exact: the
+# annotation is produced *from* the id, so the two cannot drift, and it works
+# identically for the chain fixture, whose blocks are built later than the rest.
+#
+# check.py compares this against the option registry and block-type table parsed
+# out of the specification, so a capability cannot ship unexercised. It is the
+# same declared-not-computed principle as `violations`: nothing here parses a
+# block body, which would make the checker the conformant reader it must not be.
+_BLOCK_ANN = re.compile(r'^type   = 0x([0-9A-F]{4})')
+_OPT_ANN = re.compile(r'^option 0x([0-9A-F]{4}) ')
+
+
+def exercised(pieces: list[Piece]) -> tuple[list[str], list[str]]:
+    blocks, options = set(), set()
+    for _data, ann in pieces:
+        m = _BLOCK_ANN.match(ann)
+        if m:
+            blocks.add(f"0x{int(m.group(1), 16):02X}")
+            continue
+        m = _OPT_ANN.match(ann)
+        if m:
+            options.add(f"0x{m.group(1)}")
+    return sorted(blocks), sorted(options)
+
+
+def to_bytes(pieces: list[Piece]) -> bytes:
     return b''.join(b for b, _ in pieces)
 
 
-def to_hexdump(pieces, title):
+def to_hexdump(pieces: list[Piece], title: str) -> str:
     lines = [f"# {title}", "#",
              "# Generated from the same description as the .zpf -- never edited",
              "# by hand, so the annotation cannot drift from the bytes.", ""]
@@ -1467,7 +1648,35 @@ def to_hexdump(pieces, title):
     return '\n'.join(lines) + '\n'
 
 
-def main():
+def jsonl_bytes(objs: list[dict]) -> bytes:
+    """Render a vector's expected projection, one compact object per line."""
+    return ('\n'.join(json.dumps(o, separators=(',', ':')) for o in objs)
+            + '\n').encode()
+
+
+def emit(d: str, files: dict[str, bytes], label: str, check: bool) -> list[str]:
+    """Write a fixture's files, or verify the committed ones match.
+
+    One function for both directions so the two cannot drift -- a --check that
+    tested something other than what a plain run writes would be worse than none.
+    """
+    if not check:
+        os.makedirs(d, exist_ok=True)
+        for fn, data in files.items():
+            with open(os.path.join(d, fn), 'wb') as f:
+                f.write(data)
+        return []
+    problems = []
+    for fn, want in files.items():
+        path = os.path.join(d, fn)
+        if not os.path.exists(path):
+            problems.append(f"missing {label}/{fn}")
+        elif read_bytes(path) != want:
+            problems.append(f"stale {label}/{fn}")
+    return problems
+
+
+def main() -> int:
     check = '--check' in sys.argv
     build_chain()
     manifest = []
@@ -1477,25 +1686,16 @@ def main():
     # and only together do the digests and offsets mean anything.
     cdir = os.path.join(HERE, 'chain')
     chain_files = {}
+    chain_blocks, chain_options = set(), set()
     for c in CHAIN:
         pieces = assemble(c['blocks'])
+        b_types, o_ids = exercised(pieces)
+        chain_blocks.update(b_types)
+        chain_options.update(o_ids)
         chain_files[f"{c['name']}.zpf"] = to_bytes(pieces)
         chain_files[f"{c['name']}.hex"] = to_hexdump(pieces, f"chain/{c['name']}").encode()
-        chain_files[f"{c['name']}.jsonl"] = (
-            '\n'.join(json.dumps(o, separators=(',', ':')) for o in c['jsonl'])
-            + '\n').encode()
-    if check:
-        for fn, want in chain_files.items():
-            path = os.path.join(cdir, fn)
-            if not os.path.exists(path):
-                problems.append(f"missing chain/{fn}")
-            elif open(path, 'rb').read() != want:
-                problems.append(f"stale chain/{fn}")
-    else:
-        os.makedirs(cdir, exist_ok=True)
-        for fn, data in chain_files.items():
-            with open(os.path.join(cdir, fn), 'wb') as f:
-                f.write(data)
+        chain_files[f"{c['name']}.jsonl"] = jsonl_bytes(c['jsonl'])
+    problems += emit(cdir, chain_files, 'chain', check)
     for v in VECTORS:
         pieces = assemble(v['blocks'])
         raw = to_bytes(pieces)
@@ -1505,24 +1705,13 @@ def main():
             f"{v['name']}.hex": to_hexdump(pieces, v['name']).encode(),
         }
         if v['jsonl'] is not None:
-            files[f"{v['name']}.jsonl"] = (
-                '\n'.join(json.dumps(o, separators=(',', ':')) for o in v['jsonl'])
-                + '\n').encode()
-        if check:
-            for fn, want in files.items():
-                path = os.path.join(d, fn)
-                if not os.path.exists(path):
-                    problems.append(f"missing {v['name']}/{fn}")
-                elif open(path, 'rb').read() != want:
-                    problems.append(f"stale {v['name']}/{fn}")
-        else:
-            os.makedirs(d, exist_ok=True)
-            for fn, data in files.items():
-                with open(os.path.join(d, fn), 'wb') as f:
-                    f.write(data)
+            files[f"{v['name']}.jsonl"] = jsonl_bytes(v['jsonl'])
+        problems += emit(d, files, v['name'], check)
+        b_types, o_ids = exercised(pieces)
         manifest.append({
             'name': v['name'], 'tier': v['tier'],
             'violations': v['violations'], 'bytes': len(raw),
+            'blocks': b_types, 'options': o_ids,
             'summary': v['summary'], 'spec_section': v['spec'],
             'expect': v['expect'] or (
                 'Accept. The .jsonl file is the expected projection.'),
@@ -1530,7 +1719,9 @@ def main():
         })
 
     manifest.append({
-        'name': 'chain', 'tier': 'accept', 'violations': 0, 'bytes': sum(
+        'name': 'chain', 'tier': 'accept', 'violations': 0,
+        'blocks': sorted(chain_blocks), 'options': sorted(chain_options),
+        'bytes': sum(
             len(v) for k, v in chain_files.items() if k.endswith('.zpf')),
         'summary': 'A three-file provenance chain whose digests and offsets '
                    'genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. '
@@ -1548,7 +1739,7 @@ def main():
                         'vectors': manifest}, indent=2) + '\n'
     mpath = os.path.join(HERE, 'manifest.json')
     if check:
-        if not os.path.exists(mpath) or open(mpath).read() != mtext:
+        if not os.path.exists(mpath) or read_text(mpath) != mtext:
             problems.append('stale manifest.json')
         if problems:
             print('\n'.join(problems))
