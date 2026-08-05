@@ -104,6 +104,10 @@ RULES = {
         "bytes unavailable is not the same as no bytes exist",
         "broken-chain",
     ),
+    "discontinuity-passthrough-renumber": (
+        "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
+        "passthrough-discontinuity",
+    ),
 }
 
 

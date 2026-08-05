@@ -724,13 +724,25 @@ representable — one more reason `isn` is mandatory once the handshake is seen.
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one reassembled from a capture, where an offset is a true
 position and holes are counted. A **decoded** stream is a different object: it
-exists only as a decode stage's output, so its offset space is the
-**concatenation of that participant's decoded record payloads in stored order**,
-with byte 0 the first byte of the first such record. Undecoded regions
-contribute nothing to it — they name ranges in the *input's* space, never in the
-output's — so a decoded stream's offset space, unlike a transport stream's, is
-**not** hole-inclusive. A **pass-through** output defines no space of its own; it
-keeps its input's unchanged, whichever kind that was.
+exists only as a decode stage's output.
+
+**This is the definition; everywhere else refers to it.** A decoded stream's
+offset space is the **concatenation of that participant's decoded record payloads
+in stored order, plus the declared `width` of any
+[Discontinuity](#discontinuity-0x22) between them**, with byte 0 the first byte of
+the first such record.
+
+It follows that a decoded stream is hole-inclusive **only** where a Discontinuity
+declares a width — unlike a transport stream, which is hole-inclusive throughout.
+Two things contribute nothing:
+
+- **Undecoded regions**, which name ranges in the *input's* space, never in the
+  output's;
+- a Discontinuity with **no** `width`, whose extent is unknowable, so it marks
+  that two records do not join without moving anything after it.
+
+A **pass-through** output defines no space of its own; it keeps its input's
+unchanged, whichever kind that was.
 
 **A decoded record's own range is therefore positional.** A Record block carries
 no offset field; its place in the stream is implied by the concatenation above.
@@ -741,12 +753,11 @@ Record *k* of a participant occupies
 ```
 
 counting that participant's records **and its
-[Discontinuity](#discontinuity-0x22) blocks** in stored order. A declared width
-is the `width` on a Discontinuity block; one with no `width` — a break whose
-extent is unknowable — contributes **0**. With no Discontinuity blocks, which is
-the ordinary case, the sum is exactly the preceding payload lengths. Nothing else
-states this, so a consumer resolving a decoded record — to a range in its own
-file, or one level down — computes it that way.
+[Discontinuity](#discontinuity-0x22) blocks** in stored order — which is the
+offset space defined above, walked. With no Discontinuity blocks, the ordinary
+case, the sum is exactly the preceding payload lengths. Nothing else states this
+arithmetic, so a consumer resolving a decoded record — to a range in its own file,
+or one level down — computes it that way.
 
 *Cost.* Forward reading pays nothing: one running counter per participant. But
 resolving a single record's range **without** reading from the start costs O(k)
@@ -1372,9 +1383,15 @@ The two u16s lead so the u64s stay 4-byte aligned, as in a
 [span-list](#tlv-option-framing--id-registry) entry. The triple
 `(source_id, session_id, pid)` names an input participant stream **in the
 source's id namespace**, never this file's — the same rule that governs `spans`
-and `origin`. `extent` is that stream's length in **its own** offset space: a
-transport stream's is hole-inclusive, a decoded stream's is the concatenation of
-its record payloads, exactly as the layer defines it.
+and `origin`. `extent` is that stream's length in **its own** offset space, as
+[Layers](#layers-raw-and-decoded-live-in-separate-files) defines it — this
+re-states nothing, so there is one place to change if that definition ever moves.
+
+One consequence is worth naming, because it is easy to miss and no vector
+exercises it: a **decoded** input stream's offset space includes the declared
+`width` of any [Discontinuity](#discontinuity-0x22) in it, so its extent counts
+those widths too. A stage reading a decoded input that contains a 25-byte declared
+hole declares an extent 25 larger than the sum of that stream's payloads.
 
 It is **repeatable** because a stage reads several input streams per output
 session — at minimum both directions of a conversation.
@@ -1634,9 +1651,10 @@ it must be a block rather than a record option: its meaning is positional, and
 stored order is what defines a decoded stream's offsets, so it has to interleave
 with the records it separates.
 
-**Why the output space needs its own marker at all.** A decode stage's output is
-the concatenation of its record payloads, so two records either side of an input
-gap are *adjacent* in it — the gap does not survive the layer. Nothing obliges a
+**Why the output space needs its own marker at all.** Absent this block, a decode
+stage's output space is just the concatenation of its record payloads (see
+[Layers](#layers-raw-and-decoded-live-in-separate-files)), so two records either
+side of an input gap are *adjacent* in it — the gap does not survive the layer. Nothing obliges a
 decode stage to re-emit its input's Undecoded blocks (that duty falls on
 pass-throughs), so on the chain `raw → tls-records → http`, one lost TCP segment
 under TLS leaves the HTTP stage free to emit a single message spanning the join,
@@ -1679,10 +1697,23 @@ Undecoded block naming the input range, and a Discontinuity naming its own.
 **A raw file MUST NOT carry one.** A transport stream's offset space is already
 hole-inclusive — a gap occupies a real range that no payload covers — so the break
 is expressible without any block, and the two mechanisms would contradict each
-other. The same goes for a pass-through preserving a transport layer. A
-pass-through preserving a **decoded** layer MUST re-emit its input's Discontinuity
-blocks unchanged, exactly as it re-emits Undecoded blocks: it is obliged to
-preserve logical offsets, and dropping one changes them.
+other. The same goes for a pass-through preserving a transport layer.
+
+**A pass-through preserving a decoded layer carries these forward, renumbered.**
+This is the whole of the rule; *Conformance* refers here rather than restating it.
+Such a transform MUST re-emit every Discontinuity in its input, in its position in
+the participant's stored order and with its `width` unchanged — a declared width is
+a term in the positional arithmetic, so dropping one changes the very offsets a
+pass-through exists to preserve.
+
+**But it re-emits these differently from Undecoded blocks, and the difference is
+the point.** An Undecoded block is copied *verbatim*, ids and all, because its
+statement was always about a file further up the chain. A Discontinuity's ids name
+the stream in the file that carries it, so a pass-through **renumbers** them to
+its own `session_id`/`participant_id` — the same stream, named in the namespace of
+the file now making the statement. Copying them verbatim leaves references into
+the *input's* namespace among ids that are all the pass-through's own, and where
+it minted fresh ones those references dangle.
 
 > **This block is not safe to skip, and it is the only one that is not.** A reader
 > that does not implement type `0x22` MUST skip it by `length` — and then computes
@@ -2052,16 +2083,10 @@ reference, not because this file was derived from it.
   than its immediate input, and it does so because the *statement* being carried
   forward was always about that file.
 
-  It MUST also carry every [Discontinuity](#discontinuity-0x22) block forward, in
-  its position in the participant's stored order and with its `width` unchanged —
-  a declared width is a term in the positional arithmetic, so dropping one changes
-  the very offsets a pass-through exists to preserve. **But it re-emits these
-  differently from Undecoded blocks, and the difference is the point:** an
-  Undecoded block is copied *verbatim*, ids and all, because its statement was
-  always about a file further up the chain. A Discontinuity's ids name the stream
-  in the file that carries it, so a pass-through **renumbers** them to its own
-  `session_id`/`participant_id` — the same stream, named in the namespace of the
-  file now making the statement.
+  It MUST also carry every [Discontinuity](#discontinuity-0x22) block forward,
+  **renumbered to its own ids** — unlike the Undecoded blocks above, which are
+  copied verbatim. See [Discontinuity](#discontinuity-0x22), which states that
+  rule and why the two differ.
 
 **Ordering and sequencing.** A writer **MUST** store each participant's records
 in `seq_start` (logical stream) order; this is what guarantees an unsequenced

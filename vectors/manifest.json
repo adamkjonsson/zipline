@@ -224,6 +224,42 @@
       "has_jsonl": true
     },
     {
+      "name": "passthrough-discontinuity",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 548,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x21",
+        "0x22",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0064",
+        "0x0090",
+        "0x00A0",
+        "0x00D0",
+        "0x00D1"
+      ],
+      "summary": "A pass-through preserving a DECODED layer whose input carried a Discontinuity. The two re-emission rules sit side by side here: the Undecoded block is copied VERBATIM, ids and all, because its statement was always about a file further up the chain -- while the Discontinuity is RENUMBERED to this file's own ids, because its statement is about the stream in the file that carries it. The input's (session 7, pid 0) becomes this file's (session 42, pid 1), so a transform that copied the ids verbatim produces visibly wrong output rather than accidentally-correct output. Note the declared width of 25 is carried forward unchanged: it is a term in the positional arithmetic, so dropping it would change the very offsets a pass-through exists to preserve.",
+      "spec_section": "Discontinuity (0x22) -- pass-through re-emission",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
       "name": "broken-chain",
       "tier": "accept",
       "violations": 0,

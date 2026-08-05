@@ -144,6 +144,7 @@ naive implementation most often fails by treating extension as corruption.
 | Vector | What it exercises |
 |--------|-------------------|
 | `annotator-decoded` | A pass-through preserving a **decoded** layer — the construct `0.9` could not express. Records keep `decoder_id` and carry no `spans`; the inherited Undecoded block forces the grandparent Source to be declared. |
+| `passthrough-discontinuity` | The **two re-emission rules side by side**: an inherited Undecoded block copied *verbatim* (its statement is about a file further up the chain) next to a Discontinuity *renumbered* to this file's ids (its statement is about the stream carrying it). The input's `(7, 0)` becomes `(42, 1)`, so a verbatim copy is visibly wrong rather than accidentally right. |
 | `undecoded-skipped` | `reason = skipped` for a deliberately-declined region (a BOM). |
 | `undecoded-reason-class` | A non-canonical `reason` carrying the required `reason_class`. |
 | `sequenced-basis` | A hint-less `SEQUENCED` session with its mandatory `sequenced_basis`. |
