@@ -39,7 +39,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 13
+MAJOR, MINOR = 0, 14
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations

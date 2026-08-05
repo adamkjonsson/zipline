@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 13
+MAJOR, MINOR = 0, 14
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -1441,6 +1441,19 @@ def assemble(blocks):
         pieces.extend(b)
         pieces.append(P(b"", ""))  # blank line between blocks in the dump
     return pieces
+
+
+def exercised(pieces):
+    blocks, options = set(), set()
+    for _data, ann in pieces:
+        m = _BLOCK_ANN.match(ann)
+        if m:
+            blocks.add(f"0x{int(m.group(1), 16):02X}")
+            continue
+        m = _OPT_ANN.match(ann)
+        if m:
+            options.add(f"0x{m.group(1)}")
+    return sorted(blocks), sorted(options)
 
 
 def to_bytes(pieces):

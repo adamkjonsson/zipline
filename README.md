@@ -51,7 +51,7 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 0.13 — a design in progress. Not ready for production.**
+**Version 0.14 — a design in progress. Not ready for production.**
 
 `0.x` means what it says: any minor release may change anything, including in
 ways that break existing readers. A reader must reject a `version_minor` it does
@@ -60,7 +60,7 @@ not implement.
 A release was designated `1.0` in July 2026, before any implementation existed.
 That was premature — the first implementation found enough to force a breaking
 revision — so it is retroactively designated `0.9`, and the work since is `0.10`
-through `0.13`. (`0.13` follows `0.9`; the components are integers, not decimals.) `1.0` is
+through `0.14`. (`0.14` follows `0.9`; the components are integers, not decimals.) `1.0` is
 reserved for a specification that has survived implementation. More `0.x` rounds
 are expected.
 
@@ -97,6 +97,10 @@ rounds as they happened, not plans:
 - [docs/SPEC-0.11-REVIEW.md](docs/SPEC-0.11-REVIEW.md) and
   [docs/implementation-review-response-0.11.md](docs/implementation-review-response-0.11.md)
   — the review of `0.11`, and the scope it settles for `0.12` and `0.13`.
+- [docs/ISSUE_41_ANALYSIS.md](docs/ISSUE_41_ANALYSIS.md) — the analysis that split
+  decrypted tunnels into what `0.13` could ship and what it could not.
+- [docs/SPEC-0.13-REVIEW.md](docs/SPEC-0.13-REVIEW.md) — the review of `0.13`,
+  whose seven findings are what `0.14` corrects.
 
 ## License
 

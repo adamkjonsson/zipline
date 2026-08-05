@@ -60,6 +60,19 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.14] — unreleased
+
+A corrective release, like `0.11` and `0.12`: it fixes what
+[python-zipline's review of `0.13`](docs/SPEC-0.13-REVIEW.md) found and adds no
+option and no block. Scope and reasoning in
+[docs/RELEASE-0.14-PLAN.md](docs/RELEASE-0.14-PLAN.md).
+
+**Unlike `0.13`, expect a *Changed* section.** Two findings tighten conformance
+rather than clarify it, and burying that under *Clarified* would repeat the kind
+of dishonesty this release exists to correct.
+
+---
+
 ## [0.13] — 2026-08-04
 
 The first release since `0.9` to add capability rather than only correct: three
@@ -724,6 +737,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...HEAD
 [0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13
 [0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12
 [0.11]: https://github.com/adamkjonsson/zipline/compare/v0.10...v0.11
