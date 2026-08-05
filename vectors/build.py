@@ -1322,6 +1322,155 @@ vector(
 )
 
 vector(
+    "session-fan-out",
+    "accept",
+    "ONE input participant stream demultiplexed into TWO output sessions -- the "
+    "capability 0.13 clarified and nothing exercised. A decrypt-and-demux stage: "
+    "the ciphertext record at [0,80) carries framing that feeds an inner unit in "
+    "EACH session, so both sessions' records span it and the spans OVERLAP. That "
+    "is legal since 0.14: coverage requires every offset to be covered at least "
+    "once, not exactly once, and both units genuinely needed that record's nonce "
+    "and tag to exist. [80,140) is session 100's alone and [140,200) is session "
+    "101's, so NEITHER session covers the extent 200 it declares -- only the "
+    "union across both does. A checker that accumulates coverage per output "
+    "session fails here and passes every other vector in the suite; one keyed on "
+    "the input stream passes.",
+    "Layers -- a stage's sessions need not line up with its input's",
+    [
+        file_header(options=[o_produced_by("zpf-demux 0.1"), o_produced_at(1719620000)]),
+        source(1, 1, [o_uri("tls.zpf"), o_digest("sha256:5c7e")]),
+        decoder(1, [o_dec_name("h2-demux"), o_dec_version("0.1")]),
+        # Two output sessions, both drawing on the single input stream (7, 0).
+        session(100, [o_proto("http")]),
+        participant(100, 0, [o_endpoint("10.0.0.1:51000")]),
+        session(101, [o_proto("http")]),
+        participant(101, 0, [o_endpoint("10.0.0.1:51000")]),
+        # The shared ciphertext record: its framing fed both inner units.
+        record(100, 0, 1, 1000, b"S100-a", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 80)])]),
+        record(101, 0, 1, 1010, b"S101-a", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 80)])]),
+        record(
+            100, 0, 1, 1100, b"S100-b", options=[o_decoder_id(1), o_spans([(1, 0, 7, 80, 140)])]
+        ),
+        record(
+            101, 0, 1, 1200, b"S101-b", options=[o_decoder_id(1), o_spans([(1, 0, 7, 140, 200)])]
+        ),
+        # Each consuming session declares the stream's WHOLE extent, not its share.
+        session_end(100, [o_input_extents([(1, 0, 7, 200)])]),
+        session_end(101, [o_input_extents([(1, 0, 7, 200)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-demux 0.1",
+            "produced_at": 1719620000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "tls.zpf",
+            "digest": "sha256:5c7e",
+        },
+        {"type": "decoder", "decoder_id": 1, "name": "h2-demux", "version": "0.1"},
+        {"type": "session", "session_id": 100, "proto": "http"},
+        {"type": "participant", "session_id": 100, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {"type": "session", "session_id": 101, "proto": "http"},
+        {"type": "participant", "session_id": 101, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "record",
+            "session_id": 100,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"S100-a"),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 0, "off_end": 80}],
+        },
+        {
+            "type": "record",
+            "session_id": 101,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1010,
+            "payload": b64(b"S101-a"),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 0, "off_end": 80}],
+        },
+        {
+            "type": "record",
+            "session_id": 100,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(b"S100-b"),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 80, "off_end": 140}],
+        },
+        {
+            "type": "record",
+            "session_id": 101,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "payload": b64(b"S101-b"),
+            "decoder_id": 1,
+            "spans": [
+                {"source_id": 1, "session_id": 7, "pid": 0, "off_start": 140, "off_end": 200}
+            ],
+        },
+        {
+            "type": "session_end",
+            "session_id": 100,
+            "input_extents": [{"source_id": 1, "session_id": 7, "pid": 0, "extent": 200}],
+        },
+        {
+            "type": "session_end",
+            "session_id": 101,
+            "input_extents": [{"source_id": 1, "session_id": 7, "pid": 0, "extent": 200}],
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "isolate-extents-disagree",
+    "isolate",
+    "Two output sessions drawing on ONE input stream, each declaring a DIFFERENT "
+    "extent for it: session 100 says 200, session 101 says 160. Both cannot be "
+    "true -- an input stream has one length, and under fan-out every consuming "
+    "session declares that whole length, so the two Session Ends contradict each "
+    "other. Only reachable once fan-out is legal, which is why nothing tested it "
+    "before 0.14.",
+    "Session End (0x12) -- input_extents under fan-out",
+    [
+        file_header(options=[o_produced_by("zpf-demux 0.1"), o_produced_at(1719630000)]),
+        source(1, 1, [o_uri("tls.zpf"), o_digest("sha256:5c7e")]),
+        decoder(1, [o_dec_name("h2-demux"), o_dec_version("0.1")]),
+        session(100, [o_proto("http")]),
+        participant(100, 0, [o_endpoint("10.0.0.1:51000")]),
+        session(101, [o_proto("http")]),
+        participant(101, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(100, 0, 1, 1000, b"a", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
+        record(101, 0, 1, 1100, b"b", options=[o_decoder_id(1), o_spans([(1, 0, 7, 100, 200)])]),
+        session_end(100, [o_input_extents([(1, 0, 7, 200)])]),
+        session_end(101, [o_input_extents([(1, 0, 7, 160)])]),
+        end_block(),
+    ],
+    expect="MAY reject the file, or isolate. Input stream (session 7, pid 0) is "
+    "declared 200 bytes long by session 100 and 160 by session 101. The "
+    "specification says every session consuming a stream declares that "
+    "stream's whole extent, so two sessions declaring different extents "
+    "for one stream is a contradiction a reader MAY treat as a semantic "
+    "violation. A reader that checks extents per session, rather than "
+    "unioning across the sessions that name a stream, will not notice.",
+    violations=1,
+)
+
+vector(
     "discontinuity-known-width",
     "accept",
     "A QUIC stream decoder, where the missing bytes CAN be counted: STREAM "

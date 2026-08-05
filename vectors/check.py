@@ -86,8 +86,12 @@ RULES = {
     ),
     "session-fan-out": (
         "a stage's output sessions need not mirror its input's",
-        None,
-    ),  # tracked by issue #66
+        "session-fan-out",
+    ),
+    "coverage-at-least-once": (
+        "two records MAY cite one input region; coverage is at least once",
+        "session-fan-out",
+    ),
     "discontinuity-known-width": (
         "a declared width is a term in the positional arithmetic",
         "discontinuity-known-width",

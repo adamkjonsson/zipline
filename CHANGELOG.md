@@ -133,6 +133,23 @@ and filing them as one would misreport what an implementer has to do.
 
 ### Fixed
 
+- **Session fan-out is exercised at last**, by `session-fan-out` — one input
+  participant stream demultiplexed into two output sessions. It shipped in `0.13`
+  as a *Clarified* item with nothing testing it, and the gap survived a whole
+  release. It mattered more than an untested permission usually would, because
+  fan-out and `input_extents` interact: **the obvious implementation — accumulate
+  coverage per output session, compare against the extent that session declared —
+  passes every other vector in the suite**, since `session-fan-out` is the only
+  one with more than one output session, and then fails on the first HTTP/2 file
+  it meets. Neither of its sessions covers the extent 200 it declares; only the
+  union across both does.
+
+  Its `[0,80)` is spanned by **both** sessions — one ciphertext record's framing
+  fed an inner unit in each, which is the case that justified permitting overlap
+  in the first place — so it is also the only file exercising *at least once*.
+  Paired with `isolate-extents-disagree`, where two sessions declare **different**
+  extents for one stream, which an input stream having one length makes a
+  contradiction. Both are reachable only because fan-out is legal.
 - **`input_extents` states its entry size.** Entries are **20 bytes**, so
   `count = len / 20` — which the specification had never said. `spans` pins the
   equivalent down ("each 28 bytes … `count = len / 28`"), and the only place the
