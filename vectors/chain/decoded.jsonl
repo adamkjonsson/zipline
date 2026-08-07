@@ -1,5 +1,5 @@
-{"type":"file","format":"zipline-payload/0.14","tick_hz":1000000,"produced_by":"zpf-decode 0.4","produced_at":1719500000}
-{"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf","digest":"sha256:8401b47084017a3449b98e618f27fd9b3d8a8520f8b49e46314ad434a201f4cf"}
+{"type":"file","format":"zipline-payload/0.15","tick_hz":1000000,"produced_by":"zpf-decode 0.4","produced_at":1719500000}
+{"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf","digest":"sha256:7e6b6936969cb1d77b6b67fd5f99c143fbad943a9176848b604893331dccf126"}
 {"type":"decoder","decoder_id":1,"name":"http/1.1","version":"0.4"}
 {"type":"session","session_id":7,"proto":"http"}
 {"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"]}

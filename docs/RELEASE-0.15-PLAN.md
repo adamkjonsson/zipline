@@ -74,9 +74,14 @@ The same hole opens three ways:
 this against the specification. Per the vectors' ground rule 2 the vector would be
 the thing that is wrong — but only if the text said otherwise, and it does not.
 
-### 2. The duty keys on withheld output content, not on unspanned input bytes
+### 2. The duty keys on whether two units join, not on unspanned input bytes
 
 #78 leaves this open. It is decidable, and the answer shapes the drafting.
+
+*Settled in Phase 0, together with decision 3, and stated there in its final
+form: the key is **do these two units join**, of which withheld content is one
+case. The argument below is what led there, and its negative half — why input
+coverage cannot be the key — is unaffected.*
 
 **Keying on unspanned input bytes fails in both directions.** It over-triggers on
 a TLS decoder that leaves record headers, nonces and tags Undecoded `skipped`:
@@ -110,15 +115,73 @@ adjacent output units is unambiguously a break — no bytes existed, so no conte
 can have been carried forward. That is Finding 3 exactly, and it is verifiable
 from one file.
 
-### 3. The reordering question is settled in Phase 0, not here
+### 3. The reordering question — settled in Phase 0: per seam, under one rule
 
-#78's second open question — whether a heavily reordered participant needs a block
-at every seam — is deliberately left open by this plan and **decided in Phase 0,
-before any wording is drafted**. It is not a detail: it decides whether
-`reordered-decoded` is conformant as shipped, whether `0.15` adds a second new
-option, and how large the `Changed` section is.
+*Answered 2026-08-07, before any wording was drafted, which is what this section
+asked for. **A reordering stage emits a Discontinuity at every seam**, and it does
+so under the same rule as every other case rather than one of its own. What
+follows is why the first answer won and what the other two got wrong; the
+candidate table is kept at the end, unedited, as the record of what was weighed.*
 
-The three candidate answers, and what would settle each:
+**The rule Phase 1 drafts is: a producer MUST emit a Discontinuity between two
+adjacent output units that do not join in the content its output represents.**
+One sentence, no carve-out. Decision 2's withheld content is the sufficient
+condition, not the key — the key is *do these two join*, and it settles all four
+shapes without a second concept:
+
+| Shape | Do they join? | Block |
+|---|---|---|
+| Framing bytes, nonces, tags left Undecoded `skipped` | yes — the plaintext joins perfectly | no |
+| Finding 3: a no-data region between two output units | no — content is gone | yes |
+| A filter dropping a record | no — content withheld | yes |
+| A reordering stage's seam | no — they were never adjacent | yes |
+
+**The specification had already committed to this reading**, in §Discontinuity:
+"What the block asserts is not a length. It asserts that the two sides **do not
+join**." `reordered-decoded`'s two records assert that they join, and it is false.
+Exempting reordering is therefore not a narrowing of #78 but a retreat from a
+sentence that shipped in `0.13` — and it costs the withheld-content half too: if an
+unmarked seam stops meaning *these join* it can only mean *nothing was withheld*,
+which turns the block from an invariant into a hint.
+
+Two arguments in the table below do not survive contact, and are corrected here
+rather than deleted, because both were load-bearing:
+
+- **"A compression can be added later — minor-compatible even after `1.0`."**
+  False for this option. A reader that does not recognise an option id retains it
+  and *ignores it semantically* (§Unrecognised data), so a `1.0` reader meeting a
+  participant-level assertion skips it and splices — the exact failure. That is the
+  `0x22` block's situation verbatim, and the specification already states it for the
+  block: not safe to skip, a **major** bump after `1.0`. The wholesale option is
+  free now, in `0.x`, and only now. Deferring it is still right; "we can always add
+  it later" is not the reason.
+- **"Two adjacent messages never concatenated into anything."** Not for the
+  protocols driving this. Pipelined HTTP/1.1 responses and successive TLS
+  plaintexts *are* concatenated on the wire, and a decoded stream's offset space is
+  defined as that concatenation precisely so a stage 3 can re-frame across a message
+  boundary — the case §Discontinuity was written about. The unit-set stream where
+  adjacency means nothing is real, but hypothetical, and it is a better argument for
+  the participant-level assertion than reordering ever was.
+
+**There is no checkable core for the reordering half**, and looking for one is
+what confirmed decision 2's `spans` argument. The obvious candidate — consecutive
+records whose spans run *downward* cannot join — is wrong, and F1 is the
+counterexample: a reassembly decoder fed out-of-order packets emits descending
+spans over output that joins perfectly. So reordering rests on producer knowledge,
+the no-data class stays the one mechanically verifiable rule, and checkability does
+not separate the two leading answers.
+
+**Cost, measured rather than feared.** `reordered-decoded` has two records and one
+seam: one block, and one added line in its `.jsonl`. `N-1` is the fully-reversed
+worst case, which nothing in the suite and nothing python-zipline reported
+produces.
+
+The participant-level assertion is **deferred, not rejected**, and filed as
+[#80](https://github.com/adamkjonsson/zipline/issues/80) with the pre-`1.0`
+deadline in its body — the same treatment #42 got, and for the same reason: no
+evidence of necessity yet.
+
+The three candidate answers as they were weighed, and what would settle each:
 
 | Answer | Cost | What would make it right |
 |---|---|---|
@@ -126,13 +189,14 @@ The three candidate answers, and what would settle each:
 | **A participant-level assertion.** One option declaring the stream a unit sequence whose stored order is not stream order, discharging the per-seam duty wholesale. | A second new option, in a release already adding F1's | It is arguably truer: the stream's contiguity claim is void as a whole, not at `N-1` individual points. Also the honest model for a decoded stream of discrete messages, where adjacency never meant concatenation |
 | **Exempt reordering entirely.** The duty covers withheld content only. | none | A reordered stream never claimed contiguity, so nothing is being hidden. Leaves `reordered-decoded` shipping as an unmarked splice, which is the thing #78 objected to |
 
-The question underneath all three, and the one to answer first: **what does
-"contiguous" mean for a decoded stream of discrete units?** For `http` the records
-are *messages*; two adjacent messages never concatenated into anything, so a
-"break" between them may assert nothing at all — while a break *inside* one, whose
-`spans` cross a hole, is the real Finding 3 defect. If that distinction holds, the
-origination duty is narrower than #78 implies and the third answer gets much
-stronger. Settle it against the two shapes side by side, not in the abstract.
+The question underneath all three, and the one answered first: **what does
+"contiguous" mean for a decoded stream of discrete units?** The answer is that
+adjacency asserts the two units join in the content the output represents — which
+§Discontinuity already said, and which the offset-space definition already relies
+on. The distinction this section hoped might hold, that two adjacent `http`
+messages never concatenated into anything, does not: pipelined responses
+concatenate, and re-framing across a message boundary is the downstream case the
+block exists for.
 
 ### 4. #42 closes, not adopted
 
@@ -241,9 +305,11 @@ owner yet; answer them in Phase 3 as they arise, and record the answers.
 2. Confirm `reject-unknown-minor` rolls 15 → 16 on its own. It derives `MINOR + 1`
    so it should — and `0.13` shipped precisely because that vector silently became
    valid, so deriving it is only proved by checking it.
-3. Run #70's coverage tool as a **baseline**, before anything moves.
+3. Run #70's coverage tool as a **baseline**, before anything moves. *Recorded at
+   `0.14`: 37 options, 12 blocks, 9 rules, all exercised; unchanged by the stamp.*
 4. **Settle the reordering question** (decision 3). Nothing in Phase 1 can be
-   drafted until it is answered.
+   drafted until it is answered. *Answered: per seam, under one "do they join"
+   rule; the wholesale option deferred to #80. Decision 3 carries the reasoning.*
 5. **Close #42** with its §Design decisions not taken entry.
 
 Stamp first. Every later phase regenerates the tree, and bumping at the end lands
@@ -260,8 +326,9 @@ Ships with its vectors, in the same change:
   Undecoded region between two adjacent output units and no Discontinuity. This is
   Finding 3 as a file, and it is the vector that would have caught the gap;
 - an **`accept`** vector for the same stage doing it correctly;
-- whatever Phase 0's reordering decision does to `reordered-decoded` — a block, a
-  scope sentence, or nothing.
+- a **Discontinuity at `reordered-decoded`'s one seam**, per Phase 0's decision.
+  Its `.jsonl` gains a line and its bytes change; the descending `spans` that vector
+  exists for are untouched.
 
 New `RULES` entries in `check.py` for the duty. Note that `discontinuity-no-splice`
 already exists and is exercised by `splice`; the new rule is its origination half,
@@ -330,7 +397,7 @@ survives the grep.
 | F1's discriminator is fixed in four of its five sites | **this shape already happened, as #63** | One normative statement, the rest referring to it. Grep, then read the section |
 | F2 slips and F1's enum ships unexercised | medium | Decision 5: F1 carries its own vector in Phase 3. #70's tool fails the release otherwise |
 | The `Changed` section is drafted at release and understates F0/F1 | **medium-high — this is the largest one yet** | Draft each entry in the phase that earns it, per `0.14`'s Phase 2 |
-| The reordering question is deferred out of Phase 0 and settled implicitly by whatever gets written | medium | It gates Phase 1. Nothing in #78 is drafted until it is answered |
+| The reordering question is deferred out of Phase 0 and settled implicitly by whatever gets written | **discharged in Phase 0** | Answered before any wording was drafted; decision 3 records the answer and the two arguments it had to correct |
 | F0's scope grows into renaming vectors and rewriting the changelog | medium | Prose in the specification only. Vector names are identifiers; the changelog is history |
 | The suite is red across phase boundaries and "green" stops being a signal | **near-certain** | Say so up front, which `0.14` could not: each phase ships its rule *and* its vector together, so red means a phase is unfinished rather than a release being mid-flight |
 
