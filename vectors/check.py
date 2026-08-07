@@ -81,6 +81,25 @@ SPEC = os.path.join(HERE, os.pardir, "docs", "zipline-payload-format.md")
 # Add a rule when the specification gains one. Adding it with no vector fails,
 # which is the point: the failure is what makes the gap impossible to forget.
 RULES = {
+    # F0's four: the two axes stated independent, and the three cells that
+    # follow from it. Each is a permission, and a permission with no vector is
+    # how #66 happened.
+    "axes-independent": (
+        "provenance and layer are independent; a capture-sourced stream may be decoded",
+        "proxy-decoded",
+    ),
+    "undecoded-capture-sourced": (
+        "a capture-sourced stream may declare what its reassembler did not carry",
+        "undecoded-in-capture",
+    ),
+    "per-stream-transform": (
+        "one file MAY create one stream and preserve another; the bar is per participant",
+        "mixed-derivation",
+    ),
+    "no-intra-file-derivation": (
+        "a file MUST NOT derive one of its own streams from another",
+        "isolate-self-derived",
+    ),
     "spans-correspondence": (
         "a decoder may transform; spans name what a unit corresponds to",
         "chain",

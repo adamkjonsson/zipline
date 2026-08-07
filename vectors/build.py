@@ -515,9 +515,11 @@ def vector(
 vector(
     "raw-minimal",
     "accept",
-    "The minimal conformant raw file: one TCP session, one participant, one "
-    "record. Byte-for-byte the worked example in the specification.",
-    "Worked example: a minimal raw file",
+    "The minimal conformant capture-sourced file: one TCP session, one "
+    "participant, one record. Byte-for-byte the worked example in the "
+    "specification. The vector's NAME keeps the retired word because external "
+    "harnesses reference it; the file is a capture-sourced transport stream.",
+    "Worked example: a minimal capture-sourced file",
     [
         file_header(),
         source(1, 0, [o_uri("sideA.pcap")]),
@@ -2003,6 +2005,269 @@ vector(
 )
 
 vector(
+    "proxy-decoded",
+    "accept",
+    "CASE G: a decoded stream with NO predecessor file. A TLS-terminating "
+    "proxy logging application messages -- the bytes they were computed from "
+    "were never written to a .zpf and never will be. Records carry decoder_id "
+    "and reference a CAPTURE Source, which is the cell the axes were "
+    "conflated to forbid: capture-sourced provenance, decoded layer. No spans "
+    "and no origin, because there is no input stream to name. Two consequences "
+    "the file demonstrates rather than states: the coverage guarantee does not "
+    "apply, since it is scoped within each input participant stream and there "
+    "is none; and the Decoder is a claim of IDENTITY, not a recipe -- nothing "
+    "can regenerate this output, so a tool that assumes re-derivation is "
+    "available is wrong about this file. Under 0.14 the only conformant "
+    "encodings were to drop decoder_id and call these byte runs, losing what "
+    "the records are, or to fabricate a predecessor that never existed.",
+    "Conformance -- a decoded record with no predecessor file",
+    [
+        file_header(options=[o_produced_by("ssl-tap 0.3"), o_produced_at(1719600000)]),
+        source(1, 0, [o_uri("sslkeylog-tap")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(3, [o_proto("http")]),
+        participant(3, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(
+            3,
+            0,
+            1,
+            2000,
+            b"GET /health HTTP/1.1",
+            options=[o_decoder_id(1), o_content_type("dec:request")],
+        ),
+        record(
+            3,
+            0,
+            1,
+            2100,
+            b"HTTP/1.1 200 OK",
+            options=[o_decoder_id(1), o_content_type("dec:response")],
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "ssl-tap 0.3",
+            "produced_at": 1719600000,
+        },
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "sslkeylog-tap"},
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 3, "proto": "http"},
+        {"type": "participant", "session_id": 3, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "record",
+            "session_id": 3,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "payload": b64(b"GET /health HTTP/1.1"),
+            "decoder_id": 1,
+            "content_type": "dec:request",
+        },
+        {
+            "type": "record",
+            "session_id": 3,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2100,
+            "payload": b64(b"HTTP/1.1 200 OK"),
+            "decoder_id": 1,
+            "content_type": "dec:response",
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "undecoded-in-capture",
+    "accept",
+    "An Undecoded block in a CAPTURE-SOURCED file. The stage is the "
+    "reassembler and the input is the capture itself: it discarded an "
+    "overlapping retransmit it could not resolve, and says so rather than "
+    "leaving the region unaccounted for. The block's offsets are byte offsets "
+    "into the capture file, which is what a span into a capture Source has "
+    "always meant. Barred before 0.15 on the unstated assumption that "
+    "capture-sourced meant no transform had run -- but reassembly IS a "
+    "transform, and a destructive one, so the prohibition read as a design "
+    "when it was an oversight. Note the stream stays at the TRANSPORT layer: "
+    "no decoder_id anywhere, and the gap between the two records is expressed "
+    "by the sequence numbers, not by a Discontinuity, which this stream is "
+    "still forbidden to carry.",
+    "Undecoded (0x21) -- a capture-sourced stream",
+    [
+        file_header(),
+        source(1, 0, [o_uri("tap.pcap"), o_link_type(1)]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(7, 0, 1, 1000, b"A" * 50, options=[o_seq_start(1001)]),
+        undecoded(
+            1,
+            0,
+            7,
+            4096,
+            4396,
+            [o_reason("overlap-discarded"), o_reason_class("bytes")],
+        ),
+        record(7, 0, 1, 1200, b"B" * 30, options=[o_seq_start(1076)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "capture",
+            "uri": "tap.pcap",
+            "link_type": 1,
+        },
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"A" * 50),
+            "seq_start": 1001,
+        },
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 7,
+            "pid": 0,
+            "off_start": 4096,
+            "off_end": 4396,
+            "reason": "overlap-discarded",
+            "reason_class": "bytes",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "payload": b64(b"B" * 30),
+            "seq_start": 1076,
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "mixed-derivation",
+    "accept",
+    "ONE derived file holding a decode-stage stream BESIDE a pass-through "
+    "stream. Session 10 is created: its records carry spans and the file "
+    "accounts for the input it decoded. Session 11 is preserved: its "
+    "participant carries origin, its records carry no spans, and its bytes and "
+    "offsets are the input's unchanged. Before 0.15 a derived file was exactly "
+    "one of the two, never a mix, which left a tool with a decoder for one "
+    "protocol and not the other two dishonest options -- pass everything "
+    "through, or mark the undecodable session's whole stream Undecoded, which "
+    "DROPS those bytes from the output. The rule that replaces it binds per "
+    "participant: a participant MUST NOT both carry origin and hold records "
+    "carrying spans. Across streams there is no such rule.",
+    "Conformance -- the discriminator binds per participant",
+    [
+        file_header(
+            options=[
+                o_produced_by("zpf-decode 0.4"),
+                o_produced_at(1719610000),
+                o_transform_params_digest("sha256:5e2f"),
+            ]
+        ),
+        source(1, 1, [o_uri("in.zpf"), o_digest("sha256:6a71")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        # Created: spans, no origin.
+        session(10, [o_proto("http")]),
+        participant(10, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(
+            10,
+            0,
+            1,
+            1000,
+            b"GET /",
+            options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 40)]), o_content_type("dec:request")],
+        ),
+        session_end(10, [o_input_extents([(1, 0, 7, 40)])]),
+        # Preserved: origin, no spans, no decoder_id -- the stage had no
+        # decoder for this protocol and re-emitted it rather than dropping it.
+        session(11, [o_proto("smtp")]),
+        participant(11, 0, [o_endpoint("10.0.0.2:25"), o_isn(4000), o_origin(1, 0, 8)]),
+        record(11, 0, 1, 1100, b"EHLO relay", options=[o_seq_start(4001)]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-decode 0.4",
+            "produced_at": 1719610000,
+            "transform_params_digest": "sha256:5e2f",
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "in.zpf",
+            "digest": "sha256:6a71",
+        },
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 10, "proto": "http"},
+        {"type": "participant", "session_id": 10, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "record",
+            "session_id": 10,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"GET /"),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 0, "off_end": 40}],
+            "content_type": "dec:request",
+        },
+        {
+            "type": "session_end",
+            "session_id": 10,
+            "input_extents": [{"source_id": 1, "session_id": 7, "pid": 0, "extent": 40}],
+        },
+        {"type": "session", "session_id": 11, "proto": "smtp"},
+        {
+            "type": "participant",
+            "session_id": 11,
+            "pid": 0,
+            "endpoint": ["10.0.0.2:25"],
+            "isn": 4000,
+            "origin": {"source_id": 1, "session_id": 8, "pid": 0},
+        },
+        {
+            "type": "record",
+            "session_id": 11,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(b"EHLO relay"),
+            "seq_start": 4001,
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
     "hintless-merge-backwards-ts",
     "accept",
     "A hint-less session with no seq/ack, whose timestamps run backwards "
@@ -2424,6 +2689,50 @@ vector(
     "that DO join and no block is owed; the reason word is not what "
     "decides it. Note a reader needs only this file: that is what makes "
     "this the checkable core rather than splice/'s two-file case.",
+    violations=1,
+)
+
+vector(
+    "isolate-self-derived",
+    "isolate",
+    "INTRA-FILE DERIVATION: a file deriving one of its own streams from "
+    "another. Session 20's records span a zpf-input Source whose uri is THIS "
+    "file, and session 21 is the stream they claim to come from. Legalising "
+    "mixed-state files is what makes this reachable -- streams at differing "
+    "positions on the two axes may now sit side by side, so the question of "
+    "whether one may feed another arises for the first time and the answer is "
+    "no. It cannot work: a zpf-input Source carries a digest, and no file can "
+    "contain its own hash, so the digest here is either absent, wrong, or a "
+    "value that changes the bytes it describes. Every derived stream's "
+    "predecessor is a DIFFERENT file.",
+    "Conceptual model -- the unit is the stream, not the file",
+    [
+        file_header(options=[o_produced_by("zpf-decode 0.4"), o_produced_at(1719620000)]),
+        # THE VIOLATION: the uri names this vector's own file.
+        source(1, 1, [o_uri("isolate-self-derived.zpf"), o_digest("sha256:0000")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(21, [o_proto("tcp")]),
+        participant(21, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(21, 0, 1, 1000, b"GET /", options=[o_seq_start(1001)]),
+        session(20, [o_proto("http")]),
+        participant(20, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(
+            20,
+            0,
+            1,
+            1100,
+            b"GET /",
+            options=[o_decoder_id(1), o_spans([(1, 0, 21, 0, 5)]), o_content_type("dec:request")],
+        ),
+        end_block(),
+    ],
+    expect="ISOLATE or reject. The Source names the file that contains it, so "
+    "its digest cannot be computed without changing the value it would "
+    "have to hold. Streams at differing layers or provenances in one "
+    "file are legal since 0.15; one deriving from another in the same "
+    "file is not, and the two are easy to confuse. A reader MUST NOT "
+    "resolve the spans against the sibling session -- that is the "
+    "reinterpretation the isolate tier forbids.",
     violations=1,
 )
 
