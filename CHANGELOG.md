@@ -60,6 +60,27 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.15] — unreleased
+
+**A feature release, and the first that changes what already-written files
+mean.** `0.13` shipped the corrective third of
+[#41](https://github.com/adamkjonsson/zipline/issues/41); `0.15` finishes it —
+provenance and layer as independent axes, and sessionization as a decoder that
+declares the layer it emits — and closes the hole
+[python-zipline found](https://github.com/adamkjonsson/zipline/issues/78) in
+what `0.13` shipped: a stage must emit a Discontinuity when its *own* output
+breaks, not only carry one forward. Scope and reasoning in
+[docs/RELEASE-0.15-PLAN.md](docs/RELEASE-0.15-PLAN.md); every item is an issue on
+the [`0.15` milestone](https://github.com/adamkjonsson/zipline/milestone/3).
+
+**Expect the largest *Changed* section the format has had, and read it in two
+halves.** The origination duty makes files conformant under `0.14`
+non-conformant under `0.15`. The `#41` work leaves every existing file
+*byte*-conformant while restating what its records mean — no reader breaks on
+the bytes, and every reader's model of them is out of date.
+
+---
+
 ## [0.14] — 2026-08-06
 
 A corrective release, like `0.11` and `0.12`: it fixes all seven findings of
@@ -889,6 +910,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...HEAD
 [0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14
 [0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13
 [0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12

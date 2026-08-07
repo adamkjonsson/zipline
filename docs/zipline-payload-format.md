@@ -1,20 +1,19 @@
-# Zipline Payload Format (v0.14)
+# Zipline Payload Format (v0.15)
 
-> Status: **version 0.14** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.15** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
-> `0.10` was the first revision informed by a real implementation; `0.11` and
-> `0.12` corrected what successive reviews of them found; `0.13` was the first
-> since `0.9` to *add* capability rather than only correct, and `0.14` corrected
-> what the review of it found — mostly rules this document had stated in more
-> than one place, updating only some of the copies. More are expected.
+> `0.10` was the first revision informed by a real implementation; `0.11`,
+> `0.12` and `0.14` corrected what successive reviews of them found; `0.13` was
+> the first since `0.9` to *add* capability rather than only correct, and `0.15`
+> is the first to change what already-written files mean. More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` through `0.14`
-> followed. Note `0.14` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.15`
+> followed. Note `0.15` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -200,7 +199,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.14","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.15","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -402,7 +401,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.14","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.15","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -479,7 +478,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.14","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.15","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -923,7 +922,7 @@ bytes it could not parse — its ids read in `raw.zpf`'s namespace, coincidental
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.14","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.15","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -961,7 +960,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.14","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.15","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
@@ -1088,7 +1087,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.14` is the fourteenth minor and is **greater** than `0.9`. A writer stamps
+number: `0.15` is the fifteenth minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -2474,7 +2473,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  0E 00                    version_minor = 14   (0.14, little-endian)
+000E  0F 00                    version_minor = 15   (0.15, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
@@ -2663,6 +2662,37 @@ This is not a backlog. Planned work lives in the
   whether a file's own stage built a record or re-emitted it. A third kind would
   add a permanent branch to a taxonomy whose value is that it has two, to buy a
   guarantee nobody has yet needed to check.
+
+- **Requiring `sequenced_basis` on every `SEQUENCED` session.** The requirement
+  binds [hint-less](#merge-algorithm) sessions only, and hint-less is
+  all-or-nothing: one record carrying `seq_start` or `ack` among a hundred that
+  carry none makes the session hinted, so no basis is required even though nearly
+  all of its order still rests on timestamps. Requiring the basis unconditionally
+  closes that gap and removes the hint-less dependency from the rule entirely.
+  *Filed as a candidate in `0.12` pending evidence the gap mattered, and not
+  adopted in `0.15` because none arrived* — three releases and one full external
+  implementation later, including a review of `0.14` that returned a single
+  finding, about something else.
+
+  The cost was never in doubt: it puts an option on every sequenced TCP session,
+  reinstates the `transport` vocabulary value that `0.12` deleted on the grounds
+  that it could never legitimately appear, and adds an obligation to files that
+  are conformant today. What it buys is narrower than it first looks. A consumer
+  can already see which records carry no hints, and that the merge leaves those
+  concurrent; what it cannot learn is what the producer relied on for them. The
+  loss is **legibility, not correctness**, and the behaviour is pinned by the
+  `partially-hinted-sequenced` vector, so it cannot drift unnoticed.
+
+  One variant is worth not proposing a third time: splitting the rule, so that a
+  reader checks the hint-less proxy while a producer is obliged to record the
+  basis whenever the order does not follow entirely from causal hints. That
+  obligation is **undecidable for a streaming producer** — the Session Descriptor
+  is written before the session's records, which is the same asymmetry
+  [Recording the basis](#sequenced-files-precomputed-order) resolves by keying on
+  what the producer relies on. It is the defect `0.11` removed from the previous
+  exemption, reproduced inside the fix for it. The full analysis is
+  [#42](https://github.com/adamkjonsson/zipline/issues/42), and reopening it costs
+  nothing.
 
 ### Planned, tracked elsewhere
 
