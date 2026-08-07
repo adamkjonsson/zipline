@@ -79,6 +79,46 @@ non-conformant under `0.15`. The `#41` work leaves every existing file
 *byte*-conformant while restating what its records mean — no reader breaks on
 the bytes, and every reader's model of them is out of date.
 
+### Changed
+
+- **A stage MUST declare a break in its *own* output, not only carry one
+  forward.** Every normative statement about emitting a
+  [Discontinuity](docs/zipline-payload-format.md#discontinuity-0x22) was
+  conditioned on the input already carrying one, so the head of a chain — the
+  stage that first loses something — was unobliged, and Finding 3 of the `0.13`
+  review stayed conformant through two releases that were written to close it.
+  The new duty is stated **once**, in §Discontinuity under *What a producer owes
+  the block*, and keyed on the one question a producer can always answer: **do
+  these two adjacent output units join?**
+
+  It binds any stream whose offsets are the concatenation of its own record
+  payloads — the property, not the file kind — which is why a transport stream is
+  exempt and why the rule needs no rewriting when this release's later items
+  change what a layer is. Three shapes now require a block that did not before: a
+  decode stage that leaves a `hole`-class region between two output units
+  (**Finding 3**), a **filter** whose dropped records break its survivors apart
+  (this is [#78](https://github.com/adamkjonsson/zipline/issues/78)'s title), and
+  a **reordering** stage, whose stored neighbours were never adjacent. One shape
+  is explicitly *not* a break: framing bytes, nonces and tags left undecoded
+  withhold nothing, and the content either side joins.
+
+  **This is what makes `0.14`-conformant files non-conformant.** If you produce
+  decoded output, the question to ask of every seam is whether content that
+  belonged between those two units reached the file. Note the duty does **not**
+  key on `spans` adjacency: correspondence is not identity, so a transforming
+  decoder's spans need not abut where its output is continuous — the workaround
+  that looks obvious has been unsound since `0.13`.
+
+  One case is decidable from a single file and is now a vector:
+  `isolate-unmarked-break`, a `hole`-class Undecoded region between the input
+  regions of two adjacent output units, is `discontinuity-unknown-width` with the
+  block deleted. Everything else rests on producer knowledge. Two `reason` values
+  join the open vocabulary for the new shapes: `records-dropped` and `reordered`.
+
+  The shipped vector `reordered-decoded` changed as a result — it gains a
+  Discontinuity at its one seam. It was conformant when shipped and is not now,
+  which is the clearest statement of what this entry means.
+
 ---
 
 ## [0.14] — 2026-08-06

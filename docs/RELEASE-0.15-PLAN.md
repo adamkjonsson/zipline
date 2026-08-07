@@ -334,6 +334,22 @@ New `RULES` entries in `check.py` for the duty. Note that `discontinuity-no-spli
 already exists and is exercised by `splice`; the new rule is its origination half,
 and the two should read as a pair.
 
+*Shipped, with one substitution worth recording. **The accept vector this phase
+called for already existed**: `discontinuity-unknown-width` is Finding 3's stage 1
+done right — same decoder, same lost segment, block present — so
+`isolate-unmarked-break` is that file with the block deleted, and the two ship as a
+pair rather than as a vector and its duplicate. The freed budget went to
+`filtered-decoded`, the shape #78 is actually titled after and the one nothing in
+the suite exercised: a filter, where `skipped` does its second job. Two `RULES`
+entries, `discontinuity-origination` and `discontinuity-reordering`. Two `reason`
+values added to the open vocabulary, `records-dropped` and `reordered`.*
+
+*One limit found while verifying: `check_capability_coverage` can only confirm that
+the vector a rule **names** exists — it cannot tell whether that vector exercises
+the rule. Pointing a rule at the wrong vector passes. That is inherent to declaring
+rules by name and is not worth fixing, but it means `RULES` is a statement of
+intent that a human still has to keep true.*
+
 ### Phase 2 — F0 (#53), the axes
 
 Prose only, no wire change, every existing file stays byte-conformant. It rewrites
@@ -407,12 +423,12 @@ survives the grep.
 
 - [ ] #78, #53, #54, #55 closed, each in the commit that finishes it; #41 closed by
       #55; #42 closed as not adopted with its §Design decisions not taken entry.
-- [ ] A stage MUST emit a Discontinuity when its **own** output breaks — stated
+- [x] A stage MUST emit a Discontinuity when its **own** output breaks — stated
       once, keyed on offset-space semantics, with the no-data checkable core stated
       separately from the producer-knowledge duty.
-- [ ] Finding 3 has an `isolate` vector. The defect `0.13` shipped the block for is
+- [x] Finding 3 has an `isolate` vector. The defect `0.13` shipped the block for is
       now a file that fails.
-- [ ] The reordering question is answered in the specification, either way, and
+- [x] The reordering question is answered in the specification, either way, and
       `reordered-decoded` agrees with the answer.
 - [ ] Provenance and layer are stated as independent axes; "raw" is gone from the
       normative text; `check.py` classifies per stream.

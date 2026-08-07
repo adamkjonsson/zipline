@@ -4,5 +4,6 @@
 {"type":"session","session_id":7,"proto":"http"}
 {"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"]}
 {"type":"record","session_id":7,"sender_pid":1,"source_id":1,"ts":995,"payload":"QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=","decoder_id":1,"spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":100,"off_end":150}],"content_type":"dec:response"}
+{"type":"discontinuity","session_id":7,"pid":1,"reason":"reordered"}
 {"type":"record","session_id":7,"sender_pid":1,"source_id":1,"ts":990,"payload":"QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ==","decoder_id":1,"spans":[{"source_id":1,"session_id":7,"pid":1,"off_start":0,"off_end":100}],"content_type":"dec:response"}
 {"type":"end"}
