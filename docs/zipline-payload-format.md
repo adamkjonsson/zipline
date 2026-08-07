@@ -782,7 +782,9 @@ its records carry `spans` naming the input ranges they came from, and every
 region it dropped is marked [Undecoded](#undecoded-0x21) with
 `reason = skipped` — a deliberate decision not to carry data forward, which is
 exactly what that reason is for. The coverage guarantee then applies as it does
-to any decode stage, and the filter is answerable for the whole input.
+to any decode stage, and the filter is answerable for the whole input. Dropped
+content also means the surviving records either side of it no longer join, which
+[Discontinuity](#discontinuity-0x22) obliges the filter to declare.
 
 **`decoder_id` names a layer, not a stage**, so such a transform does *not*
 declare a decoder of its own. It **inherits** its input's `decoder_id`s and
@@ -798,7 +800,9 @@ the same reason a filter is — stored order defines the offsets, so reordering
 changes them — and its records carry `spans` naming the input ranges they came
 from. Those spans will not ascend with stored order, which is expected: nothing
 requires them to, and coverage depends only on which ranges are covered, not on
-the order they appear in.
+the order they appear in. Records it stores as neighbours that were not neighbours
+in the stream no longer join, which
+[Discontinuity](#discontinuity-0x22) obliges it to declare at each such seam.
 
 One consequence follows: because every `params_digest` in such a file belongs to
 an *inherited* decoder, the transform's own configuration has none to live in.
@@ -1657,7 +1661,7 @@ ranges say. Body:
 
 Options: `width` (u64 — the gap's extent in this stream's offset space; **absent
 means unknown**), `reason` (string, open vocabulary: `tls-record-lost`,
-`decrypt-failed`, `stream-gap`, …), `comment`.
+`decrypt-failed`, `stream-gap`, `records-dropped`, `reordered`, …), `comment`.
 
 **This is the mirror image of [Undecoded](#undecoded-0x21), and confusing the two
 is the easy mistake.** Every field of an Undecoded block is read against the
@@ -1698,23 +1702,77 @@ the whole remainder of a stream rather than one hole in it. What the block asser
 is not a length. It asserts that the two sides **do not join**, which is the actual
 defect: a consumer that splices them reads a message that was never sent.
 
+**What a producer owes the block.** A stage **MUST** emit a Discontinuity between
+two adjacent units of its own output wherever those two units **do not join** —
+wherever the content its output represents did not run continuously from the end
+of the first into the start of the second.
+
+**This duty is stated here and nowhere else; every other mention refers to it.**
+It binds any stream whose offsets are the **concatenation of its own record
+payloads**, which is what makes a break inexpressible in it without this block.
+That is the property, not the file kind: a transport stream is exempt for the
+mirror-image reason, its hole-inclusive offsets having already expressed the break
+(see *A raw file MUST NOT carry one*, below).
+
+**Do these two join?** is the whole test, and it falls to the producer because
+only the producer knows what it did with the input:
+
+| The stage… | Do they join? | Block |
+|---|---|---|
+| left framing between two units undecoded — a record header, a nonce, a tag | **yes**, the content runs straight on | no |
+| found no bytes to decode there: a [`hole`](#undecoded-0x21)-class region (`gap`, `truncated`) | no | **yes** |
+| declined or dropped content that was present — a filter's dropped record, a message it would not parse | no | **yes** |
+| **reordered** its input's units, so these two were never neighbours | no | **yes** |
+
+Note what the test does **not** key on. Not input coverage: a decryptor leaves
+every record header, nonce and tag accounted for without decoding them, and its
+plaintext joins perfectly, so a rule keyed on unspanned input bytes would demand a
+block that says something false. Not `spans` adjacency either — `spans` assert
+[correspondence, not identity](#tlv-option-framing--id-registry), so a
+transforming decoder's spans need not abut where its output is continuous, and
+they may legally overlap or run downward. The question is only whether content
+that belonged between these two units failed to reach the output, or was never
+between them at all.
+
+**Reordering is the case that looks like an exception and is not.** A stage that
+reorders a participant's records withholds nothing — every byte reaches the output
+— but stored order *defines* this offset space, so two records stored as
+neighbours assert that they join, and for reordered neighbours that assertion is
+false. Such a stage emits a Discontinuity at each seam, with **no** `width`: what
+lies between two units that were never adjacent is not a hole to be counted.
+
+**One case is decidable from a single file, and it is the one that shipped
+broken.** Where an Undecoded region of the **`hole`** class lies between the input
+regions of two adjacent output units, no other reading is available — no bytes
+existed there, so no content can have been carried forward, and the two units
+cannot join. A checker may raise that from the file alone. Every other case above
+rests on producer knowledge and is not mechanically decidable, which is a reason
+to state the duty plainly rather than to narrow it to what a checker can see.
+
 **What a consumer owes the block.** A consumer **MUST NOT** treat the records
 either side of a Discontinuity as contiguous. A decode stage reading an input that
 carries one **MUST NOT** emit a unit whose `spans` cross it without emitting a
 Discontinuity of its own in the corresponding position of its output.
 
-The second duty is what carries the property down a chain, and it is the one worth
-stating explicitly because it is easy to think the first covers it. It does not: a
-stage that honours only the first still consumes the break and emits an output in
-which nothing records it, so the discontinuity is visible at one stage and gone at
-the next — the original defect, one hop along. A stage that genuinely cannot
-express the break in its own output has not satisfied this by staying silent; it
-has to leave the crossing undone.
+The no-splice sentence is what carries the property down a chain, and it is worth
+stating explicitly because it is easy to think the MUST NOT before it covers the
+case. It does not: a stage that honours only the first still consumes the break and
+emits an output in which nothing records it, so the discontinuity is visible at one
+stage and gone at the next — the original defect, one hop along. A stage that
+genuinely cannot express the break in its own output has not satisfied this by
+staying silent; it has to leave the crossing undone.
 
 Without these, the block is inert. A stage could read a Discontinuity, compute
 every offset correctly, splice across it, satisfy the coverage guarantee, and
 remain conformant — which would leave the information recorded and nothing obliged
 to act on it.
+
+**Originating and carrying are different duties, and a chain needs both.** The
+producer's duty starts a break where one first appears; the consumer's carries it
+onward. `0.13` shipped only the second, and the gap that left is not subtle: a
+stage could lose a TLS record, emit the two surviving units side by side, and hand
+a downstream decoder an output with nothing in it to carry. Every rule fired
+correctly and the break vanished at the head of the chain.
 
 **Placement and ordering.** A Discontinuity has no `timestamp`; it takes its
 position from stored order alone, between the records it separates, and it is not
@@ -1885,7 +1943,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
 | `0x00C1` | input_extents    | packed     | Session End (derived)    | length of each input participant stream this session drew on, in that stream's own offset space: `source_id: u16, pid: u16, session_id: u64, extent: u64` — ids in the source's namespace; **repeatable**, occurrences concatenate (see [Session End](#session-end-0x12)) |
 | `0x00D0` | width            | u64        | Discontinuity            | extent of the break in this stream's own offset space; **absent means unknown**, and an absent width contributes 0 to positional arithmetic (see [Discontinuity](#discontinuity-0x22)) |
-| `0x00D1` | reason           | string     | Discontinuity            | why the stream breaks here: `tls-record-lost`/`decrypt-failed`/`stream-gap`/… (open vocabulary) |
+| `0x00D1` | reason           | string     | Discontinuity            | why the stream breaks here: `tls-record-lost`/`decrypt-failed`/`stream-gap`/`records-dropped`/`reordered`/… (open vocabulary) |
 
 A **span-list** value is `count` packed entries, each 28 bytes:
 `source_id: u16, pid: u16, session_id: u64, off_start: u64, off_end: u64`
@@ -2119,6 +2177,9 @@ reference, not because this file was derived from it.
   preserving a raw layer. A Discontinuity is a statement about the file's **own**
   output stream and discharges no coverage obligation: a stage that could not
   decode an input region *and* needs to say its output breaks emits both blocks.
+  When a stage must *originate* one, rather than carry an input's forward, is
+  stated in [what a producer owes the block](#discontinuity-0x22) and is
+  deliberately not restated here.
 - A **pass-through** record is any record a pass-through file re-emits. It
   carries no `spans` — `origin` plus offset preservation is its provenance — and
   it carries a `decoder_id` exactly when the input's record did. Its `source_id`

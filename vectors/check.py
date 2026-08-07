@@ -109,10 +109,21 @@ RULES = {
         "bytes unavailable is not the same as no bytes exist",
         "broken-chain",
     ),
+    # The two halves of the block's duty, and they read as a pair: originate a
+    # break where one first appears, then carry it down the chain. 0.13 shipped
+    # only the second, which is what #78 found.
+    "discontinuity-origination": (
+        "a stage MUST declare a break in its OWN output, not only carry one forward",
+        "isolate-unmarked-break",
+    ),
     "discontinuity-no-splice": (
         "a stage MUST NOT emit a unit whose spans cross a declared break "
         "without declaring one of its own",
         "splice",
+    ),
+    "discontinuity-reordering": (
+        "stored neighbours that were never adjacent do not join, so each seam is declared",
+        "reordered-decoded",
     ),
     "discontinuity-passthrough-renumber": (
         "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",

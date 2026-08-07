@@ -324,7 +324,7 @@
         "0x0090",
         "0x00A0"
       ],
-      "summary": "A decode stage that deliberately declines a region -- a byte-order mark -- and says so with reason = skipped rather than claiming a parse failure.",
+      "summary": "A decode stage that deliberately declines a region -- a byte-order mark -- and says so with reason = skipped rather than claiming a parse failure. It is also the case that must NOT carry a Discontinuity: a discarded BOM withholds no content, so the text either side joins and the origination duty is not triggered. A rule keyed on unspanned input bytes would demand a block here and it would be a lie.",
       "spec_section": "Undecoded (0x21)",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
@@ -392,7 +392,7 @@
         "0x00C1",
         "0x00D1"
       ],
-      "summary": "Finding 3's stage 1: a tls-records decoder that lost one TCP segment. The plaintext length the lost ciphertext would have produced is unknowable, so the Discontinuity carries NO width and contributes 0 to the positional arithmetic -- output offsets stay [0,50) and [50,80). The block's job is to say those two records DO NOT JOIN. Without it they are simply adjacent and a downstream decoder splices them silently.",
+      "summary": "Finding 3's stage 1: a tls-records decoder that lost one TCP segment. The plaintext length the lost ciphertext would have produced is unknowable, so the Discontinuity carries NO width and contributes 0 to the positional arithmetic -- output offsets stay [0,50) and [50,80). The block's job is to say those two records DO NOT JOIN. Without it they are simply adjacent and a downstream decoder splices them silently -- which is exactly isolate-unmarked-break, this file with the block deleted. The two are a pair: same stage, same loss, one declaring the break its output has and one not.",
       "spec_section": "Discontinuity (0x22)",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
@@ -628,7 +628,7 @@
       "name": "reordered-decoded",
       "tier": "accept",
       "violations": 0,
-      "bytes": 560,
+      "bytes": 596,
       "blocks": [
         "0x01",
         "0x02",
@@ -636,6 +636,7 @@
         "0x10",
         "0x11",
         "0x20",
+        "0x22",
         "0x41"
       ],
       "options": [
@@ -650,10 +651,52 @@
         "0x0060",
         "0x0080",
         "0x0090",
-        "0x0091"
+        "0x0091",
+        "0x00D1"
       ],
-      "summary": "A stage that reorders a participant's decoded records without decoding them. It is a decode stage -- stored order defines the offsets, so reordering changes them -- and its spans run DOWNWARD against stored order. A reader that assumes spans ascend fails here. The declared Decoder is INHERITED (http/1.1, the layer's), so its params_digest describes a stage further up the chain; this stage's own config lives in the File Header transform_params_digest.",
+      "summary": "A stage that reorders a participant's decoded records without decoding them. It is a decode stage -- stored order defines the offsets, so reordering changes them -- and its spans run DOWNWARD against stored order. A reader that assumes spans ascend fails here. The declared Decoder is INHERITED (http/1.1, the layer's), so its params_digest describes a stage further up the chain; this stage's own config lives in the File Header transform_params_digest. Since 0.15 the seam between the two records carries a Discontinuity: the stage withholds nothing, but stored neighbours assert that they join and these two never did. No width -- what lies between two records that were never adjacent is not a hole to count, so the output offsets are unchanged at [0,50) and [50,150).",
       "spec_section": "Layers -- filtering and reordering a decoded stream",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
+      "name": "filtered-decoded",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 692,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x22",
+        "0x41"
+      ],
+      "options": [
+        "0x0001",
+        "0x0012",
+        "0x0013",
+        "0x0015",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00A0",
+        "0x00C1",
+        "0x00D0",
+        "0x00D1"
+      ],
+      "summary": "A filter over a decoded HTTP file: it keeps two records and drops the one between them. Like a reordering stage it is a decode stage with an INHERITED decoder, so its own config lives in transform_params_digest. The dropped region is Undecoded with reason = skipped -- the same value a discarded byte-order mark carries, which is exactly the ambiguity #78 raised: skipped does two unrelated jobs, and only one of them is a break. What tells them apart is not the reason but whether the survivors still join, and here they do not, so the seam carries a Discontinuity. Its width is DECLARED as 40: a filter knows the length of what it dropped, and an absent width would claim that length is unknowable. Declaring it keeps the output offset space aligned with the input's -- record C sits at [100,160) in both -- which does not make this a pass-through, since the spans-versus-origin test is what decides that and these are spans.",
+      "spec_section": "Discontinuity (0x22) -- what a producer owes the block",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
     },
@@ -973,6 +1016,41 @@
       "summary": "A RAW file carrying a Discontinuity block. A transport stream's offset space is already hole-inclusive -- a gap occupies a real range no payload covers, resolvable from seq_start and isn -- so the block is meaningless there and the two mechanisms contradict each other: is the missing region the sequence gap, the declared width, or their sum? The block belongs to decoded layers only.",
       "spec_section": "Discontinuity (0x22)",
       "expect": "MAY reject the file, or isolate the session. The gap is already stated implicitly and unambiguously by the sequence numbers -- seq_start 1001 + 50 bytes ends at 1051, and the next record starts at 1076 -- so the Discontinuity is a second, redundant and potentially contradicting account of the same 25 bytes. A reader MUST NOT sum the two.",
+      "has_jsonl": false
+    },
+    {
+      "name": "isolate-unmarked-break",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 532,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x00A0",
+        "0x00C1"
+      ],
+      "summary": "Finding 3 as ONE file: a decode stage whose own output breaks, saying nothing. It is discontinuity-unknown-width with the Discontinuity deleted and nothing else changed -- the same tls-records stage, the same lost TCP segment, the same complete coverage. Every other rule is satisfied, which is the point: the coverage guarantee is about the INPUT and has no opinion on the output, so a checker that only accumulates ranges passes this file. This is the defect 0.13 shipped the block for and 0.15 finally forbids -- under 0.14 this file was conformant. Unlike splice/ it needs no second file, because a hole-class Undecoded region lying between the input regions of two adjacent output units is the one shape of the duty that is decidable from a single file.",
+      "spec_section": "Discontinuity (0x22) -- what a producer owes the block",
+      "expect": "ISOLATE or reject. The Undecoded region is hole-class -- no bytes existed at [100,139) anywhere upstream -- and it lies between the input regions of two output units this file stores as neighbours. No content can have been carried forward across it, so the two records cannot join and the file MUST say so. Contrast undecoded-skipped, where a discarded BOM sits between two units that DO join and no block is owed; the reason word is not what decides it. Note a reader needs only this file: that is what makes this the checkable core rather than splice/'s two-file case.",
       "has_jsonl": false
     },
     {

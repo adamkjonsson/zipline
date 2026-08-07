@@ -1129,7 +1129,11 @@ vector(
     "undecoded-skipped",
     "accept",
     "A decode stage that deliberately declines a region -- a byte-order mark -- "
-    "and says so with reason = skipped rather than claiming a parse failure.",
+    "and says so with reason = skipped rather than claiming a parse failure. "
+    "It is also the case that must NOT carry a Discontinuity: a discarded BOM "
+    "withholds no content, so the text either side joins and the origination "
+    "duty is not triggered. A rule keyed on unspanned input bytes would demand "
+    "a block here and it would be a lie.",
     "Undecoded (0x21)",
     [
         file_header(options=[o_produced_by("zpf-decode 0.4"), o_produced_at(1719540000)]),
@@ -1244,7 +1248,10 @@ vector(
     "the Discontinuity carries NO width and contributes 0 to the positional "
     "arithmetic -- output offsets stay [0,50) and [50,80). The block's job is "
     "to say those two records DO NOT JOIN. Without it they are simply adjacent "
-    "and a downstream decoder splices them silently.",
+    "and a downstream decoder splices them silently -- which is exactly "
+    "isolate-unmarked-break, this file with the block deleted. The two are a "
+    "pair: same stage, same loss, one declaring the break its output has and "
+    "one not.",
     "Discontinuity (0x22)",
     [
         file_header(options=[o_produced_by("zpf-tls 0.2"), o_produced_at(1719580000)]),
@@ -1770,7 +1777,11 @@ vector(
     "order. A reader that assumes spans ascend fails here. The declared Decoder "
     "is INHERITED (http/1.1, the layer's), so its params_digest describes a "
     "stage further up the chain; this stage's own config lives in the File "
-    "Header transform_params_digest.",
+    "Header transform_params_digest. Since 0.15 the seam between the two "
+    "records carries a Discontinuity: the stage withholds nothing, but stored "
+    "neighbours assert that they join and these two never did. No width -- what "
+    "lies between two records that were never adjacent is not a hole to count, "
+    "so the output offsets are unchanged at [0,50) and [50,150).",
     "Layers -- filtering and reordering a decoded stream",
     [
         file_header(
@@ -1798,6 +1809,9 @@ vector(
                 o_content_type("dec:response"),
             ],
         ),
+        # B's last byte and A's first were nowhere near each other on the wire.
+        # Adjacency here would assert that they join, so the seam is declared.
+        discontinuity(7, 1, [o_disc_reason("reordered")]),
         record(
             7,
             1,
@@ -1840,6 +1854,7 @@ vector(
             ],
             "content_type": "dec:response",
         },
+        {"type": "discontinuity", "session_id": 7, "pid": 1, "reason": "reordered"},
         {
             "type": "record",
             "session_id": 7,
@@ -1850,6 +1865,137 @@ vector(
             "decoder_id": 1,
             "spans": [{"source_id": 1, "session_id": 7, "pid": 1, "off_start": 0, "off_end": 100}],
             "content_type": "dec:response",
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "filtered-decoded",
+    "accept",
+    "A filter over a decoded HTTP file: it keeps two records and drops the one "
+    "between them. Like a reordering stage it is a decode stage with an "
+    "INHERITED decoder, so its own config lives in transform_params_digest. "
+    "The dropped region is Undecoded with reason = skipped -- the same value a "
+    "discarded byte-order mark carries, which is exactly the ambiguity #78 "
+    "raised: skipped does two unrelated jobs, and only one of them is a break. "
+    "What tells them apart is not the reason but whether the survivors still "
+    "join, and here they do not, so the seam carries a Discontinuity. Its "
+    "width is DECLARED as 40: a filter knows the length of what it dropped, "
+    "and an absent width would claim that length is unknowable. Declaring it "
+    "keeps the output offset space aligned with the input's -- record C sits "
+    "at [100,160) in both -- which does not make this a pass-through, since "
+    "the spans-versus-origin test is what decides that and these are spans.",
+    "Discontinuity (0x22) -- what a producer owes the block",
+    [
+        file_header(
+            options=[
+                o_produced_by("zpf-filter 0.1"),
+                o_produced_at(1719560000),
+                o_transform_params_digest("sha256:3b9a"),
+            ]
+        ),
+        source(1, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+        record(
+            7,
+            1,
+            1,
+            1000,
+            b"A" * 60,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 1, 7, 0, 60)]),
+                o_content_type("dec:request"),
+            ],
+        ),
+        undecoded(
+            1, 1, 7, 60, 100, [o_reason("skipped"), o_decoder_id(1), o_comment("filtered out")]
+        ),
+        discontinuity(7, 1, [o_width(40), o_disc_reason("records-dropped")]),
+        record(
+            7,
+            1,
+            1,
+            1200,
+            b"C" * 60,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 1, 7, 100, 160)]),
+                o_content_type("dec:response"),
+            ],
+        ),
+        session_end(7, [o_input_extents([(1, 1, 7, 160)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-filter 0.1",
+            "produced_at": 1719560000,
+            "transform_params_digest": "sha256:3b9a",
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "decoded.zpf",
+            "digest": "sha256:44dd",
+        },
+        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {"type": "session", "session_id": 7, "proto": "http"},
+        {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"A" * 60),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 1, "off_start": 0, "off_end": 60}],
+            "content_type": "dec:request",
+        },
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 7,
+            "pid": 1,
+            "off_start": 60,
+            "off_end": 100,
+            "reason": "skipped",
+            "decoder_id": 1,
+            "comment": "filtered out",
+        },
+        {
+            "type": "discontinuity",
+            "session_id": 7,
+            "pid": 1,
+            "width": 40,
+            "reason": "records-dropped",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1200,
+            "payload": b64(b"C" * 60),
+            "decoder_id": 1,
+            "spans": [
+                {"source_id": 1, "session_id": 7, "pid": 1, "off_start": 100, "off_end": 160}
+            ],
+            "content_type": "dec:response",
+        },
+        {
+            "type": "session_end",
+            "session_id": 7,
+            "input_extents": [{"source_id": 1, "session_id": 7, "pid": 1, "extent": 160}],
         },
         {"type": "end"},
     ],
@@ -2236,6 +2382,48 @@ vector(
     "at 1076 -- so the Discontinuity is a second, redundant and "
     "potentially contradicting account of the same 25 bytes. A reader "
     "MUST NOT sum the two.",
+    violations=1,
+)
+
+vector(
+    "isolate-unmarked-break",
+    "isolate",
+    "Finding 3 as ONE file: a decode stage whose own output breaks, saying "
+    "nothing. It is discontinuity-unknown-width with the Discontinuity deleted "
+    "and nothing else changed -- the same tls-records stage, the same lost TCP "
+    "segment, the same complete coverage. Every other rule is satisfied, which "
+    "is the point: the coverage guarantee is about the INPUT and has no opinion "
+    "on the output, so a checker that only accumulates ranges passes this file. "
+    "This is the defect 0.13 shipped the block for and 0.15 finally forbids -- "
+    "under 0.14 this file was conformant. Unlike splice/ it needs no second "
+    "file, because a hole-class Undecoded region lying between the input "
+    "regions of two adjacent output units is the one shape of the duty that is "
+    "decidable from a single file.",
+    "Discontinuity (0x22) -- what a producer owes the block",
+    [
+        file_header(options=[o_produced_by("zpf-tls 0.2"), o_produced_at(1719580000)]),
+        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
+        decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
+        session(7, [o_proto("tls")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
+        # The input-side loss is declared. THE VIOLATION is what follows it:
+        # no Discontinuity, so the two records are simply adjacent at 50 and a
+        # downstream stage may splice them with every rule still satisfied.
+        undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
+        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 0, 7, 139, 200)])]),
+        session_end(7, [o_input_extents([(1, 0, 7, 200)])]),
+        end_block(),
+    ],
+    expect="ISOLATE or reject. The Undecoded region is hole-class -- no bytes "
+    "existed at [100,139) anywhere upstream -- and it lies between the "
+    "input regions of two output units this file stores as neighbours. "
+    "No content can have been carried forward across it, so the two "
+    "records cannot join and the file MUST say so. Contrast "
+    "undecoded-skipped, where a discarded BOM sits between two units "
+    "that DO join and no block is owed; the reason word is not what "
+    "decides it. Note a reader needs only this file: that is what makes "
+    "this the checkable core rather than splice/'s two-file case.",
     violations=1,
 )
 
