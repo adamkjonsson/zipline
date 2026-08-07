@@ -119,6 +119,57 @@ the bytes, and every reader's model of them is out of date.
   Discontinuity at its one seam. It was conformant when shipped and is not now,
   which is the clearest statement of what this entry means.
 
+- **Provenance and layer are independent axes, and "raw" is retired as a
+  normative term.** The specification keyed a stream's offset space on *how the
+  file was produced*: capture-sourced meant transport-shaped, `zpf`-sourced meant
+  decoded. That implication is false in both directions, and one word — `raw` —
+  was carrying a statement about provenance while reading as one about how
+  processed the bytes were. `decoder_id` already
+  [named a layer, not a stage](docs/zipline-payload-format.md#layers-transport-and-decoded-live-in-separate-streams);
+  §Conformance contradicted it. Most of this entry is making §Conformance obey.
+
+  **Every existing file stays byte-conformant, and every reader's model of one is
+  out of date.** No block, option, enum or field changes. What changes is what a
+  file's records *mean*, and the unit those statements are made about: **the
+  stream, not the file**. `decoder_id` and `source_id` are per record, so one
+  file may hold streams at different positions on the two axes and needs no
+  syntax to say so.
+
+  Three things that were forbidden are now legal, each a cell the conflation had
+  closed off:
+
+  - **A decoded stream with no predecessor file** — a TLS-terminating proxy, an
+    `SSL_write` uprobe, a QUIC library's own stream log. Records carry
+    `decoder_id` and reference a `capture` Source. The coverage guarantee does not
+    apply, having no input stream to be scoped to, and the referenced Decoder is a
+    claim of **identity, not a recipe**: nothing can regenerate that output, so
+    verification tooling must not assume re-derivation is available. Vector:
+    `proxy-decoded`.
+  - **An Undecoded block on a capture-sourced stream** — a reassembler declaring
+    what it discarded, with offsets into the capture. The old bar assumed
+    capture-sourced meant no transform had run; reassembly is a transform, and a
+    destructive one. Vector: `undecoded-in-capture`.
+  - **One file creating one stream and preserving another.** "A derived file is
+    exactly one of a decode stage or a pass-through, never a mix" is replaced by a
+    per-participant rule: a participant MUST NOT both carry `origin` and hold
+    records carrying `spans`. The old rule left a tool with a decoder for one
+    protocol and not the other two dishonest options — pass everything through, or
+    mark the second stream entirely Undecoded, which drops those bytes from the
+    output. Vector: `mixed-derivation`.
+
+  One thing is newly forbidden in writing, because legalizing mixed-state files is
+  what makes it reachable: **a file MUST NOT derive one of its own streams from
+  another.** `spans` name a Source carrying a `digest`, and no file can contain its
+  own hash. Vector: `isolate-self-derived`.
+
+  **What to change in a reader.** Nothing parses differently. Stop inferring a
+  stream's layer from its Source `kind`, and stop inferring a file's kind at all:
+  ask each stream whether its records carry `decoder_id` (layer) and which `kind`
+  of Source they reference (provenance). The two answers are independent. The
+  section formerly titled *Layers: raw and decoded live in separate files* is now
+  *Layers: transport and decoded live in separate streams*, and its anchor changed
+  with it.
+
 ---
 
 ## [0.14] — 2026-08-06

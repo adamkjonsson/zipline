@@ -283,8 +283,9 @@ owner yet; answer them in Phase 3 as they arise, and record the answers.
 - **F1 against the merge and `SEQUENCED`.** A sessionization stage's output is a
   transport layer, so merging two should work unchanged. Untested against
   §Sequenced files and the `sequenced_basis` rules.
-- **F0 against `check.py`.** The checker classifies *files*; F0 makes the property
-  per *stream*. Expected small, never attempted.
+- ~~**F0 against `check.py`.** The checker classifies *files*; F0 makes the property
+  per *stream*.~~ *Answered in Phase 2, and the premise was wrong: the checker
+  classifies nothing. See the Phase 2 note.*
 - **Should the head-of-pipeline reassembler declare itself?** Kept at SHOULD for
   compatibility, which leaves one logical layer labelled in derived files and
   unlabelled in capture-sourced ones. Tolerable, but it is a deliberate asymmetry
@@ -363,8 +364,32 @@ Two scoping notes:
   by name. Renaming them buys consistency and costs every implementation a
   breakage that the release notes cannot express. The vectors' README explains the
   vocabulary; the directory names stay.
-- **`check.py` classifies per stream** from here on, not per file. Small, and it is
-  the change that proves F0 is real rather than editorial.
+- **~~`check.py` classifies per stream from here on, not per file.~~** *Wrong, and
+  corrected in execution: `check.py` has no classifier and never had one. It walks
+  frames, checks declared tiers and violation counts, verifies capability coverage
+  and does `chain/` arithmetic — adjudicating semantics is the thing its own
+  docstring says would make it a second normative authority. **The per-file
+  classification was a sentence in the specification**: §Conformance's "Files come
+  in two kinds, told by their Sources." That sentence is the deliverable, and it is
+  now per stream. The §F1-questions list repeats the same misreading.*
+
+*What F0 actually cost `check.py`: four `RULES` entries, one per permission it
+opens, and the four vectors they name.*
+
+*Two further notes from execution.* **"raw" was three words, not one.** Of the 101
+occurrences only about half were the normative term. Ordinary English — "raw TCP
+segment stream", the `prim:` vocabulary's "raw byte string", an unlabelled enum's
+"raw number" — stays, as do the identifiers `raw.zpf`, `raw-minimal` and
+`isolate-discontinuity-in-raw`. Sorting the three classes is most of the sweep, and
+what makes it checkable afterwards.
+
+**Lifting "never a mix" turned out to be a simplification.** §Conformance already
+stated the discriminator per record — `spans` versus `origin` — so the file-level
+"exactly one, never a mix" was strictly stronger than the rule it introduced.
+Dropping it removed a redundancy and a real loss: a stage with a decoder for one
+protocol and not another had to pass everything through or mark the second stream
+entirely Undecoded, dropping those bytes. It also made intra-file derivation
+reachable for the first time, which is why that prohibition is now written down.
 
 ### Phase 3 — F1 (#54), reassembly as a decoder
 
@@ -430,8 +455,9 @@ survives the grep.
       now a file that fails.
 - [x] The reordering question is answered in the specification, either way, and
       `reordered-decoded` agrees with the answer.
-- [ ] Provenance and layer are stated as independent axes; "raw" is gone from the
-      normative text; `check.py` classifies per stream.
+- [x] Provenance and layer are stated as independent axes; "raw" is gone from the
+      normative text. *(The `check.py` half of this line was struck: it never
+      classified. The specification did, and no longer does.)*
 - [ ] A decoder declares the layer it emits; "decoded iff `decoder_id`" is stated
       **once** and the other four sites refer to it.
 - [ ] A sessionization-stage vector exists independently of F2.
