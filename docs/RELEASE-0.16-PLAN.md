@@ -117,6 +117,14 @@ existing entries; take it unless writing it turns up a reason not to. Either way
 it is a manifest-schema change, which is a reason to settle it before Phase 3
 rather than during.
 
+***Settled: the key, not a tier.*** The deciding argument turned out to be
+sharper than "smaller". A tier names **what a reader does**, and a reader accepts
+these files completely — so `advisory` is not a fourth thing a reader does, it is
+a statement about *why* the acceptance happened. `advisory: true` on an `accept`
+entry declares 1 violation instead of 0; `advisory` on any other tier fails the
+build, because where a reader may discard something the word says nothing. Schema
+and its six branches are in `check.py`; no vector uses it until Phase 3.
+
 ---
 
 ## Dependencies
@@ -162,6 +170,27 @@ it is a step known to work.
    vector yet.
 
 Stamp first. Every later phase regenerates the tree anyway.
+
+***Done. Two things Phase 0 found, both of which change what follows:***
+
+***#100 cannot be a restatement grep, and the issue as filed proposed the wrong
+mechanism.*** The issue asked to add the layer rule to the list of statements
+whose copies are enumerated before a release. That would not have worked: the
+layer rule is stated **exactly once**, so a check counting its copies reports one
+site, correct, and passes clean — verified against the tree. Neither #89 nor #91
+*restates* the rule; each asserts its negation in words sharing no phrase with it.
+What shipped instead is `RETIRED_CLAIMS`, a table of claims the model has retired
+that fails the build if one reappears. It reproduces #89 and #91 as required. It
+is a **ratchet, not a detector** — it cannot find a stale claim nobody has
+noticed, and the docstring says so rather than implying coverage it does not have.
+
+***The suite is red from Phase 0 until Phase 2, deliberately.*** `check.py` now
+exits 1 on two retired claims that are still in the specification, and they stay
+there until Phase 2 removes them. This is the right state — the rule exists and
+the text does not yet match it — but it means **"green" is not a usable signal
+during Phase 1**, so Phase 1's own verification is `check.py`'s failure list
+containing exactly those two entries and nothing else. `0.14` hit this with #65
+and recorded that a future plan should say so up front; this is that.
 
 ### Phase 1 — the two blocking findings (#87, #88)
 

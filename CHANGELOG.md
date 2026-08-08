@@ -60,6 +60,28 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.16] — unreleased
+
+**A corrective release, like `0.11`, `0.12` and `0.14`.** `0.15` replaced the
+raw/derived conflation with two independent axes; `0.16` fixes what that release
+left inconsistent, as
+[python-zipline's review of it](docs/SPEC-0.15-REVIEW.md) found. No new block, no
+new option, no body-layout change — every fix is local, and the review's verdict
+on the normative model is that nothing in it needs challenging. Scope and
+reasoning in [docs/RELEASE-0.16-PLAN.md](docs/RELEASE-0.16-PLAN.md); every item is
+an issue on the
+[`0.16` milestone](https://github.com/adamkjonsson/zipline/milestone/4).
+
+**Expect a *Changed* section, and read it as tightening rather than adding.**
+Four entries make a file conformant under `0.15` non-conformant under `0.16` —
+a participant whose records mix layers, a `zpf`-sourced stream that is neither
+created nor preserved, a transport stage withholding content it cannot express,
+and `content_type` on a transport-layer record. A fifth changes what an Undecoded
+block against a `capture` Source *means*, which is the one place this release
+touches semantics rather than prose.
+
+---
+
 ## [0.15] — 2026-08-08
 
 **A feature release, and the first that changes what already-written files
@@ -1093,6 +1115,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...HEAD
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15
 [0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14
 [0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13

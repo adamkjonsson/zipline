@@ -2,7 +2,7 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.15`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.16`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
@@ -82,6 +82,15 @@ file: a checker that ruled on semantics would become a second normative
 authority, which ground rule 2 forbids. Declaring it is mandatory, so a new
 vector cannot be written without confronting the number, and adding a second
 defect to an existing one fails the build rather than quietly weakening it.
+
+**One violation does not isolate.** Since `0.16` an `accept` entry may also carry
+`"advisory": true`, and then declares **1** violation rather than 0. It is the
+shape of an advisory MUST NOT — the file breaks a rule, the reader reports it and
+carries on, and nothing is discarded. That is neither `accept` (which means the
+file is clean) nor `isolate` (which means a reader may drop something), and it is
+a key rather than a fourth tier because the tier names what a *reader does*, and a
+reader accepts these files completely. `advisory` on any other tier fails the
+build, since where a reader may discard something the word says nothing.
 
 **Every capability the format defines is exercised by some vector**, and since
 `0.14` that is enforced too. `check.py` parses the option-id registry and the
