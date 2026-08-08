@@ -98,7 +98,9 @@ rounds as they happened, not plans:
   [docs/implementation-review-response-0.11.md](docs/implementation-review-response-0.11.md)
   — the review of `0.11`, and the scope it settles for `0.12` and `0.13`.
 - [docs/ISSUE_41_ANALYSIS.md](docs/ISSUE_41_ANALYSIS.md) — the analysis that split
-  decrypted tunnels into what `0.13` could ship and what it could not.
+  decrypted tunnels into what `0.13` could ship and what it could not. `0.15`
+  shipped the rest; the issue closed with it, and the release plan records where
+  execution disagreed with the analysis.
 - [docs/SPEC-0.13-REVIEW.md](docs/SPEC-0.13-REVIEW.md) — the review of `0.13`,
   whose seven findings are what `0.14` corrects.
 

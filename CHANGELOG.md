@@ -60,7 +60,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.15] — unreleased
+## [0.15] — 2026-08-08
 
 **A feature release, and the first that changes what already-written files
 mean.** `0.13` shipped the corrective third of
@@ -78,6 +78,12 @@ halves.** The origination duty makes files conformant under `0.14`
 non-conformant under `0.15`. The `#41` work leaves every existing file
 *byte*-conformant while restating what its records mean — no reader breaks on
 the bytes, and every reader's model of them is out of date.
+
+**`#41` closes here**, three releases after it opened. If you want the release in
+one artifact rather than four entries, read
+[*Worked example: a decrypted tunnel*](docs/zipline-payload-format.md#worked-example-a-decrypted-tunnel)
+and the `vectors/tunnel/` fixture beside it: every rule this release adds or
+changes is load-bearing somewhere in those four files.
 
 ### Changed
 
@@ -1087,7 +1093,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...HEAD
+[0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15
 [0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14
 [0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13
 [0.12]: https://github.com/adamkjonsson/zipline/compare/v0.11...v0.12
