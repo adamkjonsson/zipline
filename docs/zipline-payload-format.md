@@ -1108,6 +1108,124 @@ test that tells the two apart. The Undecoded block is exempt because it is not
 provenance for anything this file produced — it is a statement *about* `raw.zpf`,
 carried along intact.
 
+### Worked example: a decrypted tunnel
+
+The case the two axes and the declared layer exist for. A WireGuard tunnel is
+captured as UDP datagrams; decrypting them yields inner IP packets; reassembling
+those yields inner TCP streams — *transport* streams, with `isn`, `seq_start` and
+real holes — and decoding one of those yields HTTP messages. One direction is
+shown; a second adds nothing but symmetry.
+
+```
+wg.pcap ──[capture]──▶ outer.zpf ──[wireguard-decrypt]──▶ packets.zpf
+                       UDP datagrams                      inner IP packets
+                       capture / transport                zpf / decoded
+
+packets.zpf ──[tcp-reassembly]──▶ inner.zpf ──[http/1.1]──▶ http.zpf
+                                  two TCP flows             messages
+                                  zpf / TRANSPORT           zpf / decoded
+```
+
+The complete four-file artifact is `vectors/tunnel/`. Two hops are ordinary decode
+stages this document has already shown, and are described rather than transcribed:
+
+- **`outer.zpf`** holds four 80-byte ciphertext datagrams at `[0,80)` … `[240,320)`
+  — a transport stream with no `isn`, so byte 0 is the first captured byte.
+- **`packets.zpf`** decrypts them, one record per inner packet, typed
+  `dec:ip-packet`. Each record spans the **whole** datagram, nonce and tag
+  included, because those fed the computation — so tunnel coverage closes with no
+  `skipped` blocks at all (see
+  [correspondence, not proximity](#undecoded-0x21)). The third datagram will not
+  decrypt: it is Undecoded `decrypt-failed`, bytes-class, and because an inner
+  packet is therefore missing from this output, the records either side **do not
+  join** and the file declares a [Discontinuity](#discontinuity-0x22). Its own
+  offset space is the payload concatenation `[0,60) [60,100) [100,150)`, the
+  widthless block contributing 0.
+
+The two hops worth transcribing follow.
+
+**`inner.zpf` — reassembly, and the cell the axes opened.** Its Decoder declares
+`output_layer = transport`, so this is a `zpf`-sourced **transport** stream: the
+records are byte runs, the participants carry `isn`, and the offsets are
+hole-inclusive. It also **fans out** — one input stream becomes two sessions:
+
+```jsonl
+{"type":"file","format":"zipline-payload/0.15","tick_hz":1000000,
+ "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
+{"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
+{"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
+ "version":"1.1","params_digest":"sha256:2f60"}
+
+{"type":"session","session_id":10,"proto":"tcp","flow_key":"10.8.0.2:44300 -> 10.8.0.9:80"}
+{"type":"participant","session_id":10,"pid":0,"endpoint":["10.8.0.2:44300"],"isn":1000}
+{"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1000,"payload":"…40 B…",
+ "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":0,"off_end":60}],
+ "seq_start":1001}
+{"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1300,"payload":"…30 B…",
+ "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":100,"off_end":150}],
+ "seq_start":1081}
+{"type":"session_end","session_id":10,
+ "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
+
+{"type":"session","session_id":11,"proto":"tcp","flow_key":"10.8.0.2:44301 -> 10.8.0.9:53"}
+{"type":"participant","session_id":11,"pid":0,"endpoint":["10.8.0.2:44301"],"isn":5000}
+{"type":"record","session_id":11,"sender_pid":0,"source_id":1,"ts":1100,"payload":"…20 B…",
+ "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":60,"off_end":100}],
+ "seq_start":5001}
+{"type":"session_end","session_id":11,
+ "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
+```
+
+Four things to read off it:
+
+- **The layer is declared, not inferred.** A decode stage produced this file, and
+  its records carry `decoder_id`, yet the stream is *transport*. Reading the layer
+  from the provenance — or from the presence of `decoder_id` alone — gets it wrong,
+  which is what the [layer rule](#conceptual-model) exists to prevent.
+- **The hole is in the sequence numbers.** Flow A's second record starts at
+  `seq_start 1081` where 1041 would be contiguous, so `[40,80)` is a 40-byte hole
+  no record covers — the lost inner packet, expressed exactly as in a capture.
+  There is **no** Discontinuity, and there could not be: a transport stream is
+  forbidden one because its offsets already say this.
+- **The crossing is left undone.** `packets.zpf` declared a break at its offset
+  100, and no record here spans across it — the second record *starts* there. A
+  stage that cannot express its input's break in its own output does not satisfy
+  the [no-splice duty](#discontinuity-0x22) by staying silent; it declines the
+  crossing, which is what this is.
+- **Fan-out, and what each session may claim.** Neither session covers `[0,150)`
+  alone; the union does, which is why the coverage guarantee is stated per *input
+  participant stream*. Both Session Ends declare the same extent **150** — under
+  fan-out a consuming session declares the whole input stream, not its share.
+
+**`http.zpf` — where the loss becomes visible again.** Decoding flow A only;
+session 11 is simply not an input to this hop, which is ordinary.
+
+```jsonl
+{"type":"record","session_id":20,"sender_pid":0,"source_id":1,"ts":1000,
+ "payload":"…REQ:GET /…","decoder_id":1,
+ "spans":[{"source_id":1,"session_id":10,"pid":0,"off_start":0,"off_end":40}],
+ "content_type":"dec:request"}
+{"type":"undecoded","source_id":1,"session_id":10,"pid":0,"off_start":40,"off_end":80,
+ "reason":"gap","decoder_id":1}
+{"type":"discontinuity","session_id":20,"pid":0,"reason":"stream-gap"}
+{"type":"record","session_id":20,"sender_pid":0,"source_id":1,"ts":1300,
+ "payload":"…RESP:200…","decoder_id":1,
+ "spans":[{"source_id":1,"session_id":10,"pid":0,"off_start":80,"off_end":110}],
+ "content_type":"dec:response"}
+```
+
+This is the [origination duty](#discontinuity-0x22) at the end of four hops. The
+`hole`-class Undecoded region lies between the input regions of two adjacent
+output units, so no content can have been carried across it: the two messages do
+not join, and this file must say so. Delete that one line and the file becomes
+`isolate-unmarked-break` — well-framed, coverage complete, and quietly claiming
+that a request and a response met on the wire.
+
+Follow the loss back up and every hop has its own account of it: a `stream-gap`
+here, a 40-byte sequence hole in `inner.zpf`, a `decrypt-failed` break in
+`packets.zpf`, and 80 bytes of ciphertext in `outer.zpf` that are still there and
+still unreadable. That is what the chain is for.
+
 ## Binary encoding (normative reference)
 
 This section is **normative**: a conformant reader/writer pair must agree on
@@ -2991,7 +3109,6 @@ state and a milestone rather than drifting in prose:
 
 | Extension | Issue |
 |-----------|-------|
-| Decrypted tunnels — **provenance and layer as independent axes**, and sessionization modelled as a reassembly decoder. `0.13` shipped the corrective parts of this: byte-transforming decode, session fan-out, and the [Discontinuity](#discontinuity-0x22) block. What remains rewrites the conceptual model, so it changes what existing files *mean*, and is scheduled together on the `0.15` milestone. | [#41](https://github.com/adamkjonsson/zipline/issues/41) |
 | Per-session integrity counts on Session End | [#43](https://github.com/adamkjonsson/zipline/issues/43) |
 | Random-access index block | [#44](https://github.com/adamkjonsson/zipline/issues/44) |
 | SCTP support | [#45](https://github.com/adamkjonsson/zipline/issues/45) |

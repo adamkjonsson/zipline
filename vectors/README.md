@@ -279,6 +279,49 @@ NOT report identically. Note it is an `accept` vector: the file breaks no rule,
 and what is absent is a sibling, so the requirement it tests is about a
 consumer's recovery walk rather than about the file.
 
+### The tunnel
+
+`tunnel/` is the biggest, and the one that walks the whole of `0.15` at once —
+#41's case D, a decrypted WireGuard tunnel in four files, one direction:
+
+```
+wg.pcap ──[capture]──▶ outer.zpf ──[wireguard-decrypt]──▶ packets.zpf
+                       UDP datagrams                      inner IP packets
+                       capture / transport                zpf / decoded
+
+packets.zpf ──[tcp-reassembly]──▶ inner.zpf ──[http/1.1]──▶ http.zpf
+                                  two TCP flows             messages
+                                  zpf / TRANSPORT           zpf / decoded
+```
+
+Tier `accept`; all four are conformant. Four things it is built to show, each of
+which was an argument somewhere in `0.13`–`0.15`:
+
+- **Correspondence, not identity.** An inner packet spans the *whole* outer
+  datagram — nonce and tag included, because those fed the computation — so tunnel
+  coverage closes with **no `skipped` blocks at all**. The earlier estimate was one
+  per packet for framing; that clarification is what made case D affordable.
+- **Fan-out.** One input stream (`packets.zpf` session 5, pid 0) feeds **two**
+  output sessions in `inner.zpf`. Neither covers `[0,150)` alone and both Session
+  Ends declare the same extent 150 for the shared input — the rule
+  `isolate-extents-disagree` polices, here in its legitimate form.
+- **A `zpf`-sourced transport stream.** `inner.zpf`'s Decoder declares
+  `output_layer = transport`, so a *decode stage's* output is `isn`-anchored and
+  hole-inclusive. Its 40-byte hole shows up as `seq_start 1081` where 1041 would be
+  contiguous — no Discontinuity, no `content_type`. **Nothing else in the suite
+  shows the F1 cell against a real gap.**
+- **Origination, and the crossing left undone.** `packets.zpf` withholds an inner
+  packet and declares the break. `inner.zpf` reads that break and *cannot* express
+  one, so it does the other legal thing — no record crosses packets offset 100 —
+  and the loss survives as a TCP sequence gap instead. `http.zpf` then meets a
+  `hole`-class region between two adjacent output units and originates its own
+  block. Delete that one block and `http.zpf` **is** `isolate-unmarked-break`.
+
+`check.py` walks it specifically, as it does `chain/`: every declared digest
+against the real sibling, each hop's coverage against its predecessor — the middle
+one accumulated across *both* output sessions — and `inner.zpf`'s flow-A extent
+re-derived from `seq_start - (isn + 1)` and compared with what `http.zpf` declares.
+
 ## Coverage this does not have
 
 Stated so nobody mistakes the suite for complete:
