@@ -35,7 +35,8 @@
 0062  00 00                    reserved
 0064  1C 00 00 00              length = 28
 0068  01 00                    decoder_id = 1
-006A  00 00                    _reserved
+006A  00                       output_layer = 0  (decoded)
+006B  00                       _reserved
 006C  41 00 09 00              option 0x0041 name, len = 9
 0070  74 65 78 74 2F 75 74 66  "text/utf8"
 0078  38

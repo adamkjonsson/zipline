@@ -35,7 +35,8 @@
 005E  00 00                    reserved
 0060  1C 00 00 00              length = 28
 0064  01 00                    decoder_id = 1
-0066  00 00                    _reserved
+0066  00                       output_layer = 0  (decoded)
+0067  00                       _reserved
 0068  41 00 0B 00              option 0x0041 name, len = 11
 006C  74 6C 73 2D 72 65 63 6F  "tls-records"
 0074  72 64 73
