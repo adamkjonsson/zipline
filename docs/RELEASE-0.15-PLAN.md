@@ -527,7 +527,7 @@ survives the grep.
 
 ## Definition of done
 
-- [ ] #78, #53, #54, #55 closed, each in the commit that finishes it; #41 closed by
+- [x] #78, #53, #54, #55 closed, each in the commit that finishes it; #41 closed by
       #55; #42 closed as not adopted with its §Design decisions not taken entry.
 - [x] A stage MUST emit a Discontinuity when its **own** output breaks — stated
       once, keyed on offset-space semantics, with the no-data checkable core stated
@@ -543,16 +543,128 @@ survives the grep.
       **once** and the other sites refer to it. *There were five, not four.*
 - [x] A sessionization-stage vector exists independently of F2.
 - [x] The tunnel chain is a worked example **and** a fixture, and it walks.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.15`.
-- [ ] #70's tool reports no option, block or rule added in `0.15` without a vector
+- [x] `python3 vectors/check.py` green; every vector stamps `0.15`.
+- [x] #70's tool reports no option, block or rule added in `0.15` without a vector
       naming it.
-- [ ] `CHANGELOG.md` `[0.15]` complete, with a `Changed` section covering #78, F0
+- [x] `CHANGELOG.md` `[0.15]` complete, with a `Changed` section covering #78, F0
       and F1 — and honest about the fact that F0 and F1 change what already-written
       files mean.
-- [ ] Every vector in `manifest.json` appears in `vectors/README.md`.
+- [x] Every vector in `manifest.json` appears in `vectors/README.md`.
 
 ## What execution changed
 
 *Written at release, not before. The convention of these plans is that a document
 only ever read forwards teaches nothing — so this section records what the plan
 and the analysis got wrong, and what execution turned up that neither anticipated.*
+
+### Three premises that were simply false
+
+**`check.py` classifies files.** Phase 2's headline deliverable — "`check.py`
+classifies per stream from here on, not per file, and it is the change that proves
+F0 is real rather than editorial" — was written about code that has never
+classified anything. `check.py` walks frames, checks declared tiers and violation
+counts, verifies capability coverage and does fixture arithmetic; adjudicating
+semantics is what its own docstring says would make it a second normative
+authority. The per-file classification was one sentence in §Conformance. The plan
+asserted a fact about the tree without opening it, and the §F1-questions list
+repeated the same claim, so it was wrong twice in one document.
+
+**A compression can be added after `1.0`.** Decision 3's table argued for the
+per-seam Discontinuity partly because "a new option is minor-compatible even after
+`1.0`". It is not, for that option: an unrecognised option id is retained but
+*ignored semantically*, so a `1.0` reader meeting a participant-level "stored order
+is not stream order" flag skips it and splices — the exact failure it would exist
+to prevent. The conclusion survived; the reason did not, and the corrected reason
+is a deadline rather than a convenience. Filed as
+[#80](https://github.com/adamkjonsson/zipline/issues/80).
+
+**Two adjacent `http` messages never concatenated into anything.** Decision 3
+floated this as the ground for exempting reordering. Pipelined HTTP/1.1 responses
+and successive TLS plaintexts *do* concatenate, and a decoded stream's offset space
+is *defined* as that concatenation precisely so a downstream stage can re-frame
+across a message boundary — the case §Discontinuity was written about.
+
+### What the phases found that nothing predicted
+
+**The accept vector Phase 1 asked for already existed.** `discontinuity-unknown-width`
+*is* Finding 3's stage 1 done right. Building the vector the plan named would have
+shipped a duplicate; the freed budget went to `filtered-decoded`, the shape #78 is
+actually titled after and the one nothing in the suite exercised.
+
+**There were five restatement sites, not four.** The plan and Finding 7 both listed
+four places stating "decoded iff `decoder_id`". The fifth — §Decoder Descriptor's
+"its presence is what *makes* the record decoded" — sits nowhere near the others and
+contains none of the phrases the obvious grep uses. It was caught by the step that
+says to read the sections rather than trust the grep, which exists because of #63.
+That step earned its keep; the grep alone would have shipped #63 a second time.
+
+**F0 shipped two defects that F0 existed to remove.** §Layers' "a transport stream —
+one reassembled from a capture" and §Decoder Descriptor's "Files carrying a decoded
+layer" both key the layer on provenance, and both contradicted `proxy-decoded` — the
+vector Phase 2 shipped in the same commit. Phase 2's sweep keyed on the word "raw"
+and neither sentence contains it. **A vocabulary sweep is not a semantic sweep**, and
+the release plan's own instruction to re-read §Layers against the axes would have
+caught them if it had been followed against the offset-space passage rather than only
+the paragraphs that had changed.
+
+**Walking F1 against the merge found a defect rather than confirming a guess.** The
+plan listed it as an untested-but-expected-fine interaction. The pass-through duty to
+carry `decoder_id` forward was keyed on "preserving a *decoded* layer", so a transport
+stream whose reassembler declared itself would have lost its Decoder across a merge —
+silently changing the layer its output reads as, which is the one thing a
+pass-through exists not to do.
+
+### One decision reversed after it shipped
+
+`output_layer` shipped as TLV option `0x0044` and moved into the Decoder Descriptor
+**body** two hours later, on a question asked afterwards: what would making it
+mandatory cost? Measured, the option cost 8 bytes and the body cost nothing, because
+the descriptor already carried a spare `_reserved` u16. The size was never the point.
+The body form makes the field unconditional — no "absent means `decoded`" default on a
+load-bearing field — and removes the not-safe-to-skip hazard entirely, since a reader
+that parses the block parses the field.
+
+**And the compatibility argument that had chosen the option form did not
+distinguish them.** A reserved field MUST be written 0, so numbering `decoded = 0`
+means every Decoder Descriptor ever written already holds the value that says what it
+always meant. All 25 in the suite held 0; regenerating changed **no `.zpf` byte at
+all**. Two lessons: a design question answered with a measurement beats one answered
+with an estimate, and *§Design decisions not taken* was right that body-layout changes
+are free only in `0.x` — this is the last release where that move was available.
+
+### What the tooling did and did not catch
+
+`check.py`'s capability coverage did its job twice, failing the build the moment
+`0x0044` was removed from the registry and again when a rule named a vector that did
+not exist. But two limits are worth writing down, because both make it a weaker
+guarantee than it reads as:
+
+- **It confirms only that the vector a rule *names* exists**, never that the vector
+  exercises the rule. Pointing a rule at the wrong vector passes. `RULES` is a
+  statement of intent a human has to keep true.
+- **It parses the option registry and the block table, not the enum tables.** So
+  `output_layer` as a body field is invisible to it, and enum *values* are covered
+  only by `RULES` entries naming vectors. Moving an option into a body silently
+  removes it from mechanical coverage — worth remembering the next time that trade
+  looks free.
+
+### Where the numbers were wrong
+
+Phase 4's plan predicted 52 vectors; the answer is 49, because `manifest.json` counts
+a fixture as one entry however many files it holds. Phase 2's plan said "101
+occurrences of raw"; the count was right and the *classification* was the work — only
+about half were the normative term, and sorting ordinary English (`raw TCP segment`,
+`prim:`'s `raw byte string`) and identifiers (`raw.zpf`, `raw-minimal`) from it is
+what made the sweep checkable afterwards.
+
+### Left standing, deliberately
+
+- **The coverage guarantee is stated in three places** — §Coverage honesty, §TLV
+  framing's overlap clarification, and §Conformance's normative MUST. All three agree
+  and `0.15` changed none of them, so they were left alone rather than consolidated at
+  release. It is the pattern that produced #63 and it is the next one to watch.
+- **[#80](https://github.com/adamkjonsson/zipline/issues/80)**, the participant-level
+  ordering assertion, deferred with a `1.0` deadline in its body.
+- **The head-of-pipeline asymmetry.** A reassembler declaring itself is a SHOULD, so
+  one logical layer is labelled in derived files and usually unlabelled in
+  capture-sourced ones. Recorded in §Conformance as deliberate.
