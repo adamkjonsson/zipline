@@ -34,7 +34,8 @@
 005E  00 00                    reserved
 0060  1C 00 00 00              length = 28
 0064  01 00                    decoder_id = 1
-0066  00 00                    _reserved
+0066  00                       output_layer = 0  (decoded)
+0067  00                       _reserved
 0068  41 00 0B 00              option 0x0041 name, len = 11
 006C  71 75 69 63 2D 73 74 72  "quic-stream"
 0074  65 61 6D

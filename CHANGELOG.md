@@ -164,11 +164,65 @@ the bytes, and every reader's model of them is out of date.
 
   **What to change in a reader.** Nothing parses differently. Stop inferring a
   stream's layer from its Source `kind`, and stop inferring a file's kind at all:
-  ask each stream whether its records carry `decoder_id` (layer) and which `kind`
-  of Source they reference (provenance). The two answers are independent. The
+  ask each stream what layer it is at and which `kind` of Source its records
+  reference (provenance). The two answers are independent — and the layer question
+  gains a second half in the next entry, so read the two together. The
   section formerly titled *Layers: raw and decoded live in separate files* is now
   *Layers: transport and decoded live in separate streams*, and its anchor changed
   with it.
+
+- **A decoder declares the layer it emits, so reassembly can be a decoder.** The
+  release's only new syntax: **`output_layer`**, a u8 enum in the Decoder
+  Descriptor **body** (`0 = decoded`, `1 = transport`). The rule becomes *layer =
+  decoder present ? the decoder's declared `output_layer` : transport*.
+
+  `decoder_id` was doing two jobs — *what produced this and what is it*, and *which
+  offset-space semantics apply*. A reassembler wants the first and wants
+  **transport** for the second, and one field could not say that, so a
+  sessionization stage had to be characterised by the *absence* of `decoder_id`,
+  purely because absence was the only way to say "hole-inclusive, `isn`-anchored".
+  Its overlap policy, buffer depth and timeout then had nowhere to be recorded, and
+  the layer it created had no name. Both now have one.
+
+  **No existing file changes — not one byte.** The field occupies two bytes that
+  were `_reserved`, which a conformant writer MUST have written 0, and `decoded` is
+  numbered **0**. So every Decoder Descriptor ever written already holds the value
+  that says what it always meant, and every existing `.zpf` re-reads correctly
+  unmodified. The JSON-Lines projection does change: a `decoder` line now always
+  carries `"output_layer"`. The ordering is chosen for exactly that reason and is
+  deliberately *not* parallel to Source `kind`.
+
+  **A body field rather than an option, and this release is when that was
+  affordable.** As an option it would have been *not safe to skip* — the second
+  such case after the Discontinuity block — because a reader retaining but ignoring
+  it would read a transport stream's offsets as a payload concatenation, silently.
+  In the body there is nothing to skip and no absent case to define. A body-layout
+  change is free only while the format is in `0.x`, which is why it is made now.
+
+  **The enum is load-bearing, joining Source `kind`.** A reader that does not
+  recognise the value cannot compute the stream's offset space and **MUST NOT**
+  guess. Vectors: `sessionization-stage`, `isolate-unknown-output-layer`.
+
+  **A head-of-pipeline reassembler SHOULD declare itself too** — capture-sourced,
+  with a Decoder declaring `transport` — but is not required to, so every existing
+  file stays conformant. That leaves one logical layer labelled in derived files and
+  usually unlabelled in capture-sourced ones. The asymmetry is deliberate and is
+  written down: a consumer cannot conclude that an undeclared transport stream had
+  no reassembler, only that none was named. Vector: `reassembler-declared`.
+
+  Three consequences settled in the text rather than left to be discovered. A
+  **transport-layer record carries no `content_type`**, including a reassembly
+  record — `prim:bytes` is mechanically legal and is the wrong answer, because such
+  a record's boundaries are a slice and not a unit. **`isn`, `seq_start` and the
+  `message` flag bind on the layer, not on provenance**, which a sessionization
+  stage's `zpf`-sourced output needed stated explicitly. And **carrying
+  `decoder_id` forward through a pass-through is keyed on the decoder, not the
+  layer**, so a transport stream whose reassembler declared itself keeps its Decoder
+  Descriptor — `output_layer` included — across a merge.
+
+  **Changed, not only added:** "a record is *decoded* iff it carries a
+  `decoder_id`" was true and is now only half the question. It is stated once, in
+  §Conceptual model, and the four other sites refer to it.
 
 ---
 

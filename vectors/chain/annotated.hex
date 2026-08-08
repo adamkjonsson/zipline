@@ -63,7 +63,8 @@
 0106  00 00                    reserved
 0108  18 00 00 00              length = 24
 010C  01 00                    decoder_id = 1
-010E  00 00                    _reserved
+010E  00                       output_layer = 0  (decoded)
+010F  00                       _reserved
 0110  41 00 08 00              option 0x0041 name, len = 8
 0114  68 74 74 70 2F 31 2E 31  "http/1.1"
 011C  42 00 03 00              option 0x0042 version, len = 3

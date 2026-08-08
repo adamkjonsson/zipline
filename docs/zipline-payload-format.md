@@ -94,16 +94,28 @@ else refers to it.**
 - **Provenance** — was this stream *captured* or *derived*? Told by the `kind` of
   the [Source](#source-descriptor-0x02) its records reference: `capture` or
   `zpf-input`.
-- **Layer** — is this stream *transport*-shaped or *decoded*-shaped? Told by
-  whether its records carry a `decoder_id`. The layer fixes the stream's **offset
+- **Layer** — is this stream *transport*-shaped or *decoded*-shaped? Two questions,
+  because `decoder_id` answers only the first: **is there a decoder**, and **what
+  layer does that decoder declare**. The rule is *layer = decoder present ? the
+  decoder's declared [`output_layer`](#decoder-descriptor-0x03) : transport*.
+  Every Decoder Descriptor carries an `output_layer`, so the first question has no
+  undefined answer and the second has no default. The layer fixes the stream's **offset
   space**, which is the consequence that matters (see
   [Layers](#layers-transport-and-decoded-live-in-separate-streams)).
+
+  Splitting the question is what lets **reassembly be a decoder**. `decoder_id`
+  was doing two jobs — *what produced this and what is it*, and *which offset-space
+  semantics apply* — and a reassembler wants the first while wanting **transport**
+  for the second. One field could not say that, so a sessionization stage was
+  characterised by the *absence* of `decoder_id`, purely because absence was the
+  only way to say "hole-inclusive, `isn`-anchored". Its configuration then had
+  nowhere to live and the layer it created had no name.
 
 All four combinations occur, and none implies another:
 
 |                     | capture-sourced | `zpf`-sourced |
 |---------------------|-----------------|---------------|
-| **transport layer** | a capture's reassembled streams | a pass-through preserving one |
+| **transport layer** | a capture's reassembled streams | a **sessionization stage** — a reassembler run over a `.zpf`, declaring `output_layer = transport`; or a pass-through preserving one |
 | **decoded layer**   | a decoder with no predecessor file: a TLS-terminating proxy, an `SSL_write` uprobe, a QUIC library's own stream log | a decode stage's output, or a pass-through preserving one |
 
 Reading the layer off the provenance is the mistake this table exists to prevent,
@@ -483,6 +495,15 @@ reader MAY still verify the order, or recover the true partial order (which
 records were genuinely concurrent); the flag only asserts that *stored order is
 one correct answer*, not that it is the only one.
 
+**A [sessionization stage's](#conformance) output sequences and merges like any
+other transport stream**, and this is worth stating because its records carry a
+`decoder_id` and might be mistaken for a decoded stream's. They carry `seq_start`
+and `ack` exactly as a capture's do, so such a session is **not hint-less**, needs
+no `sequenced_basis`, and its causal order comes from the hints rather than from
+timestamps. Merging two of them is the ordinary two-direction merge: the merge
+preserves the transport layer, carries the hints forward, and carries the
+reassembler's `decoder_id` and its Decoder Descriptor forward with them.
+
 Who sets the flag depends on the capture:
 
 - A **single tap that sees both directions** emits a sequenced session directly,
@@ -766,9 +787,11 @@ is no room below the first captured byte, so a pre-first-byte loss simply is not
 representable — one more reason `isn` is mandatory once the handshake is seen.
 
 **Each layer has its own offset space.** Everything above describes a
-**transport** stream — one reassembled from a capture, where an offset is a true
-position and holes are counted. A **decoded** stream is a different object: it
-exists only as a decode stage's output.
+**transport** stream — one whose offsets are true positions with holes counted,
+however it was produced: reassembled from a capture, reassembled from a `.zpf` by
+a [sessionization stage](#conceptual-model), or re-emitted by a pass-through. A
+**decoded** stream is a different object. Which one a stream is comes from the
+[layer rule](#conceptual-model) and never from where its bytes came from.
 
 **This is the definition; everywhere else refers to it.** A decoded stream's
 offset space is the **concatenation of that participant's decoded record payloads
@@ -879,8 +902,10 @@ The decoder is a first-class, referenceable entity: a `decoder_id` (referenced
 per-record), a `name` (e.g. `http/1.1`), a `version`, and a `params_digest` (hash
 of the decoder config, so the decode is reproducible).
 
-Every decoded record carries an **explicit** `decoder_id` — its presence is what
-*makes* the record decoded, and there is no implicit "primary" default. The
+Every record produced by a decoder carries an **explicit** `decoder_id` — there is
+no implicit "primary" default. Its presence names the decoder; what **layer** the
+record is at then comes from that decoder's declared `output_layer`, per the
+[layer rule](#conceptual-model). The
 reference is per-record, not per-file, because one decoded file legitimately mixes
 decoders: HTTP on one session, TLS-then-HTTP on another. A record's `decoder_id`
 is exactly what gives the record its meaning. **Reproducibility contract:** same
@@ -928,6 +953,28 @@ truth — the label never replaces them.
 An unknown scheme is treated as opaque. This lets the decoder say *what each unit
 is* without the format having to parse it.
 
+**A record at the transport layer carries no `content_type`**, including one
+emitted by a reassembly decoder, where `prim:bytes` is now mechanically legal and
+is the obvious wrong answer. `content_type` types a *value* — what this unit **is**
+— and a reassembly record's boundaries are wherever the reassembler happened to
+chunk the stream. Two conformant reassemblers chunk one stream differently and both
+are right, which is exactly the property the
+[logical offset space](#referencing-the-source-by-stream-offset) exists to
+neutralise; labelling an arbitrary window `prim:bytes` asserts it is a unit when it
+is a slice. It would also type identical bytes differently by provenance, since a
+capture-sourced reassembler declaring itself is only a SHOULD.
+
+Absent already says the right thing, and says something new here: the fallback is
+the decoder `name`, so a consumer that used to report nothing about how a stream
+was reassembled can now report *which reassembler produced it*. Naming the layer
+was the point of giving reassembly a decoder at all.
+
+The contrast that makes the rule legible is a **packet-preserving** stage, where
+one record is one inner packet — a real unit with real boundaries. That stage does
+type its records, and with a `dec:` token, because "one inner packet" is precisely
+what distinguishes a packet stream from a byte stream and `prim:bytes` would say
+only "opaque".
+
 ### Coverage honesty: Undecoded blocks
 
 A decoder can fail partway, or hit a TCP gap (where it can only decode the
@@ -974,7 +1021,7 @@ equal to the output's here — not copying them):
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
  "digest":"sha256:9f2c…"}
-{"type":"decoder","decoder_id":1,"name":"http/1.1","version":"0.4",
+{"type":"decoder","decoder_id":1,"output_layer":"decoded","name":"http/1.1","version":"0.4",
  "params_digest":"sha256:00ab…"}
 
 {"type":"session","session_id":7,"proto":"http"}
@@ -1014,7 +1061,7 @@ the input lets the block be copied verbatim:
  "digest":"sha256:9f2c…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"decoded.zpf",
  "digest":"sha256:44dd…"}
-{"type":"decoder","decoder_id":1,"name":"http/1.1","version":"0.4",
+{"type":"decoder","decoder_id":1,"output_layer":"decoded","name":"http/1.1","version":"0.4",
  "params_digest":"sha256:00ab…"}
 
 {"type":"session","session_id":7,"proto":"http"}
@@ -1257,15 +1304,50 @@ typically carries `uri`/`digest`/`link_type`; a `zpf-input` source carries
 
 #### Decoder Descriptor (`0x03`)
 
-Files carrying a decoded layer (a decode stage's output, or a pass-through
-preserving one).
+Appears wherever a `decoder_id` is referenced — in the file whose stage ran the
+decoder, and in any pass-through re-emitting its records — whatever the stream's
+provenance. A file MUST declare every Decoder it references.
 
-| Field        | Type | Notes                       |
-|--------------|------|-----------------------------|
-| `decoder_id` | u16  | id referenced per-record    |
-| `_reserved`  | u16  | 0                           |
+| Field          | Type | Notes                                        |
+|----------------|------|----------------------------------------------|
+| `decoder_id`   | u16  | id referenced per-record                     |
+| `output_layer` | u8   | the layer this decoder emits (see enums)     |
+| `_reserved`    | u8   | 0                                            |
 
 Options: `name`, `version`, `params_digest`, `comment`.
+
+**`output_layer` names the layer this decoder emits** — `0 = decoded`,
+`1 = transport` — and is what makes the [layer rule](#conceptual-model)
+decidable. It is a **body field, not an option**, so every Decoder Descriptor
+states it and there is no absent case to define: a decoder that emits a
+**transport** layer is a reassembler, and left undeclared its output would be read
+in the wrong offset space entirely.
+
+**Why `decoded` is `0`.** The field occupies two bytes that were `_reserved` before
+this version, and a reserved field MUST be written 0. Numbering the common case 0
+therefore costs nothing and means nothing has to be rewritten: every Decoder
+Descriptor ever written holds 0 there, every one of them emitted a decoded layer,
+and each now says so without a byte changing. The ordering is not arbitrary and is
+not parallel to Source `kind` — it is chosen to make the old files right.
+
+Declaring the layer is also what gives a reassembler a `params_digest`. Overlap
+policy, buffer depth and timeout diverge between implementations, so two
+conformant reassemblers turn one input into different output; without a Decoder
+of its own the file could not say which one ran. The
+[reproducibility contract](#decoder-descriptor-which-decoding) is unusually
+valuable here — unlike a decrypting stage it needs no key, and unlike a decoded
+stream with no predecessor it is not vacuous.
+
+> **A body field, deliberately, and this is the moment it was affordable.** As an
+> option it would have been *not safe to skip* — the second such case after the
+> [Discontinuity](#discontinuity-0x22) block — since a reader that retained it but
+> ignored it semantically would read a transport stream's offsets as a payload
+> concatenation, silently. In the body there is nothing to skip: a reader that
+> parses this block parses the field. The cost is that a body-layout change is free
+> only while the format is in `0.x` and needs a **major** bump afterwards, which is
+> why it is made now rather than later (see
+> [Design decisions not taken](#design-decisions-not-taken), where the general form
+> of that trade is recorded).
 
 #### Session Descriptor (`0x10`)
 
@@ -1502,16 +1584,21 @@ Body (fixed part):
 
 `payload` is zero-padded to a multiple of 4 bytes; options then follow (TCP
 hints, provenance — see registry). `payload_len` gives the unpadded length and
-MAY be 0 (e.g. a pure-ACK record carrying only an `ack` hint). **A record is
-*decoded* iff it carries a `decoder_id`** — that presence is the sole
-decoded-vs-byte-run discriminator: a decoded record MUST carry a `decoder_id`; a
-byte-run record MUST NOT. A byte run is either a **capture-sourced** record or a
-**pass-through** record preserving a transport layer, told apart by the
-referenced source's `kind`. (A pass-through preserving a *decoded* layer
-re-emits decoded records, `decoder_id`s included — see
+MAY be 0 (e.g. a pure-ACK record carrying only an `ack` hint). **Whether a record
+belongs to a decoded or a transport stream is the
+[layer rule](#conceptual-model)**, which asks two questions — is there a decoder,
+and what layer does it declare — and is stated there and not here. `decoder_id`
+alone answers only the first: a record with no `decoder_id` is a byte run at the
+transport layer, and a record *with* one belongs to whatever layer its Decoder
+declares, which may be either. A byte run with no `decoder_id` is either a
+**capture-sourced** record or a **pass-through** record preserving a transport
+layer, told apart by the referenced source's `kind`. (A pass-through preserving a
+*decoded* layer re-emits decoded records, `decoder_id`s included — see
 [Conformance](#conformance).)
-A decoded record MAY also carry a `content_type` labelling what its `payload` is
-(see [Typing a decoded record](#typing-a-decoded-record)).
+A record at the decoded layer MAY also carry a `content_type` labelling what its
+`payload` is (see [Typing a decoded record](#typing-a-decoded-record)); a record
+at the transport layer carries none, whether or not it has a decoder, for the
+reason given there.
 Because the frame `length` (u32) bounds the whole block, `payload_len` is in
 practice capped a little below 4 GiB (it must share the block with the body and
 options).
@@ -1989,7 +2076,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0072` | ack              | u32        | Record (TCP)             | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes **correspond to** — the input the unit was computed from, not necessarily a copy of it (see below) |
-| `0x0090` | decoder_id       | u16        | Record, Undecoded (decoded) | which decoder's **layer** this record or region belongs to — the decoder that produced or declined the content, not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it) |
+| `0x0090` | decoder_id       | u16        | Record, Undecoded        | which **decoder** produced or declined this record or region — not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it). The decoder's [`output_layer`](#decoder-descriptor-0x03) then gives the layer, which may be transport |
 | `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
 | `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical four, and MUST agree with the class if it accompanies one of them |
@@ -2070,6 +2157,17 @@ space.)
 
 `kind` (Source body, u8): `0` = capture (a pcap/interface), `1` = zpf-input
 (another `.zpf` this file was derived from).
+
+`output_layer` (Decoder **body**, u8): `0` = decoded, `1` = transport. Always
+present — it is a body field, so there is no absent case (see
+[Decoder Descriptor](#decoder-descriptor-0x03) for why `decoded` is `0`).
+
+**Two enums are load-bearing: Source `kind` and `output_layer`.** Both decide how
+offsets are *read*, so a value neither the registry nor this document defines
+leaves a reader unable to compute a stream's offset space at all. A reader
+**MUST NOT** guess one, and treats the stream as a semantic violation it may
+isolate — unlike `tcp_role`, where an unknown value is advisory and carrying the
+raw number forward loses nothing.
 
 `tcp_role` (Participant option, u8): `0` = unknown (handshake not observed),
 `1` = initiator (active open, sent the SYN), `2` = responder (passive open). In
@@ -2210,6 +2308,21 @@ TLS-then-HTTP on another). Every file holding a `zpf`-sourced stream MUST declar
 each of its input `.zpf`s as a `zpf-input` Source and set the File Header
 `produced_by`/`produced_at`.
 
+**The head-of-pipeline reassembler SHOULD declare itself, and MUST NOT be required
+to.** A capture-sourced transport stream MAY carry a Decoder declaring
+`output_layer = transport`, naming the reassembler that produced it and hashing its
+configuration — the same statement a sessionization stage makes, one step earlier in
+the chain. It is a **SHOULD** so that every file written before this option existed
+stays conformant and the idiom can migrate.
+
+*This leaves a deliberate asymmetry, recorded here rather than left to be
+rediscovered:* one logical layer — reassembly — is labelled when a stage performs it
+over a `.zpf` and usually unlabelled when the same operation runs over a capture. A
+consumer therefore cannot assume that an undeclared transport stream had no
+reassembler, only that none was named. The alternative was to require the
+declaration and make every existing capture-sourced file non-conformant for saying
+nothing new.
+
 **Not every `zpf-input` Source is an input.** A file may also declare one so that
 an *inherited* reference still resolves — a pass-through carrying Undecoded
 blocks that name a file further up the chain does exactly this (see the
@@ -2219,14 +2332,19 @@ points at them: a file's **immediate inputs** are the Sources its participants'
 decode stage. Anything else declared as `zpf-input` is there to resolve a
 reference, not because this file was derived from it.
 
-- A **capture-sourced** record references a `capture` Source. TCP capture-sourced
-  records SHOULD carry `seq_start` (and `ack` where known); TCP participants
-  **MUST** carry
-  `isn` when the handshake was observed (it fixes the stream's absolute origin —
-  see [Referencing the source by stream offset](#referencing-the-source-by-stream-offset))
-  and omit it otherwise; records of message-oriented transports (UDP) SHOULD
-  set the `message` flag. Such a record carries a `decoder_id` exactly when its
-  stream is at the decoded layer, which is the case below.
+**The transport layer's own requirements bind on the layer, not on provenance.**
+In a **transport-layer** stream, however it was produced: TCP records SHOULD carry
+`seq_start` (and `ack` where known); TCP participants **MUST** carry `isn` when the
+handshake was observed — it fixes the stream's absolute origin (see
+[Referencing the source by stream offset](#referencing-the-source-by-stream-offset))
+— and omit it otherwise; and records of message-oriented transports (UDP) SHOULD
+set the `message` flag. A sessionization stage's output is `zpf`-sourced and carries
+all three exactly as a capture's does, which is the point of it being a transport
+layer at all.
+
+- A **capture-sourced** record references a `capture` Source. It carries a
+  `decoder_id` exactly when its stream has a decoder — which for a head-of-pipeline
+  reassembler is a SHOULD, and for the case below is how the stream says what it is.
 - A **decoded record with no predecessor file** carries a `decoder_id` and
   references a `capture` Source: a TLS-terminating proxy, an `SSL_write` uprobe, a
   QUIC library's own stream log. The bytes its units were computed from were never
@@ -2240,7 +2358,17 @@ reference, not because this file was derived from it.
   rather than merely key-gated. Nothing can regenerate this output, and tooling
   that assumes re-derivation is available is wrong about this file. The file MUST
   still declare every Decoder it references.
-- A **decoded** record MUST carry a `decoder_id`. In a **decode stage's**
+- A **sessionization stage** is a decode stage whose decoder is the reassembler: it
+  reads one or more `.zpf` inputs and produces a **transport** layer, its Decoder
+  declaring `output_layer = transport`. Its records carry `spans` and `decoder_id`
+  like any decode stage's, and everything else about it is a transport stream —
+  `isn`-anchored, hole-inclusive offsets, `seq_start` on records, no
+  `content_type`, and no [Discontinuity](#discontinuity-0x22), since a hole is
+  expressible without one. It is the same operation as the head-of-pipeline
+  reassembler with a different input kind, and giving it a Decoder is what gives its
+  overlap policy, buffer depth and timeout somewhere to be recorded.
+- A **decoded** record carries a `decoder_id` whose Decoder declares
+  `output_layer = decoded`. In a **decode stage's**
   output it MUST also carry `spans` and reference a `zpf-input` Source, and that
   file MUST declare every Decoder it references and account for every input
   region it did not decode with an **Undecoded** block rather than dropping it:
@@ -2279,8 +2407,16 @@ reference, not because this file was derived from it.
   it to its input stream. Preserving a **transport** layer, it MUST carry TCP
   ordering hints (`seq_start`/`ack`) forward (recomputed if records are
   re-chunked) so gap visibility and `SEQUENCED` verification survive.
-  Preserving a **decoded** layer, it MUST carry each record's `decoder_id` and
-  `content_type` forward, re-declare the Decoder Descriptors they reference, and
+
+  **Carrying `decoder_id` forward is keyed on the decoder, not on the layer.**
+  Wherever the input's records carry one — a decoded stream, or a transport stream
+  whose reassembler declared itself — the pass-through MUST carry it forward and
+  MUST re-declare the Decoder Descriptors it references, `output_layer` included.
+  Dropping the declaration would change the layer the output reads as, which is the
+  one thing a pass-through exists not to do.
+
+  Preserving a **decoded** layer, it MUST additionally carry each record's
+  `content_type` forward and
   re-emit every Undecoded block — which is what makes the input's coverage
   guarantee hold of the output too, without the output having any `spans` of its
   own. An inherited Undecoded block names a stream in a file *further up* the
@@ -2516,9 +2652,13 @@ general naming rule covers it.
   MUST NOT assume a `bytes` option is text, even when it decodes to printable
   ASCII.
 - **Enums** render as their defined **string label**: `kind` as
-  `"capture"`/`"zpf-input"`, `tcp_role` as `"initiator"`/`"responder"` (omitted
+  `"capture"`/`"zpf-input"`, `output_layer` as `"decoded"`/`"transport"` (always
+  present, since it is a body field), `tcp_role` as
+  `"initiator"`/`"responder"` (omitted
   when unknown). A value with **no defined label** renders as its raw number
-  (see [the escapes](#unrecognised-data-the-four-escapes)).
+  (see [the escapes](#unrecognised-data-the-four-escapes)). For the two
+  **load-bearing** enums that number is not a value a reader may act on — it
+  preserves the byte through a round-trip and nothing more.
 - **Flag bitfields** render by name, never as the raw integer: the single-bit
   file and session flags are booleans (`"single_clock"` on `file`, `"sequenced"`
   on `session`), and a Record's multi-bit `flags` is an **array of set-bit
@@ -2767,7 +2907,7 @@ This is not a backlog. Planned work lives in the
 
   There is no option to promote on correctness grounds: **every mandatory option
   in this document is *conditionally* mandatory** — `isn` when the handshake was
-  seen, `decoder_id` when the record is decoded, `spans` when the file is a decode
+  seen, `decoder_id` when a decoder produced the record, `spans` when the file is a decode
   stage, `origin` when it is a pass-through, `sequenced_basis` on a hint-less
   `SEQUENCED` session, `reason_class` on a non-canonical reason. A body field is
   always present, so each would need a sentinel for "absent" — and absence here

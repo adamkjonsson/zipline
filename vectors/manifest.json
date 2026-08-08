@@ -701,6 +701,76 @@
       "has_jsonl": true
     },
     {
+      "name": "sessionization-stage",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 588,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0043",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0080",
+        "0x0090",
+        "0x00A0",
+        "0x00C1"
+      ],
+      "summary": "The cell F0 left empty: a zpf-SOURCED TRANSPORT stream. A reassembler run over a .zpf input -- what a decrypted tunnel needs -- with its own Decoder declaring output_layer = transport. Its records carry spans AND decoder_id, like any decode stage's, and everything else about it is a transport stream: isn on the participant, seq_start on the records, hole-inclusive offsets, and NO content_type, because a reassembly record's boundaries are a slice and not a unit. The 25-byte hole between the records is expressed by the sequence numbers -- 1001 + 50 ends at 1051 and the next record starts at 1076 -- and NOT by a Discontinuity, which a transport-layer stream still may not carry whatever produced it. Before 0.15 this stage had to be characterised by the ABSENCE of decoder_id, because absence was the only way to say hole-inclusive, so its overlap policy and buffer depth had nowhere to live; params_digest is now where they go.",
+      "spec_section": "Conformance -- a sessionization stage",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
+      "name": "reassembler-declared",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 292,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0011",
+        "0x0020",
+        "0x0022",
+        "0x0041",
+        "0x0042",
+        "0x0043",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0090"
+      ],
+      "summary": "The head-of-pipeline reassembler taking up the SHOULD: CAPTURE-sourced, with a Decoder of its own declaring output_layer = transport. The same logical layer raw-minimal holds unlabelled, labelled here -- and both are conformant, which is the deliberate asymmetry 0.15 records rather than leaves to be rediscovered. What it buys is a name and a params_digest for the reassembly, so a consumer can say WHICH reassembler produced the stream and whether two files were built the same way. Note the records carry no spans: the capture is not a .zpf and there is no input stream to cite, exactly as in any capture-sourced file.",
+      "spec_section": "Conformance -- the head-of-pipeline reassembler",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
       "name": "proxy-decoded",
       "tier": "accept",
       "violations": 0,
@@ -1182,6 +1252,39 @@
       "summary": "INTRA-FILE DERIVATION: a file deriving one of its own streams from another. Session 20's records span a zpf-input Source whose uri is THIS file, and session 21 is the stream they claim to come from. Legalising mixed-state files is what makes this reachable -- streams at differing positions on the two axes may now sit side by side, so the question of whether one may feed another arises for the first time and the answer is no. It cannot work: a zpf-input Source carries a digest, and no file can contain its own hash, so the digest here is either absent, wrong, or a value that changes the bytes it describes. Every derived stream's predecessor is a DIFFERENT file.",
       "spec_section": "Conceptual model -- the unit is the stream, not the file",
       "expect": "ISOLATE or reject. The Source names the file that contains it, so its digest cannot be computed without changing the value it would have to hold. Streams at differing layers or provenances in one file are legal since 0.15; one deriving from another in the same file is not, and the two are easy to confuse. A reader MUST NOT resolve the spans against the sibling session -- that is the reinterpretation the isolate tier forbids.",
+      "has_jsonl": false
+    },
+    {
+      "name": "isolate-unknown-output-layer",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 364,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0080",
+        "0x0090"
+      ],
+      "summary": "A Decoder declaring an output_layer this version does not define. The load-bearing twin of isolate-unknown-source-kind, and the second enum of which that is true: the value decides whether this stream's offsets are hole-inclusive positions or a payload concatenation, so a reader that does not recognise it cannot compute a single record's range. Contrast escape-unknown-enum, where an unknown tcp_role is advisory and carrying the raw number forward loses nothing. Note the file is otherwise conformant -- the failure is entirely in what the reader cannot conclude.",
+      "spec_section": "Enums -- load-bearing values",
+      "expect": "MAY reject the file, or discard the streams whose records reference decoder 1. MUST NOT guess a layer, and MUST NOT fall back to the absent-means-decoded default -- absence and an unrecognised value are different statements, and treating them alike would read a transport stream's offsets as a payload concatenation. This is the same condition as an unknown Source kind and is handled the same way.",
       "has_jsonl": false
     },
     {

@@ -276,24 +276,30 @@ restructure in the format's history.
 #41's analysis left these explicitly unchecked. Each blocks F1 and none has an
 owner yet; answer them in Phase 3 as they arise, and record the answers.
 
-- **Is `isn` already legal on a derived participant?** "TCP participants MUST carry
-  `isn` when the handshake was observed" is not scoped to raw files, but the
-  sentence sits inside the *raw record* bullet. F1 needs this stated explicitly
-  either way — its whole output is `isn`-anchored and `zpf`-sourced.
-- **F1 against the merge and `SEQUENCED`.** A sessionization stage's output is a
-  transport layer, so merging two should work unchanged. Untested against
-  §Sequenced files and the `sequenced_basis` rules.
+- ~~**Is `isn` already legal on a derived participant?**~~ *Answered: yes, and the
+  scoping was the bug. `isn`, `seq_start` and the `message` flag now bind on the
+  **layer**, in a statement of their own, rather than sitting inside the
+  capture-sourced bullet where they read as provenance requirements.*
+- ~~**F1 against the merge and `SEQUENCED`.**~~ *Answered by walking it: a
+  sessionization stage's records carry `seq_start`/`ack`, so its sessions are **not
+  hint-less**, need no `sequenced_basis`, and merge exactly as a capture's do. Said
+  so in §Sequenced files, because records carrying a `decoder_id` invite the
+  opposite guess. **The walk found a real gap:** the pass-through duty to carry
+  `decoder_id` forward and re-declare Decoder Descriptors was keyed on "preserving a
+  decoded layer", which F1 makes wrong — a transport stream whose reassembler
+  declared itself would have lost its Decoder across a merge, silently changing the
+  layer its output reads as. Now keyed on the decoder, not the layer.*
 - ~~**F0 against `check.py`.** The checker classifies *files*; F0 makes the property
   per *stream*.~~ *Answered in Phase 2, and the premise was wrong: the checker
   classifies nothing. See the Phase 2 note.*
-- **Should the head-of-pipeline reassembler declare itself?** Kept at SHOULD for
-  compatibility, which leaves one logical layer labelled in derived files and
-  unlabelled in capture-sourced ones. Tolerable, but it is a deliberate asymmetry
-  and `0.15` should record it as one rather than leave it to be rediscovered.
-- **A reassembly decoder's `content_type`.** Resolved in the analysis — absent,
-  because a reassembly record's boundaries are a slice and not a unit — but the
-  reasoning has to reach the specification, since `prim:bytes` is mechanically
-  legal and is the obvious wrong answer.
+- ~~**Should the head-of-pipeline reassembler declare itself?**~~ *SHOULD, as
+  expected, and the asymmetry is written into §Conformance with its consequence
+  spelled out: a consumer cannot conclude that an undeclared transport stream had no
+  reassembler, only that none was named. Vector `reassembler-declared`.*
+- ~~**A reassembly decoder's `content_type`.**~~ *Absent, with the reasoning in
+  §Typing a decoded record rather than only in the analysis — plus the contrast that
+  makes it legible, a packet-preserving stage, which does type its records and with
+  a `dec:` token.*
 
 ---
 
@@ -411,6 +417,57 @@ the value cannot compute the stream's offsets and MUST NOT guess.
 Ships a minimal sessionization-stage vector (decision 5) and the answers to the
 §F1 questions above.
 
+*Shipped as **`output_layer`, a u8 enum in the Decoder Descriptor body** —
+`0 = decoded`, `1 = transport`. Three vectors: `sessionization-stage`,
+`reassembler-declared` for the SHOULD, and `isolate-unknown-output-layer` for the
+load-bearing enum.*
+
+***It shipped first as a TLV option (`0x0044`) and moved into the body on a
+question asked afterwards: what would making it mandatory cost?** Measured: the
+option cost 8 bytes — 4 of TLV header, 1 of value, 3 of padding — and the body cost
+**nothing**, because the descriptor already carried a spare `_reserved` u16. But
+the size was never the point. The body form makes the field unconditional, which
+removes the "absent means `decoded`" default a load-bearing field should not have
+had, and it is free only while the format is in `0.x` — §Design decisions not taken
+already records that a body-layout change costs a major bump after `1.0`.*
+
+***The compatibility argument that had chosen the option form turned out not to
+distinguish them.** A reserved field MUST be written 0, so numbering `decoded = 0`
+means every Decoder Descriptor ever written already holds the value that says what
+it always meant. Verified rather than assumed: all 25 in the suite held 0, and
+regenerating changed **no `.zpf` byte at all** — only `.hex` annotations and the 19
+`.jsonl` projections, which gain the key. The transport-layer decoder blocks got 8
+bytes smaller, 64 → 56.*
+
+***This is the one candidate that escapes §Design decisions not taken's objection
+to promoting options.** That entry rejects promotion because every mandatory option
+in the format is *conditionally* mandatory, so each would need a sentinel for
+absent, and absence carries meaning. An unconditionally mandatory field has no
+absent state to encode.*
+
+***There were five restatement sites, not four, and the fifth was found by the
+grep-then-read step rather than by the grep.*** *§Decoder Descriptor's "Every
+decoded record carries an explicit `decoder_id` — its presence is what makes the
+record decoded" is nowhere near the other four, contains none of the phrases the
+obvious grep uses, and is exactly the claim F1 falsifies. This is #63's shape a
+second time, caught this time because the verification step said to read the
+sections rather than trust the grep.*
+
+***Two defects F0 shipped, fixed here.*** *Both keyed the layer on provenance —
+the defect F0 existed to remove — and both contradicted `proxy-decoded`, the vector
+Phase 2 shipped: §Layers' "a **transport** stream — one reassembled from a capture"
+and "A **decoded** stream … exists only as a decode stage's output" (the sentence
+#53 quotes as the gap), and §Decoder Descriptor's "Files carrying a decoded layer".
+Phase 2's sweep keyed on the word "raw" and neither sentence contains it.*
+
+***The merge walk found a real gap rather than confirming a guess.*** *The
+pass-through duty to carry `decoder_id` forward and re-declare Decoder Descriptors
+was keyed on "preserving a **decoded** layer". Under F1 that is wrong: a transport
+stream whose reassembler declared itself would lose its Decoder across a merge,
+silently changing the layer its output reads as. It is now keyed on the decoder,
+not the layer. Worth noting because the plan listed this walk as a confirmation
+step.*
+
 ### Phase 4 — F2 (#55), the tunnel
 
 The worked example and the fixture: `raw(tunnel) → packets → inner transport →
@@ -458,9 +515,9 @@ survives the grep.
 - [x] Provenance and layer are stated as independent axes; "raw" is gone from the
       normative text. *(The `check.py` half of this line was struck: it never
       classified. The specification did, and no longer does.)*
-- [ ] A decoder declares the layer it emits; "decoded iff `decoder_id`" is stated
-      **once** and the other four sites refer to it.
-- [ ] A sessionization-stage vector exists independently of F2.
+- [x] A decoder declares the layer it emits; "decoded iff `decoder_id`" is stated
+      **once** and the other sites refer to it. *There were five, not four.*
+- [x] A sessionization-stage vector exists independently of F2.
 - [ ] The tunnel chain is a worked example **and** a fixture, and it walks.
 - [ ] `python3 vectors/check.py` green; every vector stamps `0.15`.
 - [ ] #70's tool reports no option, block or rule added in `0.15` without a vector

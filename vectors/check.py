@@ -100,6 +100,21 @@ RULES = {
         "a file MUST NOT derive one of its own streams from another",
         "isolate-self-derived",
     ),
+    # F1's three. The option id is covered mechanically by the registry parse;
+    # the enum tables are not parsed, so the VALUES are covered only by these
+    # entries naming vectors -- the statement-of-intent limit again.
+    "decoder-declares-layer": (
+        "a decoder declares the layer it emits; reassembly is a decoder",
+        "sessionization-stage",
+    ),
+    "reassembler-may-declare": (
+        "a head-of-pipeline reassembler MAY declare itself; the asymmetry is deliberate",
+        "reassembler-declared",
+    ),
+    "unknown-output-layer-isolates": (
+        "an unrecognised output_layer leaves offsets uncomputable; MUST NOT guess",
+        "isolate-unknown-output-layer",
+    ),
     "spans-correspondence": (
         "a decoder may transform; spans name what a unit corresponds to",
         "chain",

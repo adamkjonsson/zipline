@@ -165,10 +165,23 @@ def source(source_id: int, kind: int, options: tuple[Opt, ...] | list[Opt] = ())
     return block(0x02, "Source Descriptor", body, options)
 
 
-def decoder(decoder_id: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
+_LAYER = {0: "decoded", 1: "transport"}
+
+
+def decoder(
+    decoder_id: int, options: tuple[Opt, ...] | list[Opt] = (), output_layer: int = 0
+) -> Blk:
+    """Build a Decoder Descriptor (0x03).
+
+    output_layer is a BODY field, not an option: 0 = decoded, 1 = transport.
+    Numbering decoded 0 is what makes it fit the old _reserved u16 without
+    changing a byte of any file written before it existed -- every one of those
+    holds 0 there, and every one of them meant decoded.
+    """
     body = [
         P(u16(decoder_id), f"decoder_id = {decoder_id}"),
-        P(u16(0), "_reserved"),
+        P(u8(output_layer), f"output_layer = {output_layer}  ({_LAYER.get(output_layer, '?')})"),
+        P(u8(0), "_reserved"),
     ]
     return block(0x03, "Decoder Descriptor", body, options)
 
@@ -609,6 +622,7 @@ vector(
         {
             "type": "decoder",
             "decoder_id": 1,
+            "output_layer": "decoded",
             "name": "http/1.1",
             "version": "0.4",
             "params_digest": "sha256:00ab",
@@ -881,7 +895,13 @@ vector(
             "uri": "decoded.zpf",
             "digest": "sha256:44dd",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "http/1.1",
+            "version": "0.4",
+        },
         {"type": "session", "session_id": 7, "proto": "http"},
         {
             "type": "participant",
@@ -986,7 +1006,13 @@ vector(
             "uri": "tls-records.zpf",
             "digest": "sha256:8b3a",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "tls-records", "version": "0.2"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "tls-records",
+            "version": "0.2",
+        },
         {"type": "session", "session_id": 42, "proto": "tls"},
         {
             "type": "participant",
@@ -1082,7 +1108,13 @@ vector(
             "uri": "missing.zpf",
             "digest": "sha256:d1e5",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "http/1.1",
+            "version": "0.4",
+        },
         {"type": "session", "session_id": 7, "proto": "http"},
         {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {
@@ -1162,7 +1194,13 @@ vector(
             "uri": "raw.zpf",
             "digest": "sha256:9f2c",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "text/utf8", "version": "1.0"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "text/utf8",
+            "version": "1.0",
+        },
         {"type": "session", "session_id": 7, "proto": "http"},
         {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {
@@ -1223,7 +1261,7 @@ vector(
             "uri": "raw.zpf",
             "digest": "sha256:9f2c",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1"},
+        {"type": "decoder", "decoder_id": 1, "output_layer": "decoded", "name": "http/1.1"},
         {"type": "session", "session_id": 7, "proto": "http"},
         {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {
@@ -1284,7 +1322,13 @@ vector(
             "uri": "raw.zpf",
             "digest": "sha256:9f2c",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "tls-records", "version": "0.2"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "tls-records",
+            "version": "0.2",
+        },
         {"type": "session", "session_id": 7, "proto": "tls"},
         {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {
@@ -1383,7 +1427,13 @@ vector(
             "uri": "tls.zpf",
             "digest": "sha256:5c7e",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "h2-demux", "version": "0.1"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "h2-demux",
+            "version": "0.1",
+        },
         {"type": "session", "session_id": 100, "proto": "http"},
         {"type": "participant", "session_id": 100, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {"type": "session", "session_id": 101, "proto": "http"},
@@ -1517,7 +1567,13 @@ vector(
             "uri": "raw.zpf",
             "digest": "sha256:9f2c",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "quic-stream", "version": "0.1"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "quic-stream",
+            "version": "0.1",
+        },
         {"type": "session", "session_id": 9, "proto": "quic"},
         {"type": "participant", "session_id": 9, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {
@@ -1840,7 +1896,13 @@ vector(
             "uri": "decoded.zpf",
             "digest": "sha256:44dd",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "http/1.1",
+            "version": "0.4",
+        },
         {"type": "session", "session_id": 7, "proto": "http"},
         {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
         {
@@ -1949,7 +2011,13 @@ vector(
             "uri": "decoded.zpf",
             "digest": "sha256:44dd",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "http/1.1",
+            "version": "0.4",
+        },
         {"type": "session", "session_id": 7, "proto": "http"},
         {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
         {
@@ -1998,6 +2066,202 @@ vector(
             "type": "session_end",
             "session_id": 7,
             "input_extents": [{"source_id": 1, "session_id": 7, "pid": 1, "extent": 160}],
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "sessionization-stage",
+    "accept",
+    "The cell F0 left empty: a zpf-SOURCED TRANSPORT stream. A reassembler run "
+    "over a .zpf input -- what a decrypted tunnel needs -- with its own Decoder "
+    "declaring output_layer = transport. Its records carry spans AND "
+    "decoder_id, like any decode stage's, and everything else about it is a "
+    "transport stream: isn on the participant, seq_start on the records, "
+    "hole-inclusive offsets, and NO content_type, because a reassembly "
+    "record's boundaries are a slice and not a unit. The 25-byte hole between "
+    "the records is expressed by the sequence numbers -- 1001 + 50 ends at "
+    "1051 and the next record starts at 1076 -- and NOT by a Discontinuity, "
+    "which a transport-layer stream still may not carry whatever produced it. "
+    "Before 0.15 this stage had to be characterised by the ABSENCE of "
+    "decoder_id, because absence was the only way to say hole-inclusive, so "
+    "its overlap policy and buffer depth had nowhere to live; params_digest is "
+    "now where they go.",
+    "Conformance -- a sessionization stage",
+    [
+        file_header(options=[o_produced_by("zpf-sessionize 0.2"), o_produced_at(1719630000)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest("sha256:8c4d")]),
+        decoder(
+            1,
+            [
+                o_dec_name("tcp-reassembly"),
+                o_dec_version("1.1"),
+                o_params_digest("sha256:2f60"),
+            ],
+            output_layer=1,
+        ),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(
+            7,
+            0,
+            1,
+            1000,
+            b"A" * 50,
+            options=[o_decoder_id(1), o_spans([(1, 0, 4, 0, 50)]), o_seq_start(1001)],
+        ),
+        undecoded(1, 0, 4, 50, 75, [o_reason("gap"), o_decoder_id(1)]),
+        record(
+            7,
+            0,
+            1,
+            1200,
+            b"B" * 30,
+            options=[o_decoder_id(1), o_spans([(1, 0, 4, 75, 105)]), o_seq_start(1076)],
+        ),
+        session_end(7, [o_input_extents([(1, 0, 4, 105)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-sessionize 0.2",
+            "produced_at": 1719630000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "packets.zpf",
+            "digest": "sha256:8c4d",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "transport",
+            "name": "tcp-reassembly",
+            "version": "1.1",
+            "params_digest": "sha256:2f60",
+        },
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"A" * 50),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 4, "pid": 0, "off_start": 0, "off_end": 50}],
+            "seq_start": 1001,
+        },
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 4,
+            "pid": 0,
+            "off_start": 50,
+            "off_end": 75,
+            "reason": "gap",
+            "decoder_id": 1,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "payload": b64(b"B" * 30),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 4, "pid": 0, "off_start": 75, "off_end": 105}],
+            "seq_start": 1076,
+        },
+        {
+            "type": "session_end",
+            "session_id": 7,
+            "input_extents": [{"source_id": 1, "session_id": 4, "pid": 0, "extent": 105}],
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "reassembler-declared",
+    "accept",
+    "The head-of-pipeline reassembler taking up the SHOULD: CAPTURE-sourced, "
+    "with a Decoder of its own declaring output_layer = transport. The same "
+    "logical layer raw-minimal holds unlabelled, labelled here -- and both are "
+    "conformant, which is the deliberate asymmetry 0.15 records rather than "
+    "leaves to be rediscovered. What it buys is a name and a params_digest for "
+    "the reassembly, so a consumer can say WHICH reassembler produced the "
+    "stream and whether two files were built the same way. Note the records "
+    "carry no spans: the capture is not a .zpf and there is no input stream to "
+    "cite, exactly as in any capture-sourced file.",
+    "Conformance -- the head-of-pipeline reassembler",
+    [
+        file_header(options=[o_creator("zpf-write 2.0")]),
+        source(1, 0, [o_uri("sideA.pcap"), o_link_type(1)]),
+        decoder(
+            1,
+            [
+                o_dec_name("tcp-reassembly"),
+                o_dec_version("1.1"),
+                o_params_digest("sha256:2f60"),
+            ],
+            output_layer=1,
+        ),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(7, 0, 1, 1000, GET, flags=0x0001, options=[o_decoder_id(1), o_seq_start(1001)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000, "creator": "zpf-write 2.0"},
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "capture",
+            "uri": "sideA.pcap",
+            "link_type": 1,
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "transport",
+            "name": "tcp-reassembly",
+            "version": "1.1",
+            "params_digest": "sha256:2f60",
+        },
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["psh"],
+            "payload": b64(GET),
+            "decoder_id": 1,
+            "seq_start": 1001,
         },
         {"type": "end"},
     ],
@@ -2054,7 +2318,13 @@ vector(
             "produced_at": 1719600000,
         },
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "sslkeylog-tap"},
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "http/1.1",
+            "version": "0.4",
+        },
         {"type": "session", "session_id": 3, "proto": "http"},
         {"type": "participant", "session_id": 3, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {
@@ -2225,7 +2495,13 @@ vector(
             "uri": "in.zpf",
             "digest": "sha256:6a71",
         },
-        {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "http/1.1",
+            "version": "0.4",
+        },
         {"type": "session", "session_id": 10, "proto": "http"},
         {"type": "participant", "session_id": 10, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
         {
@@ -2737,6 +3013,44 @@ vector(
 )
 
 vector(
+    "isolate-unknown-output-layer",
+    "isolate",
+    "A Decoder declaring an output_layer this version does not define. The "
+    "load-bearing twin of isolate-unknown-source-kind, and the second enum of "
+    "which that is true: the value decides whether this stream's offsets are "
+    "hole-inclusive positions or a payload concatenation, so a reader that "
+    "does not recognise it cannot compute a single record's range. Contrast "
+    "escape-unknown-enum, where an unknown tcp_role is advisory and carrying "
+    "the raw number forward loses nothing. Note the file is otherwise "
+    "conformant -- the failure is entirely in what the reader cannot conclude.",
+    "Enums -- load-bearing values",
+    [
+        file_header(options=[o_produced_by("zpf-sessionize 0.2"), o_produced_at(1719630000)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest("sha256:8c4d")]),
+        decoder(1, [o_dec_name("tcp-reassembly"), o_dec_version("1.1")], output_layer=7),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(
+            7,
+            0,
+            1,
+            1000,
+            b"A" * 50,
+            options=[o_decoder_id(1), o_spans([(1, 0, 4, 0, 50)]), o_seq_start(1001)],
+        ),
+        end_block(),
+    ],
+    expect="MAY reject the file, or discard the streams whose records "
+    "reference decoder 1. MUST NOT guess a layer, and MUST NOT fall "
+    "back to the absent-means-decoded default -- absence and an "
+    "unrecognised value are different statements, and treating them "
+    "alike would read a transport stream's offsets as a payload "
+    "concatenation. This is the same condition as an unknown Source "
+    "kind and is handled the same way.",
+    violations=1,
+)
+
+vector(
     "isolate-unknown-source-kind",
     "isolate",
     "A Source whose kind is undefined. Unlike tcp_role this is load-bearing: "
@@ -2947,7 +3261,13 @@ def build_chain() -> None:
                 "uri": "raw.zpf",
                 "digest": raw_dg,
             },
-            {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "http/1.1",
+                "version": "0.4",
+            },
             {"type": "session", "session_id": 7, "proto": "http"},
             {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
             {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
@@ -3036,7 +3356,13 @@ def build_chain() -> None:
                 "uri": "decoded.zpf",
                 "digest": dec_dg,
             },
-            {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "http/1.1",
+                "version": "0.4",
+            },
             {"type": "session", "session_id": 7, "proto": "http"},
             {
                 "type": "participant",
@@ -3156,7 +3482,13 @@ def build_splice() -> None:
                 "uri": "raw.zpf",
                 "digest": "sha256:9f2c",
             },
-            {"type": "decoder", "decoder_id": 1, "name": "tls-records", "version": "0.2"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "tls-records",
+                "version": "0.2",
+            },
             {"type": "session", "session_id": 7, "proto": "tls"},
             {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
             {
@@ -3245,7 +3577,13 @@ def build_splice() -> None:
                 "uri": "tls-records.zpf",
                 "digest": stage1_dg,
             },
-            {"type": "decoder", "decoder_id": 1, "name": "http/1.1", "version": "0.4"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "http/1.1",
+                "version": "0.4",
+            },
             {"type": "session", "session_id": 7, "proto": "http"},
             {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
             {
