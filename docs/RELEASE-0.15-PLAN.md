@@ -479,6 +479,30 @@ as its third user. Use it. Keep the checking side specific, as `check_chain()` i
 
 Closes #55 and #41.
 
+*Shipped. `0.14`'s prediction held: `fixture()` and `member()` carried a four-file
+chain with no builder change at all. `check_tunnel()` is specific as instructed and
+reuses only `merge_ranges()`.*
+
+***The fan-out landed at the reassembler, not the decryptor**, which is where it
+belongs and was worth getting right: a WireGuard decryptor emits inner IP packets
+and knows nothing about flows; the reassembler is what groups them by 4-tuple. So
+`packets.zpf` holds one stream and `inner.zpf` fans it into two sessions — one
+input participant stream, two output sessions, neither covering `[0,150)` alone.*
+
+***The hop that justifies the whole release is `inner.zpf` reading
+`packets.zpf`'s Discontinuity.** It is a transport stream, so it may not emit one.
+It takes the other path §Discontinuity spells out — no record crosses the break, the
+crossing is left undone — and the loss survives as a TCP sequence gap instead. That
+is the only place in the document where a stage that *cannot* carry a break forward
+is shown doing the right thing, and it needed a fixture to be legible.*
+
+***Two verification notes.** The three new checks were each made to fail on purpose
+— a stale digest, an uncovered range, a drifted `input_extents` — and each produced
+a usable message before the tree was restored; a fixture checker that has never
+failed is not known to check anything. And the plan predicted "52 vectors": wrong,
+because the manifest counts a fixture as **one** entry however many files it holds.
+46 + 3 fixtures = 49.*
+
 ### Phase 5 — changelog, conformance sweep, release
 
 #70's tool over the finished release. Then the sweep, with the restatement grep as
@@ -518,7 +542,7 @@ survives the grep.
 - [x] A decoder declares the layer it emits; "decoded iff `decoder_id`" is stated
       **once** and the other sites refer to it. *There were five, not four.*
 - [x] A sessionization-stage vector exists independently of F2.
-- [ ] The tunnel chain is a worked example **and** a fixture, and it walks.
+- [x] The tunnel chain is a worked example **and** a fixture, and it walks.
 - [ ] `python3 vectors/check.py` green; every vector stamps `0.15`.
 - [ ] #70's tool reports no option, block or rule added in `0.15` without a vector
       naming it.

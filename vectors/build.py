@@ -3609,6 +3609,550 @@ def build_splice() -> None:
     )
 
 
+# ------------------------------------------------------------------- the tunnel
+#
+# Four files, one direction of a WireGuard tunnel. #41's case D, and the fixture
+# that walks every part of 0.15 at once:
+#
+#   wg.pcap --[capture]--> outer.zpf --[wireguard-decrypt]--> packets.zpf
+#                          UDP datagrams                      inner IP packets
+#                          capture / transport                zpf / decoded
+#
+#   packets.zpf --[tcp-reassembly]--> inner.zpf --[http/1.1]--> http.zpf
+#                                     two TCP flows             messages
+#                                     zpf / TRANSPORT           zpf / decoded
+#
+# One direction only: a one-way feed is the N = 1 case the format already models,
+# and nothing here needs a second direction. The offsets below are worked out in
+# the release plan and re-derived by check_tunnel(), so a drift shows up as a
+# failure rather than as a fixture nobody rechecked.
+
+WG1, WG2, WG3, WG4 = (bytes([c]) * 80 for c in b"WXYZ")  # 4 ciphertext datagrams
+IP_A1, IP_B1, IP_A2 = b"P" * 60, b"Q" * 40, b"R" * 50  # inner packets, once decrypted
+TCP_A1, TCP_A2, TCP_B1 = b"a" * 40, b"b" * 30, b"c" * 20  # inner TCP payloads
+
+
+def build_tunnel() -> None:
+    """Build the four-file decrypted-tunnel chain."""
+    fixture(
+        "tunnel",
+        "accept",
+        "A decrypted tunnel, end to end: outer.zpf -> packets.zpf -> inner.zpf "
+        "-> http.zpf. #41's case D, and the fixture that exercises the whole of "
+        "0.15 at once. FOUR THINGS TO READ IT FOR. (1) CORRESPONDENCE, NOT "
+        "IDENTITY: each inner packet spans the WHOLE outer datagram, nonce and "
+        "tag included, because those fed the computation -- so tunnel coverage "
+        "closes with no skipped Undecoded blocks at all. (2) FAN-OUT: one input "
+        "stream (packets.zpf session 5, pid 0) feeds TWO output sessions in "
+        "inner.zpf; neither covers the extent alone and both Session Ends "
+        "declare the same 150 for the shared input. (3) A zpf-SOURCED TRANSPORT "
+        "STREAM: inner.zpf declares output_layer = transport, carries isn and "
+        "seq_start, and expresses its 40-byte hole in the SEQUENCE NUMBERS -- no "
+        "Discontinuity, no content_type. (4) ORIGINATION, AND THE CROSSING LEFT "
+        "UNDONE: packets.zpf withholds an inner packet and declares the break; "
+        "inner.zpf reads that break and CANNOT express one, so no record crosses "
+        "packets offset 100 and the loss survives as a TCP gap instead; http.zpf "
+        "then meets a hole-class region between two adjacent output units and "
+        "originates its own block.",
+        "Layers; Conformance; Discontinuity; Worked example: a decrypted tunnel",
+        "Accept all four. Each .jsonl is the expected projection, and each "
+        "declared digest is the real SHA-256 of the sibling it names, so the "
+        "whole chain verifies. A reader that infers a stream's layer from its "
+        "Source kind gets inner.zpf wrong; one that assumes a decode stage's "
+        "output sessions mirror its input's gets inner.zpf wrong too.",
+        violations=0,
+    )
+
+    # ---- 1. outer.zpf -- the capture. UDP, so no seq_start and no isn. -------
+    outer_blocks = [
+        file_header(options=[o_creator("zpf-sessionize 1.0")]),
+        source(1, 0, [o_uri("wg.pcap"), o_link_type(1)]),
+        session(1, [o_proto("udp"), o_flow_key("198.51.100.7:51820 -> 203.0.113.9:51820")]),
+        participant(1, 0, [o_endpoint("198.51.100.7:51820")]),
+        record(1, 0, 1, 1000, WG1, flags=0x0080),
+        record(1, 0, 1, 1100, WG2, flags=0x0080),
+        record(1, 0, 1, 1200, WG3, flags=0x0080),
+        record(1, 0, 1, 1300, WG4, flags=0x0080),
+        end_block(),
+    ]
+    outer = member(
+        "tunnel",
+        "outer",
+        "The capture: four encrypted WireGuard datagrams, 80 bytes each. A "
+        "transport stream with no isn, so byte 0 is the first captured byte and "
+        "the four occupy [0,80) [80,160) [160,240) [240,320).",
+        outer_blocks,
+        [
+            {"type": "file", "format": FORMAT, "tick_hz": 1000000, "creator": "zpf-sessionize 1.0"},
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "capture",
+                "uri": "wg.pcap",
+                "link_type": 1,
+            },
+            {
+                "type": "session",
+                "session_id": 1,
+                "proto": "udp",
+                "flow_key": "198.51.100.7:51820 -> 203.0.113.9:51820",
+            },
+            {"type": "participant", "session_id": 1, "pid": 0, "endpoint": ["198.51.100.7:51820"]},
+            *(
+                {
+                    "type": "record",
+                    "session_id": 1,
+                    "sender_pid": 0,
+                    "source_id": 1,
+                    "ts": ts,
+                    "flags": ["message"],
+                    "payload": b64(p),
+                }
+                for ts, p in ((1000, WG1), (1100, WG2), (1200, WG3), (1300, WG4))
+            ),
+            {"type": "end"},
+        ],
+    )
+    outer_dg = "sha256:" + hashlib.sha256(outer).hexdigest()
+
+    # ---- 2. packets.zpf -- decrypt. One record per inner packet. ------------
+    packets_blocks = [
+        file_header(options=[o_produced_by("zpf-wg 0.3"), o_produced_at(1719700000)]),
+        source(1, 1, [o_uri("outer.zpf"), o_digest(outer_dg)]),
+        decoder(
+            1,
+            [o_dec_name("wireguard-decrypt"), o_dec_version("0.3"), o_params_digest("sha256:aa10")],
+        ),
+        session(5, [o_proto("ip")]),
+        participant(5, 0, [o_endpoint("10.8.0.2")]),
+        # Each inner packet spans the WHOLE datagram: the nonce and tag are
+        # inputs to the computation, so they are honestly spanned rather than
+        # marked skipped. That is what closes tunnel coverage with no Undecoded
+        # blocks for framing.
+        record(
+            5,
+            0,
+            1,
+            1000,
+            IP_A1,
+            options=[o_decoder_id(1), o_spans([(1, 0, 1, 0, 80)]), o_content_type("dec:ip-packet")],
+        ),
+        record(
+            5,
+            0,
+            1,
+            1100,
+            IP_B1,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 1, 80, 160)]),
+                o_content_type("dec:ip-packet"),
+            ],
+        ),
+        # Datagram 3 will not decrypt. The ciphertext exists, so this is
+        # bytes-class, not a hole -- and "decrypt-failed" is outside the
+        # canonical four, so reason_class is mandatory.
+        undecoded(
+            1,
+            0,
+            1,
+            160,
+            240,
+            [o_reason("decrypt-failed"), o_reason_class("bytes"), o_decoder_id(1)],
+        ),
+        # An inner packet is missing from this output, so the records either
+        # side of it do not join and this file MUST say so. No width: the lost
+        # plaintext's length is not recoverable from ciphertext we cannot read.
+        discontinuity(5, 0, [o_disc_reason("decrypt-failed")]),
+        record(
+            5,
+            0,
+            1,
+            1300,
+            IP_A2,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 1, 240, 320)]),
+                o_content_type("dec:ip-packet"),
+            ],
+        ),
+        session_end(5, [o_input_extents([(1, 0, 1, 320)])]),
+        end_block(),
+    ]
+    packets = member(
+        "tunnel",
+        "packets",
+        "The decrypt stage. One record per inner IP packet, typed dec:ip-packet "
+        "because a packet IS a unit -- unlike a reassembly window, which is a "
+        "slice. Its own offset space is the payload concatenation: [0,60) "
+        "[60,100) [100,150), the Discontinuity contributing 0.",
+        packets_blocks,
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-wg 0.3",
+                "produced_at": 1719700000,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "outer.zpf",
+                "digest": outer_dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "wireguard-decrypt",
+                "version": "0.3",
+                "params_digest": "sha256:aa10",
+            },
+            {"type": "session", "session_id": 5, "proto": "ip"},
+            {"type": "participant", "session_id": 5, "pid": 0, "endpoint": ["10.8.0.2"]},
+            {
+                "type": "record",
+                "session_id": 5,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000,
+                "payload": b64(IP_A1),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 0, "off_end": 80}
+                ],
+                "content_type": "dec:ip-packet",
+            },
+            {
+                "type": "record",
+                "session_id": 5,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1100,
+                "payload": b64(IP_B1),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 80, "off_end": 160}
+                ],
+                "content_type": "dec:ip-packet",
+            },
+            {
+                "type": "undecoded",
+                "source_id": 1,
+                "session_id": 1,
+                "pid": 0,
+                "off_start": 160,
+                "off_end": 240,
+                "reason": "decrypt-failed",
+                "reason_class": "bytes",
+                "decoder_id": 1,
+            },
+            {"type": "discontinuity", "session_id": 5, "pid": 0, "reason": "decrypt-failed"},
+            {
+                "type": "record",
+                "session_id": 5,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1300,
+                "payload": b64(IP_A2),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 240, "off_end": 320}
+                ],
+                "content_type": "dec:ip-packet",
+            },
+            {
+                "type": "session_end",
+                "session_id": 5,
+                "input_extents": [{"source_id": 1, "session_id": 1, "pid": 0, "extent": 320}],
+            },
+            {"type": "end"},
+        ],
+    )
+    packets_dg = "sha256:" + hashlib.sha256(packets).hexdigest()
+
+    # ---- 3. inner.zpf -- reassembly. TRANSPORT layer, and it fans out. ------
+    inner_blocks = [
+        file_header(options=[o_produced_by("zpf-sessionize 1.0"), o_produced_at(1719700100)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest(packets_dg)]),
+        decoder(
+            1,
+            [o_dec_name("tcp-reassembly"), o_dec_version("1.1"), o_params_digest("sha256:2f60")],
+            output_layer=1,
+        ),
+        # Flow A: the HTTP connection, and the one with the hole.
+        session(10, [o_proto("tcp"), o_flow_key("10.8.0.2:44300 -> 10.8.0.9:80")]),
+        participant(10, 0, [o_endpoint("10.8.0.2:44300"), o_isn(1000)]),
+        record(
+            10,
+            0,
+            1,
+            1000,
+            TCP_A1,
+            options=[o_decoder_id(1), o_spans([(1, 0, 5, 0, 60)]), o_seq_start(1001)],
+        ),
+        # seq 1081, not 1041: the 40 bytes the lost packet carried occupy
+        # [40,80) and no record covers them. The hole is in the NUMBERS -- this
+        # stream is forbidden a Discontinuity, and does not need one.
+        record(
+            10,
+            0,
+            1,
+            1300,
+            TCP_A2,
+            options=[o_decoder_id(1), o_spans([(1, 0, 5, 100, 150)]), o_seq_start(1081)],
+        ),
+        session_end(10, [o_input_extents([(1, 0, 5, 150)])]),
+        # Flow B: a second inner connection out of the SAME input stream.
+        session(11, [o_proto("tcp"), o_flow_key("10.8.0.2:44301 -> 10.8.0.9:53")]),
+        participant(11, 0, [o_endpoint("10.8.0.2:44301"), o_isn(5000)]),
+        record(
+            11,
+            0,
+            1,
+            1100,
+            TCP_B1,
+            options=[o_decoder_id(1), o_spans([(1, 0, 5, 60, 100)]), o_seq_start(5001)],
+        ),
+        # The same extent 150 as session 10 declares: under fan-out every
+        # consuming session declares the WHOLE input stream, not its share.
+        session_end(11, [o_input_extents([(1, 0, 5, 150)])]),
+        end_block(),
+    ]
+    inner = member(
+        "tunnel",
+        "inner",
+        "The sessionization stage, and the file this whole release was for. A "
+        "zpf-SOURCED TRANSPORT stream: its Decoder declares output_layer = "
+        "transport, so isn-anchored hole-inclusive offsets apply even though a "
+        "decode stage produced it. It FANS OUT -- one input stream into sessions "
+        "10 and 11, neither covering [0,150) alone. Flow A's lost packet is a "
+        "40-byte hole at [40,80), visible as seq 1081 where 1041 would be "
+        "contiguous. No Discontinuity: a transport stream may not carry one, and "
+        "no record crosses the break its input declared at packets offset 100.",
+        inner_blocks,
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-sessionize 1.0",
+                "produced_at": 1719700100,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "packets.zpf",
+                "digest": packets_dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "transport",
+                "name": "tcp-reassembly",
+                "version": "1.1",
+                "params_digest": "sha256:2f60",
+            },
+            {
+                "type": "session",
+                "session_id": 10,
+                "proto": "tcp",
+                "flow_key": "10.8.0.2:44300 -> 10.8.0.9:80",
+            },
+            {
+                "type": "participant",
+                "session_id": 10,
+                "pid": 0,
+                "endpoint": ["10.8.0.2:44300"],
+                "isn": 1000,
+            },
+            {
+                "type": "record",
+                "session_id": 10,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000,
+                "payload": b64(TCP_A1),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 60}
+                ],
+                "seq_start": 1001,
+            },
+            {
+                "type": "record",
+                "session_id": 10,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1300,
+                "payload": b64(TCP_A2),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 100, "off_end": 150}
+                ],
+                "seq_start": 1081,
+            },
+            {
+                "type": "session_end",
+                "session_id": 10,
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+            },
+            {
+                "type": "session",
+                "session_id": 11,
+                "proto": "tcp",
+                "flow_key": "10.8.0.2:44301 -> 10.8.0.9:53",
+            },
+            {
+                "type": "participant",
+                "session_id": 11,
+                "pid": 0,
+                "endpoint": ["10.8.0.2:44301"],
+                "isn": 5000,
+            },
+            {
+                "type": "record",
+                "session_id": 11,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1100,
+                "payload": b64(TCP_B1),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 60, "off_end": 100}
+                ],
+                "seq_start": 5001,
+            },
+            {
+                "type": "session_end",
+                "session_id": 11,
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+            },
+            {"type": "end"},
+        ],
+    )
+    inner_dg = "sha256:" + hashlib.sha256(inner).hexdigest()
+
+    # ---- 4. http.zpf -- decode flow A. The origination duty fires here. -----
+    http_blocks = [
+        file_header(options=[o_produced_by("zpf-http 0.4"), o_produced_at(1719700200)]),
+        source(1, 1, [o_uri("inner.zpf"), o_digest(inner_dg)]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(20, [o_proto("http")]),
+        participant(20, 0, [o_endpoint("10.8.0.2:44300")]),
+        record(
+            20,
+            0,
+            1,
+            1000,
+            b"REQ:GET /",
+            options=[o_decoder_id(1), o_spans([(1, 0, 10, 0, 40)]), o_content_type("dec:request")],
+        ),
+        # The transport hole, named in the input's space. hole-class, canonical.
+        undecoded(1, 0, 10, 40, 80, [o_reason("gap"), o_decoder_id(1)]),
+        # ORIGINATION: a hole-class region between the input regions of two
+        # adjacent output units. No content can have crossed it, so these two
+        # records do not join and this file must say so.
+        discontinuity(20, 0, [o_disc_reason("stream-gap")]),
+        record(
+            20,
+            0,
+            1,
+            1300,
+            b"RESP:200",
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 10, 80, 110)]),
+                o_content_type("dec:response"),
+            ],
+        ),
+        session_end(20, [o_input_extents([(1, 0, 10, 110)])]),
+        end_block(),
+    ]
+    member(
+        "tunnel",
+        "http",
+        "The last hop, decoding flow A only -- session 11 is simply not an "
+        "input here, which is legal and ordinary. This is where Finding 3's "
+        "duty fires at the end of four hops: the transport hole is a hole-class "
+        "Undecoded region between two adjacent output units, so the records "
+        "either side cannot join and this file ORIGINATES a Discontinuity. "
+        "isolate-unmarked-break is this file with that block deleted.",
+        http_blocks,
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-http 0.4",
+                "produced_at": 1719700200,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "inner.zpf",
+                "digest": inner_dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "http/1.1",
+                "version": "0.4",
+            },
+            {"type": "session", "session_id": 20, "proto": "http"},
+            {"type": "participant", "session_id": 20, "pid": 0, "endpoint": ["10.8.0.2:44300"]},
+            {
+                "type": "record",
+                "session_id": 20,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000,
+                "payload": b64(b"REQ:GET /"),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 10, "pid": 0, "off_start": 0, "off_end": 40}
+                ],
+                "content_type": "dec:request",
+            },
+            {
+                "type": "undecoded",
+                "source_id": 1,
+                "session_id": 10,
+                "pid": 0,
+                "off_start": 40,
+                "off_end": 80,
+                "reason": "gap",
+                "decoder_id": 1,
+            },
+            {"type": "discontinuity", "session_id": 20, "pid": 0, "reason": "stream-gap"},
+            {
+                "type": "record",
+                "session_id": 20,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1300,
+                "payload": b64(b"RESP:200"),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 10, "pid": 0, "off_start": 80, "off_end": 110}
+                ],
+                "content_type": "dec:response",
+            },
+            {
+                "type": "session_end",
+                "session_id": 20,
+                "input_extents": [{"source_id": 1, "session_id": 10, "pid": 0, "extent": 110}],
+            },
+            {"type": "end"},
+        ],
+    )
+
+
 # ------------------------------------------------------------------ emitters
 
 
@@ -3706,6 +4250,7 @@ def main() -> int:
     check = "--check" in sys.argv
     build_chain()
     build_splice()
+    build_tunnel()
     manifest = []
     problems = []
 

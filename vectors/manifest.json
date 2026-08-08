@@ -1408,6 +1408,65 @@
         "tls-records.jsonl",
         "tls-records.zpf"
       ]
+    },
+    {
+      "name": "tunnel",
+      "tier": "accept",
+      "violations": 0,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x22",
+        "0x41"
+      ],
+      "options": [
+        "0x0011",
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0022",
+        "0x0041",
+        "0x0042",
+        "0x0043",
+        "0x0050",
+        "0x0051",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00A0",
+        "0x00A1",
+        "0x00C1",
+        "0x00D1"
+      ],
+      "bytes": 3016,
+      "summary": "A decrypted tunnel, end to end: outer.zpf -> packets.zpf -> inner.zpf -> http.zpf. #41's case D, and the fixture that exercises the whole of 0.15 at once. FOUR THINGS TO READ IT FOR. (1) CORRESPONDENCE, NOT IDENTITY: each inner packet spans the WHOLE outer datagram, nonce and tag included, because those fed the computation -- so tunnel coverage closes with no skipped Undecoded blocks at all. (2) FAN-OUT: one input stream (packets.zpf session 5, pid 0) feeds TWO output sessions in inner.zpf; neither covers the extent alone and both Session Ends declare the same 150 for the shared input. (3) A zpf-SOURCED TRANSPORT STREAM: inner.zpf declares output_layer = transport, carries isn and seq_start, and expresses its 40-byte hole in the SEQUENCE NUMBERS -- no Discontinuity, no content_type. (4) ORIGINATION, AND THE CROSSING LEFT UNDONE: packets.zpf withholds an inner packet and declares the break; inner.zpf reads that break and CANNOT express one, so no record crosses packets offset 100 and the loss survives as a TCP gap instead; http.zpf then meets a hole-class region between two adjacent output units and originates its own block.",
+      "spec_section": "Layers; Conformance; Discontinuity; Worked example: a decrypted tunnel",
+      "expect": "Accept all four. Each .jsonl is the expected projection, and each declared digest is the real SHA-256 of the sibling it names, so the whole chain verifies. A reader that infers a stream's layer from its Source kind gets inner.zpf wrong; one that assumes a decode stage's output sessions mirror its input's gets inner.zpf wrong too.",
+      "has_jsonl": true,
+      "files": [
+        "http.hex",
+        "http.jsonl",
+        "http.zpf",
+        "inner.hex",
+        "inner.jsonl",
+        "inner.zpf",
+        "outer.hex",
+        "outer.jsonl",
+        "outer.zpf",
+        "packets.hex",
+        "packets.jsonl",
+        "packets.zpf"
+      ]
     }
   ]
 }

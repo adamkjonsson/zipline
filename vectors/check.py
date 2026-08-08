@@ -335,6 +335,113 @@ def check_chain() -> list[str]:
     return out
 
 
+def tunnel_lines(d: str, n: str) -> list[dict]:
+    """Read one tunnel file's JSONL projection."""
+    text = read_text(os.path.join(d, f"{n}.jsonl"))
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def tunnel_digests(d: str) -> list[str]:
+    """Check each hop cites the real SHA-256 of the file before it."""
+    import hashlib
+
+    real = {
+        f"{n}.zpf": "sha256:" + hashlib.sha256(read_bytes(os.path.join(d, f"{n}.zpf"))).hexdigest()
+        for n in ("outer", "packets", "inner", "http")
+    }
+    out = []
+    for n in ("packets", "inner", "http"):
+        for o in tunnel_lines(d, n):
+            if o.get("type") == "source" and "digest" in o:
+                want = real.get(o["uri"])
+                if want is None:
+                    out.append(f"tunnel/{n}: cites unknown file {o['uri']}")
+                elif o["digest"] != want:
+                    out.append(f"tunnel/{n}: digest for {o['uri']} is stale")
+    return out
+
+
+def tunnel_covers(d: str, stage: str, sess: int, pid: int, want_end: int) -> list[str]:
+    """Confirm one hop accounts for every offset of the input stream it reads.
+
+    Accumulated across the WHOLE file rather than per output session: under
+    fan-out one input stream feeds several output sessions and no single one
+    covers it, which is the property inner.zpf exists to show.
+    """
+    cov: list[tuple[int, int]] = []
+    for o in tunnel_lines(d, stage):
+        for s in o.get("spans", []):
+            if (s["session_id"], s["pid"]) == (sess, pid):
+                cov.append((s["off_start"], s["off_end"]))
+        if o.get("type") == "undecoded" and (o["session_id"], o["pid"]) == (sess, pid):
+            cov.append((o["off_start"], o["off_end"]))
+    merged = merge_ranges(cov)
+    if merged != [(0, want_end)]:
+        return [f"tunnel/{stage}: covers {merged} of session {sess} pid {pid}, want [0,{want_end})"]
+    return []
+
+
+def tunnel_inner_extent(d: str, sess: int, pid: int) -> int:
+    """Reconstruct one inner stream's extent from seq_start - (isn + 1).
+
+    The same arithmetic chain_raw_extents() does, one level further down: it is
+    what proves inner.zpf's hole is really in the sequence numbers rather than
+    merely asserted in a comment.
+    """
+    import base64
+
+    isn, end = None, 0
+    for o in tunnel_lines(d, "inner"):
+        if o.get("type") == "participant" and (o["session_id"], o["pid"]) == (sess, pid):
+            isn = o["isn"]
+        elif o.get("type") == "record" and (o["session_id"], o["sender_pid"]) == (sess, pid):
+            off = o["seq_start"] - (isn + 1)
+            end = max(end, off + len(base64.b64decode(o["payload"])))
+    return end
+
+
+def check_tunnel() -> list[str]:
+    """Verify the four-file tunnel walks: digests, coverage, and the inner hole.
+
+    Specific to this fixture, as check_chain() is. A generic per-hop walker
+    would be most of a conformant reader, which the module docstring rules out.
+    """
+    d = os.path.join(HERE, "tunnel")
+    if not os.path.isdir(d):
+        return ["tunnel/ missing"]
+
+    out = tunnel_digests(d)
+    # outer -> packets: the whole capture stream, framing included.
+    out += tunnel_covers(d, "packets", 1, 0, 320)
+    # packets -> inner: the union across BOTH output sessions, not either alone.
+    out += tunnel_covers(d, "inner", 5, 0, 150)
+    # inner -> http: flow A only; session 11 is not an input to that hop.
+    out += tunnel_covers(d, "http", 10, 0, 110)
+
+    # The inner stream's own extent, re-derived from the sequence numbers, must
+    # agree with what the next hop declares it to be.
+    derived = tunnel_inner_extent(d, 10, 0)
+    declared = [
+        e["extent"]
+        for o in tunnel_lines(d, "http")
+        if o.get("type") == "session_end"
+        for e in o.get("input_extents", [])
+        if (e["session_id"], e["pid"]) == (10, 0)
+    ]
+    if declared != [derived]:
+        out.append(
+            f"tunnel: inner flow A is [0,{derived}) by seq_start - (isn + 1), "
+            f"but http declares {declared}"
+        )
+
+    if not out:
+        print(
+            f"  tunnel: 4 files, digests match, coverage complete "
+            f"(outer [0,320) -> packets [0,150) fan-out -> inner flow A [0,{derived}))"
+        )
+    return out
+
+
 def check_capability_coverage(manifest: dict) -> list[str]:
     """Every capability the format defines must be exercised by some vector.
 
@@ -493,6 +600,7 @@ def main() -> int:
         failures += check_vector(v)
 
     failures += check_chain()
+    failures += check_tunnel()
     failures += check_capability_coverage(manifest)
 
     if failures:

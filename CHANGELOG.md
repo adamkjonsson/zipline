@@ -224,6 +224,38 @@ the bytes, and every reader's model of them is out of date.
   `decoder_id`" was true and is now only half the question. It is stated once, in
   §Conceptual model, and the four other sites refer to it.
 
+### Added
+
+- **A worked example and a fixture for a decrypted tunnel**, closing
+  [#41](https://github.com/adamkjonsson/zipline/issues/41). No new syntax: this is
+  the case the rest of the release was for, shown end to end.
+  *Worked example: a decrypted tunnel* under §Layers, and `vectors/tunnel/` — four
+  files, the largest fixture the suite has:
+
+  ```
+  wg.pcap → outer.zpf → packets.zpf → inner.zpf → http.zpf
+            capture     zpf           zpf         zpf
+            transport   decoded       TRANSPORT   decoded
+  ```
+
+  It is worth reading for four things. An inner packet spans the **whole** outer
+  datagram, nonce and tag included, so tunnel coverage closes with **no `skipped`
+  blocks at all**. One input stream **fans out** into two inner TCP sessions,
+  neither covering the input alone and both declaring its whole extent. `inner.zpf`
+  is a **`zpf`-sourced transport stream** whose 40-byte hole lives in the sequence
+  numbers, with no Discontinuity and no `content_type` — the cell that was
+  unreachable before this release. And the loss is traceable at every hop: a
+  `decrypt-failed` break in `packets.zpf`, a sequence hole in `inner.zpf`, an
+  originated Discontinuity in `http.zpf`, and 80 bytes of still-unreadable
+  ciphertext in `outer.zpf`.
+
+  One detail is worth lifting out, because it is the only place the specification
+  says what to do when a stage *cannot* carry a break forward: `inner.zpf` reads
+  `packets.zpf`'s Discontinuity and is a transport stream, so it may not emit one.
+  It declines the crossing instead — no record spans the break — and the
+  information survives as a TCP sequence gap. Staying silent *and* splicing would
+  have been the violation.
+
 ---
 
 ## [0.14] — 2026-08-06
