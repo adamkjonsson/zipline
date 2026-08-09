@@ -1,20 +1,19 @@
-# Defects in the 0.12 conformance vectors
+# Defects in the conformance vectors
 
-A running list, to be reported to the
-[zipline](https://github.com/adamkjonsson/zipline) project in one batch when the
-0.9 → 0.12 port is finished. Found while implementing against
-`vectors/` at tag `v0.12` (commit `c291afc`).
+A running list of vectors found to be wrong, and what fixed them. Defects 1 and 2
+were found while porting `0.9 → 0.12` against `vectors/` at tag `v0.12` (commit
+`c291afc`); the list is appended to as later reviews reach further into the tree.
 
-**Status: 2 defects, affecting 3 vectors and the vectors README. Both fixed in
-`0.13`** — defect 2 by commit `a52c717`, defect 1 by the `0.13` version-stamp
-commit, which regenerated the three vectors. The file is kept as the record of
-what was wrong and why. Appended to as later migration phases exercise more of
-the tree — the `accept` tier's projections are not fully compared until Phase 2,
-so this list is not yet complete.
+**Status: 3 defects, affecting 4 vectors and the vectors README. All fixed.**
+Defect 2 by commit `a52c717` and defect 1 by the `0.13` version-stamp commit,
+which regenerated the three vectors; defect 3 in `0.16`. The file is kept as the
+record of what was wrong and why.
 
-Nothing here challenges the *normative text*. Per the vectors' own ground rule
-2, a vector that disagrees with the specification is the thing that is wrong,
-and all of these are vector-side.
+Ground rule 2 says a vector that disagrees with the specification is the thing
+that is wrong, and defects 1 and 2 were vector-side under it. **Defect 3 is the
+exception worth naming:** the vector disagreed with a specification that
+disagreed with itself, so no reading of the text could have produced a correct
+vector, and the fix changed both.
 
 ---
 
@@ -151,6 +150,53 @@ Reword ground rule 4 to match the table and the spec — the failure mode being
 warned against is a reader that *accepts silently*, and one that treats a
 semantic violation as structural corruption (rejecting for the wrong tier's
 reason). Rejecting the file, with a diagnostic, is conformant.
+
+---
+
+## Defect 3 — `undecoded-in-capture` wrote this file's own `session_id` into a block read against a capture
+
+**→ FIXED in `0.16`** ([#87](https://github.com/adamkjonsson/zipline/issues/87)),
+which settled the reading the vector could not satisfy.
+
+Found by `python-zipline` while reviewing `0.15`
+([SPEC-0.15-REVIEW.md](SPEC-0.15-REVIEW.md), Finding 2) — the first vector since
+the `0.12` round that could not be implemented from the specification.
+
+**Affected:** `undecoded-in-capture` (`accept`). Consequence: **unimplementable**.
+A reader could not parse the block in any way that satisfied all three of the
+rules bearing on it, so the vector failed every conformant reader and passed only
+one that had guessed the same way its author did.
+
+### What was wrong
+
+The shipped block was:
+
+```jsonl
+{"type":"undecoded","source_id":1,"session_id":7,"pid":0,
+ "off_start":4096,"off_end":4396,
+ "reason":"overlap-discarded","reason_class":"bytes"}
+```
+
+`source_id 1` is a `capture` Source (`tap.pcap`). Three normative statements
+applied and no reading satisfied all three: the Undecoded field table required
+`kind = zpf-input`; §Undecoded said the ids are the *source's* and "never the
+current file's", while `7` is this file's own session id; and the span-list rule
+said a `capture` source's ids are unused and written 0.
+
+The offsets compounded it. `4096..4396` is a plausible position in a pcap and an
+impossible one in this file's stream, which is about 105 bytes long — so the
+block's ids pointed one way and its offsets the other, and neither of the two
+candidate readings fitted both halves.
+
+### The fix
+
+`0.16` keyed the whole body on the referenced source's `kind`, matching what
+`spans` had always done. Against a `capture` source the ids are unused and MUST
+be 0, and the offsets are byte offsets into the capture file. The vector now
+writes `session_id = 0`, its offsets are correct as they stand, and its `.hex`
+annotates them as capture byte offsets rather than "in the input's namespace" —
+`build.py` had printed that label unconditionally, which was wrong on the one
+vector where a reader most needed it right.
 
 ---
 

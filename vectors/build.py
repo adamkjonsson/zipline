@@ -245,13 +245,28 @@ def undecoded(
     off_start: int,
     off_end: int,
     options: tuple[Opt, ...] | list[Opt] = (),
+    capture: bool = False,
 ) -> Blk:
+    """Build an Undecoded (0x21) block.
+
+    `capture` says the referenced Source is a capture, which changes what every
+    remaining field MEANS: the ids are unused and the offsets are byte offsets
+    into the capture file rather than logical stream offsets. The annotation used
+    to say "in the input's namespace" unconditionally, which was wrong on exactly
+    the one vector where a reader most needed it right (#87).
+    """
+    if capture and (pid or session_id):
+        raise ValueError("against a capture source the ids are unused and MUST be 0")
+    where = "the capture file" if capture else "the input's namespace"
     body = [
-        P(u16(source_id), f"source_id = {source_id}  (in the input's namespace)"),
-        P(u16(pid), f"participant_id = {pid}"),
-        P(u64(session_id), f"session_id = {session_id}"),
-        P(u64(off_start), f"off_start = {off_start}"),
-        P(u64(off_end), f"off_end   = {off_end}"),
+        P(u16(source_id), f"source_id = {source_id}  (in {where})"),
+        P(u16(pid), f"participant_id = {pid}" + ("  (unused)" if capture else "")),
+        P(u64(session_id), f"session_id = {session_id}" + ("  (unused)" if capture else "")),
+        P(
+            u64(off_start),
+            f"off_start = {off_start}" + ("  (capture byte offset)" if capture else ""),
+        ),
+        P(u64(off_end), f"off_end   = {off_end}" + ("  (capture byte offset)" if capture else "")),
     ]
     return block(0x21, "Undecoded", body, options)
 
@@ -2358,15 +2373,21 @@ vector(
     "An Undecoded block in a CAPTURE-SOURCED file. The stage is the "
     "reassembler and the input is the capture itself: it discarded an "
     "overlapping retransmit it could not resolve, and says so rather than "
-    "leaving the region unaccounted for. The block's offsets are byte offsets "
-    "into the capture file, which is what a span into a capture Source has "
-    "always meant. Barred before 0.15 on the unstated assumption that "
-    "capture-sourced meant no transform had run -- but reassembly IS a "
-    "transform, and a destructive one, so the prohibition read as a design "
-    "when it was an oversight. Note the stream stays at the TRANSPORT layer: "
-    "no decoder_id anywhere, and the gap between the two records is expressed "
-    "by the sequence numbers, not by a Discontinuity, which this stream is "
-    "still forbidden to carry.",
+    "leaving the region unaccounted for. Barred before 0.15 on the unstated "
+    "assumption that capture-sourced meant no transform had run -- but "
+    "reassembly IS a transform, and a destructive one, so the prohibition read "
+    "as a design when it was an oversight. "
+    "READ THE BODY BY THE SOURCE'S KIND, which is what 0.16 settled (#87): "
+    "against this CAPTURE source session_id and pid are UNUSED and written 0, "
+    "and off_start/off_end are BYTE OFFSETS INTO tap.pcap -- 4096..4396 is a "
+    "position in the pcap, not in this file's 105-byte stream. The 0.15 "
+    "vector wrote session_id = 7, this file's own, which no reading of the "
+    "text could justify; see VECTOR-DEFECTS.md. "
+    "The class is BYTES, and against a capture source it is the only class "
+    "available: a hole needs no block here, because the stream stays at the "
+    "TRANSPORT layer, where the gap between the two records is already "
+    "expressed by the sequence numbers -- which is also why the file may not "
+    "carry a Discontinuity.",
     "Undecoded (0x21) -- a capture-sourced stream",
     [
         file_header(),
@@ -2377,10 +2398,11 @@ vector(
         undecoded(
             1,
             0,
-            7,
+            0,
             4096,
             4396,
             [o_reason("overlap-discarded"), o_reason_class("bytes")],
+            capture=True,
         ),
         record(7, 0, 1, 1200, b"B" * 30, options=[o_seq_start(1076)]),
         end_block(),
@@ -2414,7 +2436,7 @@ vector(
         {
             "type": "undecoded",
             "source_id": 1,
-            "session_id": 7,
+            "session_id": 0,
             "pid": 0,
             "off_start": 4096,
             "off_end": 4396,

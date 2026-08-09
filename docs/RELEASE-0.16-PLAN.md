@@ -201,8 +201,41 @@ release's reason to exist. Ship each with the vector work it implies:
   `proxy-decoded` sub-question, the corrected `undecoded-in-capture`, the
   `build.py` annotation that prints "in the input's namespace" unconditionally,
   and the `VECTOR-DEFECTS.md` entry.
-- **#88** — the predicate, sited per scope decision 2, and confirmed in `check.py`
-  against all 49 existing vectors rather than on paper.
+- **#88** — the predicate, sited per scope decision 2, and confirmed against all
+  49 existing vectors rather than on paper.
+
+***Done. Two corrections to this phase as planned:***
+
+***The proxy sub-question had two defensible answers, not one.*** #87 settled it
+as *permitted and purely declarative*: against a `capture` source the block
+discharges no coverage obligation and creates none, because the guarantee is
+scoped within each input participant stream and a capture has none. So the
+permission needs no layer key — a reassembler declaring a dropped overlap and a
+decode stage reading a pcap directly are both honest, and a proxy carries none
+because it read no input, not because its layer forbids it. The alternative
+(transport-layer only) would have given a checker a file-visible rule at the cost
+of forbidding the direct pcap→HTTP stage, which `0.15` permits.
+
+***The predicate could not be confirmed in `check.py`, and should not be.***
+Ground rule 2 forbids the checker from parsing block bodies or adjudicating
+semantics — that is what would make it the second normative authority the vectors
+exist not to be. Confirmed with a one-off reader instead. It fires on
+**`isolate-unmarked-break` and nothing else** across all 50 files, and every
+near-miss is excluded by the clause that exists for it:
+
+| Vector | Excluded by |
+|---|---|
+| `sessionization-stage` | the **layer test** — both records transport |
+| `tunnel/inner.zpf` | the **layer test** |
+| `reordered-decoded` | **`A ≥ B`** (150 ≥ 0), spans running downward |
+| `session-fan-out` | **`A ≥ B`** (80 ≥ 80) on one pair, no hole on the other |
+| `filtered-decoded` | the region between is **bytes**-class, not `hole` |
+
+The first two are the finding: without the layer clause a checker rejects two
+conformant accept-tier vectors. The last is the conservatism made concrete —
+`filtered-decoded` *does* owe its Discontinuity, under the producer duty, and the
+predicate is correctly silent about it. That is the sentence about satisfying the
+predicate not being satisfying the duty, demonstrated rather than asserted.
 
 ### Phase 2 — the restatements (#89, #91)
 

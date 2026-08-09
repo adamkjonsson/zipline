@@ -1777,24 +1777,56 @@ guarantee it would serve does not apply there either.
 
 | Field            | Type | Notes                                              |
 |------------------|------|----------------------------------------------------|
-| `source_id`      | u16  | the input Source (`kind = zpf-input`) whose stream the offsets index |
-| `participant_id` | u16  | participant (stream) *inside that input*           |
-| `session_id`     | u64  | session *inside that input*                        |
-| `off_start`      | u64  | logical 0-based stream offset, first byte = 0      |
-| `off_end`        | u64  | one past the last byte (half-open `[start, end)`)  |
+| `source_id`      | u16  | the input Source whose stream the offsets index — either `kind` |
+| `participant_id` | u16  | participant (stream) *inside that input*; unused against a `capture` source (write 0) |
+| `session_id`     | u64  | session *inside that input*; unused against a `capture` source (write 0) |
+| `off_start`      | u64  | first offset of the region, read per the source's `kind` |
+| `off_end`        | u64  | one past the last (half-open `[start, end)`)       |
 
-Every body field is read against the **input**: `session_id`/`participant_id`
-are in the referenced *source's* id namespace — exactly as a span entry's are
-(see [the namespace rule](#tlv-option-framing--id-registry)) — never the
-current file's. The body is in fact byte-identical to a single packed `spans`
-entry (28 bytes, same field order, same u16s-lead alignment), so one struct
-parses both. Offsets are logical 0-based stream offsets in the `source_id`
-input, the same convention used by `spans` (*not* absolute sequence numbers),
-and follow the hole-inclusive contiguity rule (see
-[Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
+Every body field is read against the **input**, and **the reading is keyed by the
+referenced source's `kind`** — exactly as a `spans` entry's is (see
+[the span-list rule](#tlv-option-framing--id-registry)). The body is in fact
+byte-identical to a single packed `spans` entry (28 bytes, same field order, same
+u16s-lead alignment), so one struct parses both; keying the reading the same way
+is what lets one *rule* read both as well.
+
+- Against a **`zpf-input`** source: `session_id`/`participant_id` are in that
+  input's id namespace — never the current file's — and the offsets are **logical
+  0-based stream offsets** within that stream, the same convention used by `spans`
+  (*not* absolute sequence numbers), following the hole-inclusive contiguity rule
+  (see [Referencing the source by stream offset](#referencing-the-source-by-stream-offset)).
+- Against a **`capture`** source: there is no input `.zpf`, so there is no id
+  namespace to name. `session_id`/`participant_id` are **unused and MUST be
+  written 0**, and the offsets are **byte offsets into the capture file**. The
+  block says *this region of the capture did not become a record of mine*, which
+  is a statement about the capture and is addressed the way the capture is
+  addressed.
+
 Options: `reason` (string, e.g. `undecodable` / `skipped` / `gap` /
 `truncated`), `reason_class` (string, `hole` or `bytes` — required with a
 non-canonical `reason`), `decoder_id` (u16, which decoder declined the region).
+
+**Against a `capture` source only the bytes-exist class is available.** A
+`hole`-class region — `gap`, `truncated` — MUST NOT be declared there, and needs
+no block: the stream the reassembler produced is a transport layer, whose offsets
+are hole-inclusive, so a missing segment already occupies a range no record covers
+and the sequence numbers already carry its extent. Declaring it again would be a
+second account of the same missing bytes with no rule for which to believe — the
+contradiction that also bars a [Discontinuity](#discontinuity-0x22) from a
+transport stream. What the block adds at that position is the other class: bytes
+that *are* in the capture and did not reach the output, an overlapping retransmit
+the reassembler discarded, which nothing else in the file can express.
+
+**And against a `capture` source it discharges no coverage obligation, nor
+creates one.** The [coverage guarantee](#coverage-honesty-undecoded-blocks) is
+scoped *within each input participant stream*, and a capture has none — so a block
+naming one is purely declarative: it records what a stage discarded, and no rule
+consumes it. That is why the permission does not need to be keyed on the layer. A
+reassembler declares an overlap it dropped; a decode stage reading a capture
+directly declares a region it could not parse; both are honest, and neither is
+answerable to a guarantee that has nothing to bind to. A
+[decoded stream with no predecessor file](#conformance) carries none for a
+different reason — it read no input at all, so it has nothing to declare.
 
 `reason` says *why* the region is undecoded. The vocabulary is **open**, but
 every value belongs to one of two **recoverability classes**. The class governs
@@ -2004,9 +2036,38 @@ lies between two units that were never adjacent is not a hole to be counted.
 broken.** Where an Undecoded region of the **`hole`** class lies between the input
 regions of two adjacent output units, no other reading is available — no bytes
 existed there, so no content can have been carried forward, and the two units
-cannot join. A checker may raise that from the file alone. Every other case above
-rests on producer knowledge and is not mechanically decidable, which is a reason
-to state the duty plainly rather than to narrow it to what a checker can see.
+cannot join. A checker may raise that from the file alone.
+
+**The predicate, stated so that two checkers agree.** The sentence above says
+which case; this says how to test it. The layer test comes first, because the
+whole check is inapplicable without it:
+
+> The check applies only to **decoded-layer** output streams. For each output
+> participant, for each adjacent pair of records `(r1, r2)` in stored order, and
+> each input stream `S = (source_id, session_id, participant_id)` cited by the
+> `spans` of **both**: let `A` be the maximum `off_end` over `r1`'s spans on `S`,
+> and `B` the minimum `off_start` over `r2`'s spans on `S`. If `A < B` and some
+> `hole`-class Undecoded region naming `S` intersects `[A, B)`, then a
+> Discontinuity between `r1` and `r2` is **required**. Where `A ≥ B` the pair is
+> not tested.
+
+Each clause is load-bearing. **Decoded-layer only**, because a transport stream
+expresses the same break in its offsets and is forbidden the block — a checker
+without that clause rejects a conformant sessionization stage. **Cited by both**,
+because a unit may span several input streams and fan-out means adjacent units may
+cite different ones; a stream only one of them names says nothing about whether
+they join. **Max and min**, because `spans` may overlap, which has been legal
+since `0.14`. And **`A ≥ B` not tested**, because a stage that reorders or
+overlaps its input produces pairs whose input regions run backwards, where "the
+region between them" names nothing.
+
+**Satisfying this predicate is not satisfying the duty.** It is the minimum a
+checker owes, not the rule a producer follows: it is deliberately conservative,
+and every pair it declines to test may still be one where the duty binds. A
+producer that emits a block only where this fires has misread the table above —
+the duty is *do these two join*, it rests on producer knowledge, and most of it is
+not mechanically decidable at all. That is a reason to state the duty plainly
+rather than to narrow it to what a checker can see.
 
 **What a consumer owes the block.** A consumer **MUST NOT** treat the records
 either side of a Discontinuity as contiguous. A decode stage reading an input that
@@ -2219,7 +2280,9 @@ referenced source's `kind`**: for a `zpf-input` source, `off_start`/`off_end` ar
 **logical 0-based stream offsets** within `(session_id, pid)` of that input; for
 a `capture` source, they are **byte offsets into the capture file** and
 `session_id`/`pid` are unused (write 0). One option id (`spans`) serves both
-capture-provenance and derivation-provenance.
+capture-provenance and derivation-provenance, and an
+[Undecoded](#undecoded-0x21) block's body — the same five fields, the same packed
+layout — is read by this same key.
 
 **What `spans` asserts is correspondence, not identity.** The span set names the
 input region the record's bytes were **computed from**; it does not promise that

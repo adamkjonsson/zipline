@@ -80,6 +80,63 @@ and `content_type` on a transport-layer record. A fifth changes what an Undecode
 block against a `capture` Source *means*, which is the one place this release
 touches semantics rather than prose.
 
+### Changed
+
+- **An Undecoded block's body is read by the referenced source's `kind`, and
+  against a `capture` source the ids are unused.**
+  ([#87](https://github.com/adamkjonsson/zipline/issues/87)) `0.15` shipped three
+  statements that could not all hold: the field table required
+  `kind = zpf-input`, §Undecoded said the ids are the source's and "never the
+  current file's", and the span-list rule said a capture source's ids are unused
+  and written 0. No reading satisfied all three, and `undecoded-in-capture` — the
+  vector the capability shipped for — satisfied none. It was the first vector
+  since the `0.12` round that could not be implemented from the text.
+
+  The span-list rule wins, so the Undecoded body and a `spans` entry are now read
+  by one rule as well as parsed by one struct. Against a `zpf-input` source
+  nothing changes. Against a **`capture`** source `session_id`/`participant_id`
+  are unused and MUST be written **0**, and the offsets are **byte offsets into
+  the capture file**.
+
+  Two consequences are stated rather than left to be derived. Only the
+  **bytes-exist** class is available there — a `hole` needs no block, because the
+  reassembled stream is a transport layer whose offsets already carry the gap, and
+  declaring it twice is the contradiction that also bars a Discontinuity from such
+  a stream. And the block **discharges no coverage obligation and creates none**,
+  because the guarantee is scoped within each input participant stream and a
+  capture has none; it is purely declarative there. That is why the permission is
+  not keyed on the layer: a reassembler declaring a discarded overlap and a decode
+  stage reading a capture directly are both honest. A decoded stream with no
+  predecessor file still carries none — it read no input at all.
+
+  `undecoded-in-capture` changes bytes: `session_id` `7` → `0`. Recorded in
+  [docs/VECTOR-DEFECTS.md](docs/VECTOR-DEFECTS.md) as defect 3, and it is the one
+  defect there that was not vector-side alone — the text disagreed with itself, so
+  no reading could have produced a correct vector.
+
+### Clarified
+
+- **The single-file Discontinuity check is stated as a predicate, with the layer
+  test first.** ([#88](https://github.com/adamkjonsson/zipline/issues/88)) `0.15`
+  said a checker may raise the case where a `hole`-class Undecoded region lies
+  between the input regions of two adjacent output units, and left three things
+  unsaid: that the check applies to decoded-layer streams only, which input stream
+  is meant when units cite several, and how to reduce a span *set* to a region
+  when spans may overlap or run downward. A checker written from that paragraph
+  rejects `sessionization-stage`, a conformant accept-tier vector.
+
+  The predicate is now written out. Verified against every vector: it fires on
+  `isolate-unmarked-break` and nothing else, and each near-miss is excluded by the
+  clause that exists for it — `sessionization-stage` and `tunnel/inner.zpf` by the
+  layer test, `reordered-decoded` and `session-fan-out` by the overlap clause,
+  `filtered-decoded` because the region between its records is bytes-class.
+
+  **Satisfying the predicate is not satisfying the duty**, and the text now says
+  so. It is the minimum a checker owes and is deliberately conservative;
+  `filtered-decoded` owes a Discontinuity that the predicate is correctly silent
+  about. A producer that emits the block only where this fires has misread the
+  duty, which rests on producer knowledge and is mostly not mechanically decidable.
+
 ---
 
 ## [0.15] — 2026-08-08
