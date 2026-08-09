@@ -60,7 +60,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.16] — unreleased
+## [0.16] — 2026-08-09
 
 **A corrective release, like `0.11`, `0.12` and `0.14`.** `0.15` replaced the
 raw/derived conflation with two independent axes; `0.16` fixes what that release
@@ -1361,7 +1361,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...HEAD
+[0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15
 [0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14
 [0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13

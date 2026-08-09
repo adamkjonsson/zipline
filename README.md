@@ -103,6 +103,10 @@ rounds as they happened, not plans:
   execution disagreed with the analysis.
 - [docs/SPEC-0.13-REVIEW.md](docs/SPEC-0.13-REVIEW.md) — the review of `0.13`,
   whose seven findings are what `0.14` corrects.
+- [docs/SPEC-0.15-REVIEW.md](docs/SPEC-0.15-REVIEW.md) — the review of `0.15`, and
+  what `0.16` did with each of its ten findings, including the two it resolved
+  differently. [docs/RELEASE-0.16-PLAN.md](docs/RELEASE-0.16-PLAN.md) is the
+  roadmap it produced, annotated with where execution disagreed with it.
 
 ## License
 

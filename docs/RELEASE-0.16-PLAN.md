@@ -313,6 +313,19 @@ rediscover.
 Run #100 over the finished release. Draft `Changed` from the entries written in
 Phase 3, not from memory.
 
+***Done.*** The sweep: 53 vectors consistent; 37 options, 12 blocks and 22 rules
+all exercised; retired claims clear; every `.zpf` stamps `0.16` except
+`reject-unknown-minor` at `0.17` and `reject-unknown-major`, both by design; every
+vector and fixture named in `vectors/README.md`; `ruff check` and `ruff format`
+clean.
+
+***#100's tool was run against the `v0.15` tag, not against memory of it.*** Both
+`RETIRED_CLAIMS` entries reproduce from the tagged specification text, which is
+the check Phase 0 said would prove the extension was the right one. Drafting
+`Changed` from the entries written in their own phases rather than at release cost
+nothing here and is worth keeping — it is the third release running where that was
+the plan and the first where nothing had to be reconstructed.
+
 ---
 
 ## Risks
@@ -331,28 +344,78 @@ Phase 3, not from memory.
 
 ## Definition of done
 
-- [ ] All thirteen in-scope issues closed, each in the commit that finishes it;
-      #98 open and scheduled.
-- [ ] An Undecoded block against a `capture` Source has **one** reading, stated at
+- [x] All thirteen in-scope issues closed, each in the commit that finishes it;
+      #98 open and scheduled. *Two commits carry more than one issue — Phase 1's
+      pair and Phase 3's five — because those issues edit the same sections and a
+      hunk-level split would have produced intermediate states that do not build.
+      Phase 2 held to one apiece, which is the shape to aim for where the work
+      allows it.*
+- [x] An Undecoded block against a `capture` Source has **one** reading, stated at
       every site that bears on it, and `undecoded-in-capture` demonstrates it.
-- [ ] The single-file Discontinuity check is a predicate, carries its layer test
+      *Resolved against the review's preference; see scope decision 1.*
+- [x] The single-file Discontinuity check is a predicate, carries its layer test
       first, and says in the text that satisfying it is not satisfying the duty.
-- [ ] No statement in the specification implies that a transport-layer stream
+- [x] No statement in the specification implies that a transport-layer stream
       carries no Undecoded blocks, or that a byte run carries no `decoder_id`.
-- [ ] "The stream's layer" is well defined: a participant mixing layers is a
+      *Enforced from here on, not merely fixed: `RETIRED_CLAIMS` fails the build
+      if either returns.*
+- [x] "The stream's layer" is well defined: a participant mixing layers is a
       stated violation with a vector.
-- [ ] A `zpf`-sourced participant that is neither created nor preserved is a
+- [x] A `zpf`-sourced participant that is neither created nor preserved is a
       stated violation with a vector, and `isolate-self-derived` carries exactly
       one violation again.
-- [ ] The transport-layer exemption states what it assumes, and the case it does
-      not cover is forbidden rather than unrepresentable.
-- [ ] `content_type` at the transport layer is a MUST NOT with a stated tier, and
+- [x] The transport-layer exemption states what it assumes, and the case it does
+      not cover is forbidden rather than unrepresentable. *The rule has no vector
+      and can have none — see Phase 3.*
+- [x] `content_type` at the transport layer is a MUST NOT with a stated tier, and
       the suite can express an advisory violation.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.16`. *51 entries.*
-- [ ] #100's tool reports no rule changed in `0.16` with a copy left behind, and
-      reproduces #89 and #91 when run against `v0.15`.
-- [ ] `CHANGELOG.md` `[0.16]` complete, **with a `Changed` section** covering #87,
+- [x] `python3 vectors/check.py` green; every vector stamps `0.16`. ~~*51
+      entries.*~~ **53** — the estimate missed #95's vector and a Phase 1 loose
+      end. 33 accept, 15 isolate, 5 reject.
+- [x] #100's tool reports no rule changed in `0.16` with a copy left behind, and
+      reproduces #89 and #91 when run against `v0.15`. *Run against the tag, not
+      against a remembered copy of it.*
+- [x] `CHANGELOG.md` `[0.16]` complete, **with a `Changed` section** covering #87,
       #90, #92, #94 and #95.
-- [ ] The `0.15` review is annotated: each finding marked resolved, with the two
+- [x] The `0.15` review is annotated: each finding marked resolved, with the two
       where this release ruled against it (#87's direction, #98's scheduling)
       saying so and why.
+
+## What execution changed
+
+Recorded because a plan only ever read forwards teaches nothing. Five things this
+document or the review got wrong:
+
+- **#100 asked for a mechanism that cannot work.** The issue proposed adding the
+  layer rule to the list of statements whose copies are enumerated before a
+  release. The layer rule is stated exactly once, so the enumeration reports one
+  site, correct, and passes clean — and neither stale paragraph restated it; each
+  asserted its negation in words sharing no phrase with it. Replaced by
+  `RETIRED_CLAIMS`, a ratchet rather than a detector, and the docstring says which
+  it is.
+- **#88's confirmation could not live in `check.py`, and the plan said it should.**
+  Ground rule 2 forbids the checker from parsing block bodies or adjudicating
+  semantics, which is exactly what the predicate does. Confirmed with a one-off
+  reader instead. The repository's own rule beat the plan, which is the right
+  order.
+- **The vector estimate was wrong twice, in the same direction.** 49 → 53, not 51:
+  #95's rule needed a vector the plan did not count, and #87 had left an
+  isolate-list entry with nothing exercising it — the gap #66 and #70 exist to
+  prevent, introduced in Phase 1 and found in Phase 3. Adding a rule to the text
+  and a vector for it in different phases is how that happens.
+- **#94 is a rule no vector can express**, which the plan did not anticipate when
+  it scheduled "the four new MUSTs and their vectors". A transport stream that
+  withheld content and one that did not are byte-identical. Recorded as an
+  explicit absence in `check.py`'s `RULES`, because the alternative was a
+  permanently red build or a vector testing something other than what it claims.
+- **#93 needed more than the review asked.** It wanted the detection procedure
+  stated and a second violation removed. Both done — but the prohibition itself
+  rested on `digest`, an optional field, so it had to move onto the ordering
+  argument to stand at all.
+
+Not anticipated by the plan, and worth carrying forward: **the red window worked
+as designed.** `check.py` exited 1 from Phase 0 until Phase 2, on two claims the
+specification still held. `0.14` hit the same state with #65 and noted afterwards
+that a plan should say so up front; this one did, and the phases in between used
+"the failure list holds exactly these two entries" as the signal instead of green.
+That is worth doing again rather than avoiding.
