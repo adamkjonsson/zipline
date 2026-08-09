@@ -1,5 +1,5 @@
 {
-  "format": "zipline-payload/0.15",
+  "format": "zipline-payload/0.16",
   "vectors": [
     {
       "name": "raw-minimal",
@@ -824,7 +824,7 @@
         "0x00A0",
         "0x00A1"
       ],
-      "summary": "An Undecoded block in a CAPTURE-SOURCED file. The stage is the reassembler and the input is the capture itself: it discarded an overlapping retransmit it could not resolve, and says so rather than leaving the region unaccounted for. The block's offsets are byte offsets into the capture file, which is what a span into a capture Source has always meant. Barred before 0.15 on the unstated assumption that capture-sourced meant no transform had run -- but reassembly IS a transform, and a destructive one, so the prohibition read as a design when it was an oversight. Note the stream stays at the TRANSPORT layer: no decoder_id anywhere, and the gap between the two records is expressed by the sequence numbers, not by a Discontinuity, which this stream is still forbidden to carry.",
+      "summary": "An Undecoded block in a CAPTURE-SOURCED file. The stage is the reassembler and the input is the capture itself: it discarded an overlapping retransmit it could not resolve, and says so rather than leaving the region unaccounted for. Barred before 0.15 on the unstated assumption that capture-sourced meant no transform had run -- but reassembly IS a transform, and a destructive one, so the prohibition read as a design when it was an oversight. READ THE BODY BY THE SOURCE'S KIND, which is what 0.16 settled (#87): against this CAPTURE source session_id and pid are UNUSED and written 0, and off_start/off_end are BYTE OFFSETS INTO tap.pcap -- 4096..4396 is a position in the pcap, not in this file's 105-byte stream. The 0.15 vector wrote session_id = 7, this file's own, which no reading of the text could justify; see VECTOR-DEFECTS.md. The class is BYTES, and against a capture source it is the only class available: a hole needs no block here, because the stream stays at the TRANSPORT layer, where the gap between the two records is already expressed by the sequence numbers -- which is also why the file may not carry a Discontinuity.",
       "spec_section": "Undecoded (0x21) -- a capture-sourced stream",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
@@ -1008,7 +1008,7 @@
       "options": [
         "0x0020"
       ],
-      "summary": "version_minor is 16 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.15 reader MUST reject it.",
+      "summary": "version_minor is 17 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.16 reader MUST reject it.",
       "spec_section": "File Header -- version numbering",
       "expect": "Reject the file. This is the vector that distinguishes a 0.x-aware reader from one that assumes minors are always skippable.",
       "has_jsonl": false
@@ -1224,7 +1224,132 @@
       "name": "isolate-self-derived",
       "tier": "isolate",
       "violations": 1,
-      "bytes": 444,
+      "bytes": 460,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0064",
+        "0x0070",
+        "0x0080",
+        "0x0090",
+        "0x0091"
+      ],
+      "summary": "INTRA-FILE DERIVATION: a file deriving one of its own streams from another. Session 20's records span a zpf-input Source whose uri is THIS file, and session 21 is the stream they claim to come from. Legalising mixed-state files is what makes this reachable -- streams at differing positions on the two axes may now sit side by side, so the question of whether one may feed another arises for the first time and the answer is no. A stage reads its input and then writes its output, so a file cannot be among its own inputs: the offsets these spans name would have had to be fixed before the file holding them existed. Note the reason is NOT the digest -- that option is optional, and 0.16 restated the prohibition without it (#93) so it stands on files that omit one. DETECTION IS PARTIAL BY DESIGN: the only signal is the Source's uri, so a reader handed a PATH may compare and isolate, while a reader handed a file object -- stdin, a socket, a tar member -- cannot and is not obliged to. Session 21 carries origin so this file's ONLY violation is the one it is named for; through 0.15 it also had a zpf-sourced participant that was neither created nor preserved, and a reader could pass the vector by isolating for the wrong reason.",
+      "spec_section": "Conceptual model -- the unit is the stream, not the file",
+      "expect": "ISOLATE or reject, WHEN THE READER KNOWS THE PATH it opened. The Source names the file that contains it, and a stage cannot be among its own inputs. Streams at differing layers or provenances in one file are legal since 0.15; one deriving from another in the same file is not, and the two are easy to confuse. A reader MUST NOT resolve the spans against the sibling session -- that is the reinterpretation the isolate tier forbids. A reader with no path to compare against cannot detect this and is CONFORMANT in accepting the file; it must still not resolve the spans.",
+      "has_jsonl": false
+    },
+    {
+      "name": "isolate-hole-against-capture",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 356,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x21",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0022",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x00A0"
+      ],
+      "summary": "A hole-class Undecoded region declared against a CAPTURE Source. undecoded-in-capture is the conformant shape of this block and this is the class it may not use: reason = gap, no bytes anywhere upstream. The stream a reassembler produces from a capture is a TRANSPORT layer, whose offsets are hole-inclusive, so the missing segment already occupies a range no record covers and the sequence numbers already give its extent -- 1001 + 50 ends at 1051 and the next record starts at 1076. Declaring it again is a second account of the same missing bytes with no rule for which to believe, which is the same contradiction that bars a Discontinuity from a transport stream. The bytes-exist class stays available and is the half that adds something: an overlapping retransmit the reassembler discarded exists in the pcap and is expressible nowhere else.",
+      "spec_section": "Undecoded (0x21) -- against a capture source only the bytes-exist class",
+      "expect": "MAY reject the file, or isolate the block. A reader MUST NOT reconcile the two accounts -- neither by preferring the block nor by preferring the sequence numbers, and neither by treating the capture byte range as if it were a stream offset range. Contrast undecoded-in-capture, which is the same block with the bytes-exist class and is conformant.",
+      "has_jsonl": false
+    },
+    {
+      "name": "isolate-mixed-layer-participant",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 448,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0070",
+        "0x0080",
+        "0x0090",
+        "0x0091"
+      ],
+      "summary": "ONE participant whose records resolve to TWO layers: record A carries decoder 1 (output_layer = decoded), record B carries decoder 2 (output_layer = transport). Both decoders are declared, both records are well-formed, declare-before-use holds, and coverage is complete -- 0.15 broke no stated rule here, which is the point. The layer fixes the stream's OFFSET SPACE, and this stream has two incompatible answers for it: hole-inclusive true positions if transport, the concatenation of record payloads if decoded. Mixing DECODERS per record stays legal (HTTP on one session, TLS-then-HTTP on another) -- what 0.16 forbids is mixing the LAYERS those decoders declare, within one participant.",
+      "spec_section": "Conformance -- every record of one participant MUST resolve to the same layer",
+      "expect": "MAY reject the file, or isolate the participant. Its two records resolve to different layers, so 'this stream's offset space' has no single answer and any input_extents or downstream spans computed against it is meaningless. A reader MUST NOT pick one layer and proceed -- that is the silent reinterpretation the isolate tier forbids. Note what is NOT wrong: two decoders in one file, and two decoders in one SESSION, are both ordinary.",
+      "has_jsonl": false
+    },
+    {
+      "name": "isolate-unbound-zpf-stream",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 256,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070"
+      ],
+      "summary": "A zpf-SOURCED participant that is NEITHER created NOR preserved: its record references a zpf-input Source, carries no spans, and its participant carries no origin. Nothing says which stream inside the input its bytes came from, so nothing resolves one level down and no coverage obligation can be computed in either direction. The two ways of producing a zpf-sourced stream are exhaustive and 0.15 never said so -- the discriminator rule forbade being BOTH and was silent on being neither, which is how isolate-self-derived shipped carrying this as a second, unintended violation. Contrast mixed-derivation, where one participant is created and the other preserved and both say which.",
+      "spec_section": "Conformance -- a zpf-sourced participant MUST be one or the other",
+      "expect": "MAY reject the file, or isolate the participant. A reader MUST NOT guess the missing provenance -- neither by assuming the input's ids match this file's, nor by treating the record as capture-sourced. The Source's kind is zpf-input and that is what makes the omission a violation; a capture-sourced participant correctly carries neither.",
+      "has_jsonl": false
+    },
+    {
+      "name": "advisory-transport-content-type",
+      "tier": "accept",
+      "violations": 1,
+      "advisory": true,
+      "bytes": 368,
       "blocks": [
         "0x01",
         "0x02",
@@ -1249,10 +1374,10 @@
         "0x0090",
         "0x0091"
       ],
-      "summary": "INTRA-FILE DERIVATION: a file deriving one of its own streams from another. Session 20's records span a zpf-input Source whose uri is THIS file, and session 21 is the stream they claim to come from. Legalising mixed-state files is what makes this reachable -- streams at differing positions on the two axes may now sit side by side, so the question of whether one may feed another arises for the first time and the answer is no. It cannot work: a zpf-input Source carries a digest, and no file can contain its own hash, so the digest here is either absent, wrong, or a value that changes the bytes it describes. Every derived stream's predecessor is a DIFFERENT file.",
-      "spec_section": "Conceptual model -- the unit is the stream, not the file",
-      "expect": "ISOLATE or reject. The Source names the file that contains it, so its digest cannot be computed without changing the value it would have to hold. Streams at differing layers or provenances in one file are legal since 0.15; one deriving from another in the same file is not, and the two are easy to confuse. A reader MUST NOT resolve the spans against the sibling session -- that is the reinterpretation the isolate tier forbids.",
-      "has_jsonl": false
+      "summary": "A transport-layer record carrying a content_type, which 0.16 makes a MUST NOT -- and the only one in the format whose violation is ADVISORY. The reassembly decoder declares output_layer = transport and labels its record prim:bytes, which is mechanically legal and is the wrong answer: the record's boundaries are wherever the reassembler chunked the stream, so the label asserts a unit where there is a slice. WHY ADVISORY AND NOT ISOLATE: dropping the label loses nothing and the record stays fully readable, so there is no unit a reader could soundly discard. This is the tcp_role treatment, not the origin-on-a-capture treatment. The one thing a reader MUST NOT do is read the label as evidence that the stream is decoded after all, which would put every later offset in this participant into the wrong space. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier -- the file breaks a rule and a conformant reader accepts it anyway, having reported it.",
+      "spec_section": "Typing a decoded record -- a transport-layer record carries no content_type",
+      "expect": "ACCEPT, and REPORT. The projection is the .jsonl file -- the label round-trips, because a reader preserves what it does not act on. A reader MUST ignore the label semantically and SHOULD report it, and MUST NOT conclude from it that the stream is decoded. Rejecting or isolating this file is NOT conformant: the advisory strength is stated in Typing a decoded record.",
+      "has_jsonl": true
     },
     {
       "name": "isolate-unknown-output-layer",

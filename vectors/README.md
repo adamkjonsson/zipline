@@ -2,7 +2,7 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.15`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.16`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
@@ -82,6 +82,15 @@ file: a checker that ruled on semantics would become a second normative
 authority, which ground rule 2 forbids. Declaring it is mandatory, so a new
 vector cannot be written without confronting the number, and adding a second
 defect to an existing one fails the build rather than quietly weakening it.
+
+**One violation does not isolate.** Since `0.16` an `accept` entry may also carry
+`"advisory": true`, and then declares **1** violation rather than 0. It is the
+shape of an advisory MUST NOT — the file breaks a rule, the reader reports it and
+carries on, and nothing is discarded. That is neither `accept` (which means the
+file is clean) nor `isolate` (which means a reader may drop something), and it is
+a key rather than a fourth tier because the tier names what a *reader does*, and a
+reader accepts these files completely. `advisory` on any other tier fails the
+build, since where a reader may discard something the word says nothing.
 
 **Every capability the format defines is exercised by some vector**, and since
 `0.14` that is enforced too. `check.py` parses the option-id registry and the
@@ -196,8 +205,20 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-extent-exceeds-coverage` | A Session End declaring an input stream 40 bytes long while `spans` plus Undecoded blocks account for only `[0,20)`. A **trailing** gap — invisible without `input_extents`, which is what distinguishes it from `isolate-coverage-gap`'s interior one. |
 | `isolate-extents-disagree` | Two output sessions drawing on one input stream, declaring **different** extents for it — 200 and 160. An input stream has one length, and under fan-out every consuming session declares that whole length, so the two Session Ends contradict each other. Only reachable once fan-out is legal. |
 | `isolate-discontinuity-in-raw` | A Discontinuity block on a **transport-layer** stream. That offset space is already hole-inclusive, so the sequence numbers and a declared `width` are two accounts of the same missing bytes, with no rule for which to believe. Since `0.15` the bar is the layer rather than the file kind; the vector's name keeps the retired word because harnesses reference it. |
-| `isolate-self-derived` | **Intra-file derivation**: `spans` naming a `zpf-input` Source whose `uri` is this very file, with the stream they claim to come from sitting beside them. Only reachable once mixed-state files are legal, which is what makes it worth pinning. A `zpf-input` Source carries a `digest`, and no file can contain its own hash — so every derived stream's predecessor is a *different* file. |
+| `isolate-self-derived` | **Intra-file derivation**: `spans` naming a `zpf-input` Source whose `uri` is this very file, with the stream they claim to come from sitting beside them. Only reachable once mixed-state files are legal, which is what makes it worth pinning. A stage reads its input and then writes its output, so a file cannot be among its own inputs. **Detection is partial by design** — the only signal is the `uri`, so a reader handed a *path* may compare and isolate, while one handed a file object cannot and is not obliged to. |
 | `isolate-unmarked-break` | **Finding 3 as one file**, and the vector this suite most needed: a decode stage whose own output breaks, saying nothing. It is `discontinuity-unknown-width` with the Discontinuity deleted and nothing else changed. Every other rule is satisfied — coverage is *complete*, because the guarantee is about the input and has no opinion on the output — so a checker that only accumulates ranges passes it. **Under `0.14` this file was conformant.** Unlike `splice/` it needs no second file: a `hole`-class Undecoded region between the input regions of two adjacent output units is the one shape of the duty decidable from a single file. |
+
+### Added in `0.16`
+
+Three isolate vectors for MUSTs the syntax already let you break, and the suite's
+first **advisory** vector.
+
+| Vector | Violation |
+|--------|-----------|
+| `isolate-mixed-layer-participant` | *(isolate)* **One participant, two layers**: a record whose decoder declares `decoded` beside one whose decoder declares `transport`. Every other rule holds — both decoders declared, coverage complete — which is the point: under `0.15` this file broke nothing stated. The layer fixes the stream's **offset space**, and this stream has two incompatible answers for it. Mixing *decoders* per record stays legal; mixing the **layers they declare**, within one participant, does not. |
+| `isolate-unbound-zpf-stream` | *(isolate)* A `zpf`-sourced participant that is **neither created nor preserved**: no `origin`, and its record carries no `spans`. Nothing says which stream inside the input its bytes came from. The two ways of producing a `zpf`-sourced stream are exhaustive and `0.15` never said so — the discriminator forbade being *both* and was silent on being *neither*, which is how `isolate-self-derived` shipped carrying this as a second, unintended violation. |
+| `isolate-hole-against-capture` | *(isolate)* A **`hole`**-class Undecoded region against a `capture` Source. `undecoded-in-capture` is the conformant shape of the same block; this is the class it may not use, because the reassembled stream is a transport layer whose hole-inclusive offsets already carry the gap. Two accounts of the same missing bytes with no rule for which to believe — the contradiction that also bars a Discontinuity there. |
+| `advisory-transport-content-type` | *(accept, **advisory**)* A transport-layer record carrying `content_type: prim:bytes`. A **MUST NOT**, and the only one whose violation is advisory: dropping the label loses nothing and the record stays readable, so there is no unit a reader could soundly discard. **Rejecting or isolating this file is not conformant.** A reader ignores the label, reports it, and MUST NOT conclude the stream is decoded — which would put every later offset in that participant in the wrong space. |
 
 ## Multi-file fixtures
 
@@ -245,6 +266,13 @@ cap.pcap ──[sessionize]──▶ raw.zpf ──[http decode]──▶ decode
                                                            │
                                                    [annotate]──▶ annotated.zpf
 ```
+
+`raw.zpf` is a **transport-layer** stream. Its filename predates `0.15` retiring
+"raw" as a normative term, and is kept for the same reason `raw-minimal`'s is —
+harnesses reference it. The specification's own worked example, which used to use
+the same name, calls it `transport.zpf` since `0.16`
+([#99](https://github.com/adamkjonsson/zipline/issues/99)); the two are separate
+artifacts and nothing requires them to agree.
 
 The byte budget is fixed and small enough to check by hand: session 7 carries
 `pid 0` with a 9-byte request, and `pid 1` with a 16-byte response head plus a

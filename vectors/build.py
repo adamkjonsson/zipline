@@ -41,7 +41,7 @@ def read_text(path: str) -> str:
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 15
+MAJOR, MINOR = 0, 16
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -245,13 +245,28 @@ def undecoded(
     off_start: int,
     off_end: int,
     options: tuple[Opt, ...] | list[Opt] = (),
+    capture: bool = False,
 ) -> Blk:
+    """Build an Undecoded (0x21) block.
+
+    `capture` says the referenced Source is a capture, which changes what every
+    remaining field MEANS: the ids are unused and the offsets are byte offsets
+    into the capture file rather than logical stream offsets. The annotation used
+    to say "in the input's namespace" unconditionally, which was wrong on exactly
+    the one vector where a reader most needed it right (#87).
+    """
+    if capture and (pid or session_id):
+        raise ValueError("against a capture source the ids are unused and MUST be 0")
+    where = "the capture file" if capture else "the input's namespace"
     body = [
-        P(u16(source_id), f"source_id = {source_id}  (in the input's namespace)"),
-        P(u16(pid), f"participant_id = {pid}"),
-        P(u64(session_id), f"session_id = {session_id}"),
-        P(u64(off_start), f"off_start = {off_start}"),
-        P(u64(off_end), f"off_end   = {off_end}"),
+        P(u16(source_id), f"source_id = {source_id}  (in {where})"),
+        P(u16(pid), f"participant_id = {pid}" + ("  (unused)" if capture else "")),
+        P(u64(session_id), f"session_id = {session_id}" + ("  (unused)" if capture else "")),
+        P(
+            u64(off_start),
+            f"off_start = {off_start}" + ("  (capture byte offset)" if capture else ""),
+        ),
+        P(u64(off_end), f"off_end   = {off_end}" + ("  (capture byte offset)" if capture else "")),
     ]
     return block(0x21, "Undecoded", body, options)
 
@@ -498,6 +513,7 @@ def vector(
     expect: str | None = None,
     *,
     violations: int,
+    advisory: bool = False,
 ) -> None:
     """Register a vector.
 
@@ -508,7 +524,15 @@ def vector(
     downstream port. check.py then verifies the declared count against the
     declared tier; nothing here or there inspects the file to count them, because
     a checker that ruled on semantics would become a second normative authority.
+
+    `advisory` marks the accept-tier case where the file breaks a rule and a
+    reader accepts it anyway, having reported it -- 0.16's content_type at the
+    transport layer. Such a vector declares 1 violation, not 0. It is a flag on
+    accept rather than a fourth tier because a tier names what a READER does, and
+    a reader accepts these completely.
     """
+    if advisory and tier != "accept":
+        raise ValueError(f"{name}: advisory is meaningless off the accept tier")
     VECTORS.append(
         {
             "name": name,
@@ -519,6 +543,7 @@ def vector(
             "jsonl": jsonl,
             "expect": expect,
             "violations": violations,
+            "advisory": advisory,
         }
     )
 
@@ -2358,15 +2383,21 @@ vector(
     "An Undecoded block in a CAPTURE-SOURCED file. The stage is the "
     "reassembler and the input is the capture itself: it discarded an "
     "overlapping retransmit it could not resolve, and says so rather than "
-    "leaving the region unaccounted for. The block's offsets are byte offsets "
-    "into the capture file, which is what a span into a capture Source has "
-    "always meant. Barred before 0.15 on the unstated assumption that "
-    "capture-sourced meant no transform had run -- but reassembly IS a "
-    "transform, and a destructive one, so the prohibition read as a design "
-    "when it was an oversight. Note the stream stays at the TRANSPORT layer: "
-    "no decoder_id anywhere, and the gap between the two records is expressed "
-    "by the sequence numbers, not by a Discontinuity, which this stream is "
-    "still forbidden to carry.",
+    "leaving the region unaccounted for. Barred before 0.15 on the unstated "
+    "assumption that capture-sourced meant no transform had run -- but "
+    "reassembly IS a transform, and a destructive one, so the prohibition read "
+    "as a design when it was an oversight. "
+    "READ THE BODY BY THE SOURCE'S KIND, which is what 0.16 settled (#87): "
+    "against this CAPTURE source session_id and pid are UNUSED and written 0, "
+    "and off_start/off_end are BYTE OFFSETS INTO tap.pcap -- 4096..4396 is a "
+    "position in the pcap, not in this file's 105-byte stream. The 0.15 "
+    "vector wrote session_id = 7, this file's own, which no reading of the "
+    "text could justify; see VECTOR-DEFECTS.md. "
+    "The class is BYTES, and against a capture source it is the only class "
+    "available: a hole needs no block here, because the stream stays at the "
+    "TRANSPORT layer, where the gap between the two records is already "
+    "expressed by the sequence numbers -- which is also why the file may not "
+    "carry a Discontinuity.",
     "Undecoded (0x21) -- a capture-sourced stream",
     [
         file_header(),
@@ -2377,10 +2408,11 @@ vector(
         undecoded(
             1,
             0,
-            7,
+            0,
             4096,
             4396,
             [o_reason("overlap-discarded"), o_reason_class("bytes")],
+            capture=True,
         ),
         record(7, 0, 1, 1200, b"B" * 30, options=[o_seq_start(1076)]),
         end_block(),
@@ -2414,7 +2446,7 @@ vector(
         {
             "type": "undecoded",
             "source_id": 1,
-            "session_id": 7,
+            "session_id": 0,
             "pid": 0,
             "off_start": 4096,
             "off_end": 4396,
@@ -2977,10 +3009,18 @@ vector(
     "mixed-state files is what makes this reachable -- streams at differing "
     "positions on the two axes may now sit side by side, so the question of "
     "whether one may feed another arises for the first time and the answer is "
-    "no. It cannot work: a zpf-input Source carries a digest, and no file can "
-    "contain its own hash, so the digest here is either absent, wrong, or a "
-    "value that changes the bytes it describes. Every derived stream's "
-    "predecessor is a DIFFERENT file.",
+    "no. A stage reads its input and then writes its output, so a file cannot "
+    "be among its own inputs: the offsets these spans name would have had to be "
+    "fixed before the file holding them existed. Note the reason is NOT the "
+    "digest -- that option is optional, and 0.16 restated the prohibition "
+    "without it (#93) so it stands on files that omit one. "
+    "DETECTION IS PARTIAL BY DESIGN: the only signal is the Source's uri, so a "
+    "reader handed a PATH may compare and isolate, while a reader handed a file "
+    "object -- stdin, a socket, a tar member -- cannot and is not obliged to. "
+    "Session 21 carries origin so this file's ONLY violation is the one it is "
+    "named for; through 0.15 it also had a zpf-sourced participant that was "
+    "neither created nor preserved, and a reader could pass the vector by "
+    "isolating for the wrong reason.",
     "Conceptual model -- the unit is the stream, not the file",
     [
         file_header(options=[o_produced_by("zpf-decode 0.4"), o_produced_at(1719620000)]),
@@ -2988,7 +3028,8 @@ vector(
         source(1, 1, [o_uri("isolate-self-derived.zpf"), o_digest("sha256:0000")]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
         session(21, [o_proto("tcp")]),
-        participant(21, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        # origin, so session 21 is PRESERVED rather than neither -- #92/#93.
+        participant(21, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_origin(1, 0, 21)]),
         record(21, 0, 1, 1000, b"GET /", options=[o_seq_start(1001)]),
         session(20, [o_proto("http")]),
         participant(20, 0, [o_endpoint("10.0.0.1:51000")]),
@@ -3002,14 +3043,228 @@ vector(
         ),
         end_block(),
     ],
-    expect="ISOLATE or reject. The Source names the file that contains it, so "
-    "its digest cannot be computed without changing the value it would "
-    "have to hold. Streams at differing layers or provenances in one "
+    expect="ISOLATE or reject, WHEN THE READER KNOWS THE PATH it opened. The "
+    "Source names the file that contains it, and a stage cannot be among "
+    "its own inputs. Streams at differing layers or provenances in one "
     "file are legal since 0.15; one deriving from another in the same "
     "file is not, and the two are easy to confuse. A reader MUST NOT "
     "resolve the spans against the sibling session -- that is the "
-    "reinterpretation the isolate tier forbids.",
+    "reinterpretation the isolate tier forbids. A reader with no path "
+    "to compare against cannot detect this and is CONFORMANT in "
+    "accepting the file; it must still not resolve the spans.",
     violations=1,
+)
+
+vector(
+    "isolate-hole-against-capture",
+    "isolate",
+    "A hole-class Undecoded region declared against a CAPTURE Source. "
+    "undecoded-in-capture is the conformant shape of this block and this is the "
+    "class it may not use: reason = gap, no bytes anywhere upstream. The stream "
+    "a reassembler produces from a capture is a TRANSPORT layer, whose offsets "
+    "are hole-inclusive, so the missing segment already occupies a range no "
+    "record covers and the sequence numbers already give its extent -- 1001 + "
+    "50 ends at 1051 and the next record starts at 1076. Declaring it again is "
+    "a second account of the same missing bytes with no rule for which to "
+    "believe, which is the same contradiction that bars a Discontinuity from a "
+    "transport stream. The bytes-exist class stays available and is the half "
+    "that adds something: an overlapping retransmit the reassembler discarded "
+    "exists in the pcap and is expressible nowhere else.",
+    "Undecoded (0x21) -- against a capture source only the bytes-exist class",
+    [
+        file_header(),
+        source(1, 0, [o_uri("tap.pcap"), o_link_type(1)]),
+        session(8, [o_proto("tcp")]),
+        participant(8, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(8, 0, 1, 1000, b"A" * 50, options=[o_seq_start(1001)]),
+        # THE VIOLATION: a hole class against a capture source.
+        undecoded(1, 0, 0, 4096, 4121, [o_reason("gap")], capture=True),
+        record(8, 0, 1, 1200, b"B" * 30, options=[o_seq_start(1076)]),
+        end_block(),
+    ],
+    expect="MAY reject the file, or isolate the block. A reader MUST NOT "
+    "reconcile the two accounts -- neither by preferring the block nor by "
+    "preferring the sequence numbers, and neither by treating the capture "
+    "byte range as if it were a stream offset range. Contrast "
+    "undecoded-in-capture, which is the same block with the bytes-exist "
+    "class and is conformant.",
+    violations=1,
+)
+
+vector(
+    "isolate-mixed-layer-participant",
+    "isolate",
+    "ONE participant whose records resolve to TWO layers: record A carries "
+    "decoder 1 (output_layer = decoded), record B carries decoder 2 "
+    "(output_layer = transport). Both decoders are declared, both records are "
+    "well-formed, declare-before-use holds, and coverage is complete -- 0.15 "
+    "broke no stated rule here, which is the point. The layer fixes the "
+    "stream's OFFSET SPACE, and this stream has two incompatible answers for "
+    "it: hole-inclusive true positions if transport, the concatenation of "
+    "record payloads if decoded. Mixing DECODERS per record stays legal (HTTP "
+    "on one session, TLS-then-HTTP on another) -- what 0.16 forbids is mixing "
+    "the LAYERS those decoders declare, within one participant.",
+    "Conformance -- every record of one participant MUST resolve to the same layer",
+    [
+        file_header(options=[o_produced_by("zpf-mix 0.1"), o_produced_at(1719640000)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest("sha256:11aa")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("1.0")]),
+        decoder(2, [o_dec_name("tcp-reassembly"), o_dec_version("1.1")], output_layer=1),
+        session(30, [o_proto("tcp")]),
+        participant(30, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(
+            30,
+            0,
+            1,
+            1000,
+            b"GET /",
+            options=[o_decoder_id(1), o_spans([(1, 0, 5, 0, 5)]), o_content_type("dec:request")],
+        ),
+        # THE VIOLATION: same participant, a decoder declaring the other layer.
+        record(
+            30,
+            0,
+            1,
+            1100,
+            b"C" * 20,
+            options=[o_decoder_id(2), o_spans([(1, 0, 5, 5, 25)]), o_seq_start(1001)],
+        ),
+        end_block(),
+    ],
+    expect="MAY reject the file, or isolate the participant. Its two records "
+    "resolve to different layers, so 'this stream's offset space' has no "
+    "single answer and any input_extents or downstream spans computed "
+    "against it is meaningless. A reader MUST NOT pick one layer and "
+    "proceed -- that is the silent reinterpretation the isolate tier "
+    "forbids. Note what is NOT wrong: two decoders in one file, and two "
+    "decoders in one SESSION, are both ordinary.",
+    violations=1,
+)
+
+vector(
+    "isolate-unbound-zpf-stream",
+    "isolate",
+    "A zpf-SOURCED participant that is NEITHER created NOR preserved: its "
+    "record references a zpf-input Source, carries no spans, and its "
+    "participant carries no origin. Nothing says which stream inside the input "
+    "its bytes came from, so nothing resolves one level down and no coverage "
+    "obligation can be computed in either direction. The two ways of producing "
+    "a zpf-sourced stream are exhaustive and 0.15 never said so -- the "
+    "discriminator rule forbade being BOTH and was silent on being neither, "
+    "which is how isolate-self-derived shipped carrying this as a second, "
+    "unintended violation. Contrast mixed-derivation, where one participant is "
+    "created and the other preserved and both say which.",
+    "Conformance -- a zpf-sourced participant MUST be one or the other",
+    [
+        file_header(options=[o_produced_by("zpf-tool 0.1"), o_produced_at(1719650000)]),
+        source(1, 1, [o_uri("upstream.zpf"), o_digest("sha256:22bb")]),
+        session(40, [o_proto("tcp")]),
+        # THE VIOLATION: zpf-sourced, and no origin here nor spans below.
+        participant(40, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(40, 0, 1, 1000, b"D" * 30, options=[o_seq_start(1001)]),
+        end_block(),
+    ],
+    expect="MAY reject the file, or isolate the participant. A reader MUST NOT "
+    "guess the missing provenance -- neither by assuming the input's ids "
+    "match this file's, nor by treating the record as capture-sourced. "
+    "The Source's kind is zpf-input and that is what makes the omission a "
+    "violation; a capture-sourced participant correctly carries neither.",
+    violations=1,
+)
+
+vector(
+    "advisory-transport-content-type",
+    "accept",
+    "A transport-layer record carrying a content_type, which 0.16 makes a MUST "
+    "NOT -- and the only one in the format whose violation is ADVISORY. The "
+    "reassembly decoder declares output_layer = transport and labels its record "
+    "prim:bytes, which is mechanically legal and is the wrong answer: the "
+    "record's boundaries are wherever the reassembler chunked the stream, so "
+    "the label asserts a unit where there is a slice. "
+    "WHY ADVISORY AND NOT ISOLATE: dropping the label loses nothing and the "
+    "record stays fully readable, so there is no unit a reader could soundly "
+    "discard. This is the tcp_role treatment, not the origin-on-a-capture "
+    "treatment. The one thing a reader MUST NOT do is read the label as "
+    "evidence that the stream is decoded after all, which would put every "
+    "later offset in this participant into the wrong space. "
+    "The manifest marks it advisory: true, so it declares 1 violation on the "
+    "ACCEPT tier -- the file breaks a rule and a conformant reader accepts it "
+    "anyway, having reported it.",
+    "Typing a decoded record -- a transport-layer record carries no content_type",
+    [
+        file_header(options=[o_produced_by("zpf-sessionize 0.2"), o_produced_at(1719660000)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest("sha256:33cc")]),
+        decoder(1, [o_dec_name("tcp-reassembly"), o_dec_version("1.1")], output_layer=1),
+        session(50, [o_proto("tcp")]),
+        participant(50, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        # THE VIOLATION: content_type at the transport layer.
+        record(
+            50,
+            0,
+            1,
+            1000,
+            b"E" * 40,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 6, 0, 40)]),
+                o_seq_start(1001),
+                o_content_type("prim:bytes"),
+            ],
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-sessionize 0.2",
+            "produced_at": 1719660000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "packets.zpf",
+            "digest": "sha256:33cc",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "transport",
+            "name": "tcp-reassembly",
+            "version": "1.1",
+        },
+        {"type": "session", "session_id": 50, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 50,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 50,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"E" * 40),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 6, "pid": 0, "off_start": 0, "off_end": 40}],
+            "seq_start": 1001,
+            "content_type": "prim:bytes",
+        },
+        {"type": "end"},
+    ],
+    expect="ACCEPT, and REPORT. The projection is the .jsonl file -- the label "
+    "round-trips, because a reader preserves what it does not act on. A "
+    "reader MUST ignore the label semantically and SHOULD report it, and "
+    "MUST NOT conclude from it that the stream is decoded. Rejecting or "
+    "isolating this file is NOT conformant: the advisory strength is "
+    "stated in Typing a decoded record.",
+    violations=1,
+    advisory=True,
 )
 
 vector(
@@ -4301,6 +4556,7 @@ def main() -> int:
                 "name": v["name"],
                 "tier": v["tier"],
                 "violations": v["violations"],
+                **({"advisory": True} if v["advisory"] else {}),
                 "bytes": len(raw),
                 "blocks": b_types,
                 "options": o_ids,

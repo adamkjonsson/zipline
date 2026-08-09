@@ -13,6 +13,58 @@ suggested fix is local.
 
 ---
 
+## Disposition in `0.16`
+
+*Added when `0.16` closed. All ten findings are resolved; two are resolved
+differently from what the review proposed, and both are marked below.*
+
+| # | Issue | Disposition |
+|---|---|---|
+| 1 | [#89](https://github.com/adamkjonsson/zipline/issues/89) | **Fixed as proposed.** The paragraph is now a reference to the Discontinuity rule rather than a restatement of it. |
+| 2 | [#87](https://github.com/adamkjonsson/zipline/issues/87) | **Fixed, resolved the other way.** See below. |
+| 3 | [#90](https://github.com/adamkjonsson/zipline/issues/90) | **Fixed as proposed** — the minimal consistency rule, not the structural alternative, for the reason the review itself gives. Vector: `isolate-mixed-layer-participant`. |
+| 4 | [#88](https://github.com/adamkjonsson/zipline/issues/88) | **Fixed, with the review's predicate adopted nearly verbatim**, plus an explicit statement that satisfying it is not satisfying the duty. |
+| 5 | [#98](https://github.com/adamkjonsson/zipline/issues/98) | **Filed and deferred past `0.16`.** See below. |
+| 6 | [#93](https://github.com/adamkjonsson/zipline/issues/93) | **Fixed, and the underlying rule moved off `digest` entirely** — the review noted the field is optional; the prohibition now rests on ordering instead. Second violation removed; the shape it left has its own vector ([#92](https://github.com/adamkjonsson/zipline/issues/92)). |
+| 7 | [#94](https://github.com/adamkjonsson/zipline/issues/94) | **Fixed with the review's second option** — forbid the withholding rather than scope the exemption. Smaller change, and it keeps the transport bar absolute. |
+| 8 | [#97](https://github.com/adamkjonsson/zipline/issues/97) | **Fixed as proposed.** The `0.15` entry is amended in place with a note, not rewritten. |
+| 9 | [#95](https://github.com/adamkjonsson/zipline/issues/95) | **Fixed as proposed**: MUST NOT, advisory. The suite gained an `advisory: true` manifest key to express a violation that accepts. Vector: `advisory-transport-content-type`. |
+| 10 | [#96](https://github.com/adamkjonsson/zipline/issues/96) | **Fixed as proposed**, including both smaller points. |
+
+**Finding 2 — resolved against the review's preference.** The review preferred the
+stream-offset reading; `0.16` took the byte-offset one and corrected the vector.
+The argument for the alternative is that a capture byte offset cannot name a
+segment that was never captured, so the `hole` class becomes unreachable and half
+the capability is lost. That half was never needed: against a capture-sourced
+*transport* stream the hole is already carried by the hole-inclusive offsets,
+which is the same reason such a stream may not carry a Discontinuity. Declaring it
+twice is the contradiction, not the fix. The stream-offset reading would also give
+one 28-byte struct a third interpretation keyed on block type *and* source kind,
+in a block whose stated property is that one struct parses both.
+
+One correction to the review's account: it reads the vector's ids as evidence of
+intent. They do not survive its own preferred reading either — the offsets are
+`4096..4396` and the stream is about 105 bytes long, so under the stream-offset
+reading the block names a region that does not exist. The vector needed correcting
+whichever way the rule went.
+
+**Finding 5 — agreed, and deliberately not fixed here.** The vocabulary split is
+the right change and `0.16` is a correction release; folding it in would have made
+this the third release running where corrective and model work landed together.
+Filed as [#98](https://github.com/adamkjonsson/zipline/issues/98) with the
+reasoning, including why the vocabulary split is preferred over the `breaks: bool`
+alternative the review also offered: a flag on Undecoded re-couples the two blocks
+the format deliberately keeps apart.
+
+**One finding the review did not make**, found while checking it and fixed as
+[#91](https://github.com/adamkjonsson/zipline/issues/91): §Conceptual model still
+told a byte run from a decoder-imposed unit by "a single fact: whether it carries a
+`decoder_id`", which `0.15` made false when it let reassembly be a decoder. Same
+defect as Finding 1, three paragraphs above the two-axis statement that corrects
+it.
+
+---
+
 ## Verdict
 
 **Implementable, and worth implementing — but two findings block a from-the-text

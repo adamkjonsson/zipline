@@ -60,10 +60,268 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.16] — 2026-08-09
+
+**A corrective release, like `0.11`, `0.12` and `0.14`.** `0.15` replaced the
+raw/derived conflation with two independent axes; `0.16` fixes what that release
+left inconsistent, as
+[python-zipline's review of it](docs/SPEC-0.15-REVIEW.md) found. No new block, no
+new option, no body-layout change — every fix is local, and the review's verdict
+on the normative model is that nothing in it needs challenging. Scope and
+reasoning in [docs/RELEASE-0.16-PLAN.md](docs/RELEASE-0.16-PLAN.md); every item is
+an issue on the
+[`0.16` milestone](https://github.com/adamkjonsson/zipline/milestone/4).
+
+**Expect a *Changed* section, and read it as tightening rather than adding.**
+Four entries make a file conformant under `0.15` non-conformant under `0.16` —
+a participant whose records mix layers, a `zpf`-sourced stream that is neither
+created nor preserved, a transport stage withholding content it cannot express,
+and `content_type` on a transport-layer record. A fifth changes what an Undecoded
+block against a `capture` Source *means*, which is the one place this release
+touches semantics rather than prose.
+
+**Two of the fixes are the same defect `0.14` was written to stop**, and the
+checklist step `0.14` added to stop it did not catch either. `0.15` changed the
+layer rule and left two paragraphs asserting the old one — and because neither
+paragraph *restates* the rule, a check that enumerates a rule's copies passes them
+clean: the layer rule is stated exactly once, so the enumeration reports one site,
+correct. What they do is assert its negation, in words sharing no phrase with it.
+So `check.py` now carries `RETIRED_CLAIMS`
+([#100](https://github.com/adamkjonsson/zipline/issues/100)): claims the model has
+retired, each with the release that retired it and the issue that found it,
+failing the build if one reappears and matching whitespace-collapsed so a
+line-wrapped copy is still caught. It is a **ratchet, not a detector** — it cannot
+find a stale claim nobody has noticed, only hold a retired one from returning
+quietly.
+
+### Changed
+
+- **An Undecoded block's body is read by the referenced source's `kind`, and
+  against a `capture` source the ids are unused.**
+  ([#87](https://github.com/adamkjonsson/zipline/issues/87)) `0.15` shipped three
+  statements that could not all hold: the field table required
+  `kind = zpf-input`, §Undecoded said the ids are the source's and "never the
+  current file's", and the span-list rule said a capture source's ids are unused
+  and written 0. No reading satisfied all three, and `undecoded-in-capture` — the
+  vector the capability shipped for — satisfied none. It was the first vector
+  since the `0.12` round that could not be implemented from the text.
+
+  The span-list rule wins, so the Undecoded body and a `spans` entry are now read
+  by one rule as well as parsed by one struct. Against a `zpf-input` source
+  nothing changes. Against a **`capture`** source `session_id`/`participant_id`
+  are unused and MUST be written **0**, and the offsets are **byte offsets into
+  the capture file**.
+
+  Two consequences are stated rather than left to be derived. Only the
+  **bytes-exist** class is available there — a `hole` needs no block, because the
+  reassembled stream is a transport layer whose offsets already carry the gap, and
+  declaring it twice is the contradiction that also bars a Discontinuity from such
+  a stream. And the block **discharges no coverage obligation and creates none**,
+  because the guarantee is scoped within each input participant stream and a
+  capture has none; it is purely declarative there. That is why the permission is
+  not keyed on the layer: a reassembler declaring a discarded overlap and a decode
+  stage reading a capture directly are both honest. A decoded stream with no
+  predecessor file still carries none — it read no input at all.
+
+  `undecoded-in-capture` changes bytes: `session_id` `7` → `0`. Recorded in
+  [docs/VECTOR-DEFECTS.md](docs/VECTOR-DEFECTS.md) as defect 3, and it is the one
+  defect there that was not vector-side alone — the text disagreed with itself, so
+  no reading could have produced a correct vector.
+
+### Fixed
+
+- **`transform_params_digest`'s restriction is stated as placement, not as the
+  absence of a transform.**
+  ([#96](https://github.com/adamkjonsson/zipline/issues/96)) The option said "a
+  capture-sourced stream is not the output of a transform" — the exact claim
+  `0.15` spent an entry refuting when it legalised an Undecoded block on such a
+  stream, on the grounds that reassembly *is* a transform and a destructive one.
+  The outcome was right and the reason was not. A reassembler wanting its
+  configuration recorded declares itself as a Decoder and puts it in that
+  descriptor's `params_digest` (`reassembler-declared`); this option is for a
+  stage that produced records **without decoding** and so has no Decoder to hang
+  one on, which a capture-sourced file has none of.
+
+  Two smaller things in the same paragraph. "A file holding nothing else" now
+  reads "a file all of whose streams are capture-sourced". And `produced_by`'s
+  registry entry no longer implies derived files only — `proxy-decoded` sets it on
+  a file with no `zpf`-sourced stream, which was legal and unstated; every file
+  was produced by something, and only a file holding a `zpf`-sourced stream is
+  *required* to say so.
+
+- **"Raw" is gone from the worked examples.**
+  ([#99](https://github.com/adamkjonsson/zipline/issues/99)) `0.15` retired the
+  term but left `raw.zpf` as the predecessor's filename through the decoded-file
+  walkthrough and the annotator example — about a dozen uses, in prose explaining
+  what resolves where. A reader learning the model there learned "raw file →
+  decoded file", the implication the two-axis model exists to remove. It is
+  `transport.zpf` now, which names the layer rather than the retired axis.
+
+  Documentation only: no vector or fixture bytes change. `raw-minimal`,
+  `isolate-discontinuity-in-raw` and `chain/raw.zpf` keep their names, which are
+  identifiers that downstream harnesses reference — the churn would buy tidiness
+  and cost every port a migration. Ordinary English uses ("raw TCP segment", "raw
+  byte string") are untouched; those were never the retired term.
+
+- **Intra-file derivation gets a detection procedure, and stops resting on an
+  optional field.** ([#93](https://github.com/adamkjonsson/zipline/issues/93))
+  The prohibition was argued from the `digest` — "no file can contain its own
+  hash" — but `digest` is an option a writer may omit, and
+  `isolate-self-derived`'s own is the placeholder `sha256:0000`. It now rests on
+  the ordering instead: a stage reads its input and then writes its output, so a
+  file cannot be among its own inputs whether or not it carries a digest.
+
+  Detection is stated as **partial by design**, since there is no in-band
+  self-identifier: a reader handed a *path* compares it against a `zpf-input`
+  `uri` after normalisation and MAY isolate on a match; a reader handed a file
+  object — stdin, a socket, a tar member — cannot, and is **not obliged to
+  detect it**. Saying so keeps a reader that cannot check from looking
+  non-conformant, and tells one that can what to compare.
+
+  The vector also carried a **second violation** through `0.15`: session 21 was
+  `zpf`-sourced with no `origin` and no `spans`, so a reader could isolate it for
+  entirely the wrong reason and appear to pass. It now carries `origin`, and that
+  shape has a vector of its own
+  ([#92](https://github.com/adamkjonsson/zipline/issues/92)).
+
+- **§Conceptual model no longer says a byte run carries no `decoder_id`.**
+  ([#91](https://github.com/adamkjonsson/zipline/issues/91)) It told the byte-run
+  from the decoder-imposed unit by "a single fact: whether it carries a
+  `decoder_id`", which `0.15` made false when it let reassembly be a decoder —
+  `sessionization-stage` ships records that carry a `decoder_id` and are byte
+  runs, and the `content_type` rule rests on exactly that. Worse placed than
+  [#89](https://github.com/adamkjonsson/zipline/issues/89): the correct two-axis
+  statement is three paragraphs below it, so the section contradicted itself
+  within one screen, in the first thing an implementer reads.
+
+  The distinction now follows from the stream's **layer** and points at the rule
+  four paragraphs down rather than restating a fact about `decoder_id`. The trap
+  is named outright, since it is the one a `0.14` reader carries in: a reassembly
+  record carries a `decoder_id` and is a byte run all the same.
+
+- **`0.15`'s byte-compatibility claim is corrected where it stands.**
+  ([#97](https://github.com/adamkjonsson/zipline/issues/97)) That release said
+  "every existing `.zpf` re-reads correctly unmodified", which contradicts the
+  `0.x` rule the specification opens with: a conformant `0.15` reader MUST reject
+  `version_minor = 14`, so no existing file re-reads at all. The byte-level half
+  was right and is independently verified — the Decoder body stays 4 bytes and
+  `decoded = 0` lands on bytes a conformant `0.14` writer MUST have written 0.
+
+  The `0.15` entry is amended in place with a note saying what was wrong, rather
+  than rewritten to look correct: the property has operational content only for
+  files **re-stamped** to `0.15`, which is what happened to `reordered-decoded`.
+  The same clause is added to that release's headline, so a reader does not have
+  to reconcile the two claims themselves.
+
+- **§Undecoded no longer says a transport-layer stream carries no Undecoded
+  blocks.** ([#89](https://github.com/adamkjonsson/zipline/issues/89)) The
+  section's closing paragraph still read "neither carries Undecoded blocks,
+  because no decoder ran" — contradicting the paragraph 60 lines above it that
+  legalised the case, and contradicting two of `0.15`'s own accept-tier vectors:
+  `undecoded-in-capture` (no decoder anywhere) and `sessionization-stage`
+  (`output_layer = transport`, carrying a `gap`). The sentence *was* edited in
+  `0.15`, for the retirement of "raw" and not for the rule that changed two
+  paragraphs earlier, which also left its "neither" with a single subject.
+
+  Rewritten as a **reference rather than a restatement**, the treatment `0.14`
+  gave #63 and #64: a transport-layer stream expresses its gaps in its offsets,
+  which is why it may not carry a Discontinuity — stated once, in that block's own
+  section — and that says nothing about Undecoded, because the offsets describe
+  the shape of the output while an Undecoded block accounts for an input. The two
+  are not alternatives and a transport stream may carry both.
+
+- **Every record of one participant MUST resolve to the same layer.**
+  ([#90](https://github.com/adamkjonsson/zipline/issues/90)) The layer fixes a
+  stream's offset space, but `0.15` computed it per *record*, through
+  `decoder_id → output_layer`, while mixing decoders per record stayed legal.
+  Nothing forbade a participant holding a `transport` record beside a `decoded`
+  one, so its offset space had two incompatible definitions and every
+  `input_extents` or downstream `spans` resolved against it was meaningless — with
+  no rule broken. Now a semantic violation a reader MAY isolate, which also
+  licenses resolving the layer **once per participant** and caching it. Vector:
+  `isolate-mixed-layer-participant`.
+
+  Not the structural alternative. Putting the layer on the Participant body would
+  make this unexpressible, but the reason the Decoder placement was chosen does not
+  transfer — `decoded = 0` lands on `_reserved` bytes every existing writer wrote
+  0, while a participant's `_reserved` would want `0 = transport` for old capture
+  files and `0 = decoded` for old decoded ones, and one field cannot be both.
+
+- **A `zpf`-sourced participant MUST be created or preserved, never neither.**
+  ([#92](https://github.com/adamkjonsson/zipline/issues/92)) §Conformance
+  described the two ways and forbade being *both*; it never required being
+  *either*. A participant with no `origin` whose records carry no `spans` names no
+  provenance for its bytes at all — nothing resolves one level down, and no
+  coverage obligation can be computed in either direction. Binds on `zpf`-sourced
+  streams only; a capture-sourced participant correctly carries neither. Vector:
+  `isolate-unbound-zpf-stream`.
+
+- **A stage emitting a transport layer MUST NOT withhold content from a stream
+  whose offsets are not sequence-anchored.**
+  ([#94](https://github.com/adamkjonsson/zipline/issues/94)) The exemption that
+  frees a transport stream from carrying a Discontinuity assumes its offsets can
+  express the break, which holds only where something anchors them. In a
+  message-oriented or `N = 1` stream with no `isn` — `tunnel/outer.zpf` is one —
+  offsets are the accumulation of what arrived, and a withheld datagram leaves no
+  trace while the block that would say so is barred by the layer. Academic before
+  `0.15`, because a transport stream was a capture's reassembled output; reachable
+  now that a stage may declare `output_layer = transport` and filter.
+
+  **No reader can check this**, and the text says so: a file that withheld and one
+  that did not are byte-identical, which is exactly the defect. It has no vector
+  for the same reason, and `check.py`'s rule table records the omission as a
+  decision rather than leaving it to look like an oversight. A stage needing to
+  withhold emits a decoded layer, where the break is expressible.
+
+- **`content_type` at the transport layer is a MUST NOT, and its violation is
+  advisory.** ([#95](https://github.com/adamkjonsson/zipline/issues/95)) `0.15`
+  stated it as prose, the option registry still read `Record (decoded)`, and the
+  isolate list did not name the case — so a checker could not tell whether it was
+  a MUST NOT, whether it isolated, or what to do with the label. It is now a MUST
+  NOT and **advisory**: dropping the label loses nothing and the record stays
+  fully readable, so there is no unit a reader could soundly discard. A reader
+  MUST ignore the label and SHOULD report it, and MUST NOT read it as evidence
+  that the stream is decoded — which would put every later offset in that
+  participant in the wrong space. Vector: `advisory-transport-content-type`.
+
+  This is the format's first violation that **accepts**, and the three tiers could
+  not say it. `manifest.json` gains an optional `advisory: true` on an `accept`
+  entry, which then declares 1 violation rather than 0 — a key rather than a fourth
+  tier, because a tier names what a *reader does* and a reader accepts these files
+  completely.
+
+### Clarified
+
+- **The single-file Discontinuity check is stated as a predicate, with the layer
+  test first.** ([#88](https://github.com/adamkjonsson/zipline/issues/88)) `0.15`
+  said a checker may raise the case where a `hole`-class Undecoded region lies
+  between the input regions of two adjacent output units, and left three things
+  unsaid: that the check applies to decoded-layer streams only, which input stream
+  is meant when units cite several, and how to reduce a span *set* to a region
+  when spans may overlap or run downward. A checker written from that paragraph
+  rejects `sessionization-stage`, a conformant accept-tier vector.
+
+  The predicate is now written out. Verified against every vector: it fires on
+  `isolate-unmarked-break` and nothing else, and each near-miss is excluded by the
+  clause that exists for it — `sessionization-stage` and `tunnel/inner.zpf` by the
+  layer test, `reordered-decoded` and `session-fan-out` by the overlap clause,
+  `filtered-decoded` because the region between its records is bytes-class.
+
+  **Satisfying the predicate is not satisfying the duty**, and the text now says
+  so. It is the minimum a checker owes and is deliberately conservative;
+  `filtered-decoded` owes a Discontinuity that the predicate is correctly silent
+  about. A producer that emits the block only where this fires has misread the
+  duty, which rests on producer knowledge and is mostly not mechanically decidable.
+
+---
+
 ## [0.15] — 2026-08-08
 
 **A feature release, and the first that changes what already-written files
-mean.** `0.13` shipped the corrective third of
+mean** — which inside `0.x`, where a reader rejects a `version_minor` it does not
+implement, bites only on files **re-stamped** to `0.15` (clause added in `0.16`,
+[#97](https://github.com/adamkjonsson/zipline/issues/97)). `0.13` shipped the
+corrective third of
 [#41](https://github.com/adamkjonsson/zipline/issues/41); `0.15` finishes it —
 provenance and layer as independent axes, and sessionization as a decoder that
 declares the layer it emits — and closes the hole
@@ -193,10 +451,20 @@ changes is load-bearing somewhere in those four files.
   **No existing file changes — not one byte.** The field occupies two bytes that
   were `_reserved`, which a conformant writer MUST have written 0, and `decoded` is
   numbered **0**. So every Decoder Descriptor ever written already holds the value
-  that says what it always meant, and every existing `.zpf` re-reads correctly
-  unmodified. The JSON-Lines projection does change: a `decoder` line now always
-  carries `"output_layer"`. The ordering is chosen for exactly that reason and is
-  deliberately *not* parallel to Source `kind`.
+  that says what it always meant, and a `0.14` Decoder body **re-stamped to
+  `0.15`** is correct with no byte of it changing — which is what happened to
+  `reordered-decoded`. The JSON-Lines projection does change: a `decoder` line now
+  always carries `"output_layer"`. The ordering is chosen for exactly that reason
+  and is deliberately *not* parallel to Source `kind`.
+
+  > *Corrected in `0.16`
+  > ([#97](https://github.com/adamkjonsson/zipline/issues/97)).* As shipped, this
+  > entry said "every existing `.zpf` re-reads correctly unmodified", which
+  > contradicts the `0.x` rule this document opens with: a conformant `0.15`
+  > reader **MUST reject** `version_minor = 14`, so no existing file re-reads at
+  > all. The byte-level claim was right and is verified; the compatibility claim
+  > around it was not. Inside `0.x` the property has operational content only for
+  > files re-stamped to `0.15`.
 
   **A body field rather than an option, and this release is when that was
   affordable.** As an option it would have been *not safe to skip* — the second
@@ -1093,6 +1361,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15
 [0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14
 [0.13]: https://github.com/adamkjonsson/zipline/compare/v0.12...v0.13

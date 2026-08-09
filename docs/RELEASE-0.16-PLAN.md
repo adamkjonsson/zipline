@@ -117,6 +117,14 @@ existing entries; take it unless writing it turns up a reason not to. Either way
 it is a manifest-schema change, which is a reason to settle it before Phase 3
 rather than during.
 
+***Settled: the key, not a tier.*** The deciding argument turned out to be
+sharper than "smaller". A tier names **what a reader does**, and a reader accepts
+these files completely — so `advisory` is not a fourth thing a reader does, it is
+a statement about *why* the acceptance happened. `advisory: true` on an `accept`
+entry declares 1 violation instead of 0; `advisory` on any other tier fails the
+build, because where a reader may discard something the word says nothing. Schema
+and its six branches are in `check.py`; no vector uses it until Phase 3.
+
 ---
 
 ## Dependencies
@@ -163,6 +171,27 @@ it is a step known to work.
 
 Stamp first. Every later phase regenerates the tree anyway.
 
+***Done. Two things Phase 0 found, both of which change what follows:***
+
+***#100 cannot be a restatement grep, and the issue as filed proposed the wrong
+mechanism.*** The issue asked to add the layer rule to the list of statements
+whose copies are enumerated before a release. That would not have worked: the
+layer rule is stated **exactly once**, so a check counting its copies reports one
+site, correct, and passes clean — verified against the tree. Neither #89 nor #91
+*restates* the rule; each asserts its negation in words sharing no phrase with it.
+What shipped instead is `RETIRED_CLAIMS`, a table of claims the model has retired
+that fails the build if one reappears. It reproduces #89 and #91 as required. It
+is a **ratchet, not a detector** — it cannot find a stale claim nobody has
+noticed, and the docstring says so rather than implying coverage it does not have.
+
+***The suite is red from Phase 0 until Phase 2, deliberately.*** `check.py` now
+exits 1 on two retired claims that are still in the specification, and they stay
+there until Phase 2 removes them. This is the right state — the rule exists and
+the text does not yet match it — but it means **"green" is not a usable signal
+during Phase 1**, so Phase 1's own verification is `check.py`'s failure list
+containing exactly those two entries and nothing else. `0.14` hit this with #65
+and recorded that a future plan should say so up front; this is that.
+
 ### Phase 1 — the two blocking findings (#87, #88)
 
 These are what stops `python-zipline` writing a parser branch, and they are the
@@ -172,8 +201,41 @@ release's reason to exist. Ship each with the vector work it implies:
   `proxy-decoded` sub-question, the corrected `undecoded-in-capture`, the
   `build.py` annotation that prints "in the input's namespace" unconditionally,
   and the `VECTOR-DEFECTS.md` entry.
-- **#88** — the predicate, sited per scope decision 2, and confirmed in `check.py`
-  against all 49 existing vectors rather than on paper.
+- **#88** — the predicate, sited per scope decision 2, and confirmed against all
+  49 existing vectors rather than on paper.
+
+***Done. Two corrections to this phase as planned:***
+
+***The proxy sub-question had two defensible answers, not one.*** #87 settled it
+as *permitted and purely declarative*: against a `capture` source the block
+discharges no coverage obligation and creates none, because the guarantee is
+scoped within each input participant stream and a capture has none. So the
+permission needs no layer key — a reassembler declaring a dropped overlap and a
+decode stage reading a pcap directly are both honest, and a proxy carries none
+because it read no input, not because its layer forbids it. The alternative
+(transport-layer only) would have given a checker a file-visible rule at the cost
+of forbidding the direct pcap→HTTP stage, which `0.15` permits.
+
+***The predicate could not be confirmed in `check.py`, and should not be.***
+Ground rule 2 forbids the checker from parsing block bodies or adjudicating
+semantics — that is what would make it the second normative authority the vectors
+exist not to be. Confirmed with a one-off reader instead. It fires on
+**`isolate-unmarked-break` and nothing else** across all 50 files, and every
+near-miss is excluded by the clause that exists for it:
+
+| Vector | Excluded by |
+|---|---|
+| `sessionization-stage` | the **layer test** — both records transport |
+| `tunnel/inner.zpf` | the **layer test** |
+| `reordered-decoded` | **`A ≥ B`** (150 ≥ 0), spans running downward |
+| `session-fan-out` | **`A ≥ B`** (80 ≥ 80) on one pair, no hole on the other |
+| `filtered-decoded` | the region between is **bytes**-class, not `hole` |
+
+The first two are the finding: without the layer clause a checker rejects two
+conformant accept-tier vectors. The last is the conservatism made concrete —
+`filtered-decoded` *does* owe its Discontinuity, under the producer duty, and the
+predicate is correctly silent about it. That is the sentence about satisfying the
+predicate not being satisfying the duty, demonstrated rather than asserted.
 
 ### Phase 2 — the restatements (#89, #91)
 
@@ -202,16 +264,67 @@ The `Changed` section's four entries, plus #93.
 Two new isolate vectors, so 49 → 51. Both need #39's one-violation rule to hold of
 them, which is what #93 exists to restore.
 
+***Done, and the vector count was wrong twice over — 49 → 53, not 51.***
+
+The plan counted the two isolate vectors and forgot that #95's rule needs one too;
+that is three. The fourth is a **Phase 1 loose end this phase found**: #87 added
+"a `hole`-class Undecoded region against a `capture` Source" to the isolate list
+and gave it nothing to exercise it, which is exactly the gap #66 and #70 exist to
+prevent. `isolate-hole-against-capture` closes it. Adding an isolate-list entry
+without a vector is the mistake to watch for in Phase 4, since #96 and #97 touch
+the same section.
+
+***#94 is a rule that cannot have a vector, and that is recorded rather than
+worked around.*** A transport stream that withheld content and one that did not
+are byte-identical — which is the whole reason the rule is needed. `check.py`'s
+`RULES` table would fail the build for a rule naming no vector, so #94 is
+deliberately absent from it, with a comment saying why. Listing it would have
+meant either a permanent red build or a vector that does not test what it claims.
+
+***The advisory schema had its first user, and the six branches held.***
+`advisory-transport-content-type` is `accept` with `violations: 1` and
+`advisory: true`; `build.py` refuses `advisory` off the accept tier at
+construction time, so the invalid combination cannot reach the manifest.
+
 ### Phase 4 — prose and docs (#96, #97, #99)
 
 Independent of everything above, and safe to land in any order once the rules have
 stopped moving. #99 is the largest diff and the least risky: a filename through
 one worked example.
 
+***Done. Two judgement calls worth recording:***
+
+***#97 amends a shipped entry in place rather than rewriting it.*** The `0.15`
+section is dated and released, and Keep a Changelog would leave it alone. But the
+sentence is factually wrong about a normative rule, and leaving it correct-looking
+was not an option either. It now carries a marked note saying what was wrong and
+what holds instead — the same treatment this project gives a superseded design
+decision, and consistent with recording rather than hiding.
+
+***#99 stopped at the specification.*** The rename is `raw.zpf` → `transport.zpf`
+through the two worked examples. `chain/raw.zpf` keeps its name alongside
+`raw-minimal` and `isolate-discontinuity-in-raw`, and `vectors/README.md` now says
+so and says why, so the divergence between the specification's example and the
+fixture is a recorded decision rather than something a later reader has to
+rediscover.
+
 ### Phase 5 — changelog, conformance sweep, release
 
 Run #100 over the finished release. Draft `Changed` from the entries written in
 Phase 3, not from memory.
+
+***Done.*** The sweep: 53 vectors consistent; 37 options, 12 blocks and 22 rules
+all exercised; retired claims clear; every `.zpf` stamps `0.16` except
+`reject-unknown-minor` at `0.17` and `reject-unknown-major`, both by design; every
+vector and fixture named in `vectors/README.md`; `ruff check` and `ruff format`
+clean.
+
+***#100's tool was run against the `v0.15` tag, not against memory of it.*** Both
+`RETIRED_CLAIMS` entries reproduce from the tagged specification text, which is
+the check Phase 0 said would prove the extension was the right one. Drafting
+`Changed` from the entries written in their own phases rather than at release cost
+nothing here and is worth keeping — it is the third release running where that was
+the plan and the first where nothing had to be reconstructed.
 
 ---
 
@@ -231,28 +344,78 @@ Phase 3, not from memory.
 
 ## Definition of done
 
-- [ ] All thirteen in-scope issues closed, each in the commit that finishes it;
-      #98 open and scheduled.
-- [ ] An Undecoded block against a `capture` Source has **one** reading, stated at
+- [x] All thirteen in-scope issues closed, each in the commit that finishes it;
+      #98 open and scheduled. *Two commits carry more than one issue — Phase 1's
+      pair and Phase 3's five — because those issues edit the same sections and a
+      hunk-level split would have produced intermediate states that do not build.
+      Phase 2 held to one apiece, which is the shape to aim for where the work
+      allows it.*
+- [x] An Undecoded block against a `capture` Source has **one** reading, stated at
       every site that bears on it, and `undecoded-in-capture` demonstrates it.
-- [ ] The single-file Discontinuity check is a predicate, carries its layer test
+      *Resolved against the review's preference; see scope decision 1.*
+- [x] The single-file Discontinuity check is a predicate, carries its layer test
       first, and says in the text that satisfying it is not satisfying the duty.
-- [ ] No statement in the specification implies that a transport-layer stream
+- [x] No statement in the specification implies that a transport-layer stream
       carries no Undecoded blocks, or that a byte run carries no `decoder_id`.
-- [ ] "The stream's layer" is well defined: a participant mixing layers is a
+      *Enforced from here on, not merely fixed: `RETIRED_CLAIMS` fails the build
+      if either returns.*
+- [x] "The stream's layer" is well defined: a participant mixing layers is a
       stated violation with a vector.
-- [ ] A `zpf`-sourced participant that is neither created nor preserved is a
+- [x] A `zpf`-sourced participant that is neither created nor preserved is a
       stated violation with a vector, and `isolate-self-derived` carries exactly
       one violation again.
-- [ ] The transport-layer exemption states what it assumes, and the case it does
-      not cover is forbidden rather than unrepresentable.
-- [ ] `content_type` at the transport layer is a MUST NOT with a stated tier, and
+- [x] The transport-layer exemption states what it assumes, and the case it does
+      not cover is forbidden rather than unrepresentable. *The rule has no vector
+      and can have none — see Phase 3.*
+- [x] `content_type` at the transport layer is a MUST NOT with a stated tier, and
       the suite can express an advisory violation.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.16`. *51 entries.*
-- [ ] #100's tool reports no rule changed in `0.16` with a copy left behind, and
-      reproduces #89 and #91 when run against `v0.15`.
-- [ ] `CHANGELOG.md` `[0.16]` complete, **with a `Changed` section** covering #87,
+- [x] `python3 vectors/check.py` green; every vector stamps `0.16`. ~~*51
+      entries.*~~ **53** — the estimate missed #95's vector and a Phase 1 loose
+      end. 33 accept, 15 isolate, 5 reject.
+- [x] #100's tool reports no rule changed in `0.16` with a copy left behind, and
+      reproduces #89 and #91 when run against `v0.15`. *Run against the tag, not
+      against a remembered copy of it.*
+- [x] `CHANGELOG.md` `[0.16]` complete, **with a `Changed` section** covering #87,
       #90, #92, #94 and #95.
-- [ ] The `0.15` review is annotated: each finding marked resolved, with the two
+- [x] The `0.15` review is annotated: each finding marked resolved, with the two
       where this release ruled against it (#87's direction, #98's scheduling)
       saying so and why.
+
+## What execution changed
+
+Recorded because a plan only ever read forwards teaches nothing. Five things this
+document or the review got wrong:
+
+- **#100 asked for a mechanism that cannot work.** The issue proposed adding the
+  layer rule to the list of statements whose copies are enumerated before a
+  release. The layer rule is stated exactly once, so the enumeration reports one
+  site, correct, and passes clean — and neither stale paragraph restated it; each
+  asserted its negation in words sharing no phrase with it. Replaced by
+  `RETIRED_CLAIMS`, a ratchet rather than a detector, and the docstring says which
+  it is.
+- **#88's confirmation could not live in `check.py`, and the plan said it should.**
+  Ground rule 2 forbids the checker from parsing block bodies or adjudicating
+  semantics, which is exactly what the predicate does. Confirmed with a one-off
+  reader instead. The repository's own rule beat the plan, which is the right
+  order.
+- **The vector estimate was wrong twice, in the same direction.** 49 → 53, not 51:
+  #95's rule needed a vector the plan did not count, and #87 had left an
+  isolate-list entry with nothing exercising it — the gap #66 and #70 exist to
+  prevent, introduced in Phase 1 and found in Phase 3. Adding a rule to the text
+  and a vector for it in different phases is how that happens.
+- **#94 is a rule no vector can express**, which the plan did not anticipate when
+  it scheduled "the four new MUSTs and their vectors". A transport stream that
+  withheld content and one that did not are byte-identical. Recorded as an
+  explicit absence in `check.py`'s `RULES`, because the alternative was a
+  permanently red build or a vector testing something other than what it claims.
+- **#93 needed more than the review asked.** It wanted the detection procedure
+  stated and a second violation removed. Both done — but the prohibition itself
+  rested on `digest`, an optional field, so it had to move onto the ordering
+  argument to stand at all.
+
+Not anticipated by the plan, and worth carrying forward: **the red window worked
+as designed.** `check.py` exited 1 from Phase 0 until Phase 2, on two claims the
+specification still held. `0.14` hit the same state with #65 and noted afterwards
+that a plan should say so up front; this one did, and the phases in between used
+"the failure list holds exactly these two entries" as the signal instead of green.
+That is worth doing again rather than avoiding.

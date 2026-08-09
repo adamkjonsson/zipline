@@ -24,6 +24,9 @@ What it does verify:
     and block types parsed from the specification's own tables, plus the rules
     declared in RULES. What each vector exercises is recorded by build.py, which
     built the bytes -- nothing here parses a block body
+  * no claim the model has retired is still in the specification, per
+    RETIRED_CLAIMS. This is textual, not semantic: it holds a claim retired once
+    from quietly returning, and cannot find one nobody has noticed
   * accept/isolate vectors are well-framed: block walk lands exactly on EOF,
     every length is a multiple of 4, magic and version are what this version
     defines. Multi-file fixtures are walked file by file, same as any vector
@@ -60,7 +63,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 15
+MAJOR, MINOR = 0, 16
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -69,6 +72,18 @@ MAJOR, MINOR = 0, 15
 # *declared* tier; it never inspects a file to count them, because a checker that
 # ruled on semantics would become a second normative authority.
 VIOLATIONS_BY_TIER = {"accept": 0, "reject": 1, "isolate": 1}
+
+# One violation does not isolate: an advisory MUST NOT, where the file stays
+# readable and a reader carries on having reported it. 0.16 gained the first
+# (content_type on a transport-layer record, #95) and the three tiers could not
+# say it -- `accept` means zero violations, `isolate` means the reader may
+# discard something, and this is neither.
+#
+# It is a key on an accept entry rather than a fourth tier because the tier names
+# what a READER does, and a reader accepts this file completely. `advisory: true`
+# says the acceptance is not because the file is clean. tcp_role escapes the
+# question only because an unrecognised enum value is not a violation at all.
+ADVISORY_VIOLATIONS = 1
 
 SPEC = os.path.join(HERE, os.pardir, "docs", "zipline-payload-format.md")
 
@@ -163,7 +178,91 @@ RULES = {
         "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
         "passthrough-discontinuity",
     ),
+    # 0.16's four. Each is a MUST the syntax already allowed you to break, which
+    # is why each needed a vector before it needed a checker.
+    "layer-consistency": (
+        "every record of one participant MUST resolve to the same layer",
+        "isolate-mixed-layer-participant",
+    ),
+    "zpf-stream-created-or-preserved": (
+        "a zpf-sourced participant MUST carry origin or hold records with spans, never neither",
+        "isolate-unbound-zpf-stream",
+    ),
+    "undecoded-capture-bytes-only": (
+        "against a capture source the hole class is unavailable -- "
+        "the transport offsets already carry the gap",
+        "isolate-hole-against-capture",
+    ),
+    "content-type-transport-advisory": (
+        "content_type at the transport layer is a MUST NOT whose violation is ADVISORY: "
+        "a reader reports it, ignores the label, and accepts the file",
+        "advisory-transport-content-type",
+    ),
+    # NOT in this table, deliberately: "a stage emitting a transport layer MUST
+    # NOT withhold content from a stream whose offsets are not sequence-anchored"
+    # (#94). It is a writer obligation with no file-visible signature -- a stream
+    # that withheld and one that did not are byte-identical, which is the whole
+    # reason the rule is needed. No vector can express it, so listing it here
+    # would fail the build forever for a rule that is correctly unverifiable.
+    # Recorded here rather than omitted silently, so the gap is a decision.
 }
+
+
+# Claims the model has retired, and MUST NOT reappear in the specification.
+#
+# #70 added a release checklist step: grep every restatement of a rule before
+# changing it. 0.15 changed the layer rule and shipped two paragraphs asserting
+# the old one anyway, and the step did not catch either -- because neither
+# paragraph RESTATES the rule. The layer rule is stated exactly once, so a check
+# that counted its copies would have reported one site, correct, and passed
+# clean. What the stale copies do is assert its negation, in words that share no
+# phrase with it.
+#
+# So the mechanism is a ratchet, not a detector. It cannot find a stale claim
+# nobody has noticed; what it guarantees is that a claim retired once can never
+# quietly return -- which is the failure mode this repository keeps hitting
+# (#63 in 0.14, #89 and #91 in 0.15).
+#
+# Add an entry whenever a release retires a claim, in the release that retires
+# it. The pattern matches against whitespace-collapsed text, so a copy that
+# happens to wrap differently is still caught -- the 0.14 sweep nearly missed one
+# for exactly that reason.
+RETIRED_CLAIMS = {
+    "transport-carries-no-undecoded": (
+        r"neither carries Undecoded blocks, because no decoder ran",
+        "0.16",
+        89,
+        "a transport-layer stream MAY carry Undecoded blocks; the input is the "
+        "capture and the stage is the reassembler",
+    ),
+    "byte-run-has-no-decoder-id": (
+        r"A byte run carries none",
+        "0.16",
+        91,
+        "a reassembly record is a byte run AND carries a decoder_id; the "
+        "distinction is the layer, not the presence of the field",
+    ),
+}
+
+
+def check_retired_claims() -> list[str]:
+    """No claim the model has retired may appear in the specification.
+
+    Whitespace is collapsed before matching so a line-wrapped copy is still
+    found; the 0.14 sweep nearly missed a third statement of the coverage
+    guarantee because the phrase spanned a line break.
+    """
+    flat = re.sub(r"\s+", " ", read_text(SPEC))
+    out = []
+    for name, (pattern, retired_in, issue, instead) in sorted(RETIRED_CLAIMS.items()):
+        if re.search(pattern, flat):
+            out.append(
+                f"retired claim '{name}' is still in the specification "
+                f"(retired in {retired_in}, #{issue}) -- {instead}"
+            )
+    if not out:
+        print(f"  retired claims: {len(RETIRED_CLAIMS)} -- none present")
+    return out
 
 
 def spec_tables() -> tuple[dict[str, str], dict[str, str]]:
@@ -495,10 +594,19 @@ def check_violations(v: dict) -> list[str]:
     name, tier = v["name"], v["tier"]
     if "violations" not in v:
         return [f"{name}: no declared violation count"]
-    if v["violations"] != VIOLATIONS_BY_TIER[tier]:
+    advisory = bool(v.get("advisory"))
+    if advisory and tier != "accept":
+        return [
+            f"{name}: declares advisory on tier '{tier}'. An advisory "
+            f"violation is one a reader reports and then accepts; on a tier "
+            f"where the reader may discard something it says nothing."
+        ]
+    expected = ADVISORY_VIOLATIONS if advisory else VIOLATIONS_BY_TIER[tier]
+    if v["violations"] != expected:
         return [
             f"{name}: declares {v['violations']} violation(s) but tier "
-            f"'{tier}' requires exactly {VIOLATIONS_BY_TIER[tier]}. A "
+            f"'{tier}'{' (advisory)' if advisory else ''} requires exactly "
+            f"{expected}. A "
             f"negative vector carries exactly one violation -- with two it "
             f"tests whichever a reader detects first. Split it, or fix the "
             f"vector so it carries only the one it was built for."
@@ -602,6 +710,7 @@ def main() -> int:
     failures += check_chain()
     failures += check_tunnel()
     failures += check_capability_coverage(manifest)
+    failures += check_retired_claims()
 
     if failures:
         print("\nFAILURES:")
