@@ -264,6 +264,28 @@ The `Changed` section's four entries, plus #93.
 Two new isolate vectors, so 49 → 51. Both need #39's one-violation rule to hold of
 them, which is what #93 exists to restore.
 
+***Done, and the vector count was wrong twice over — 49 → 53, not 51.***
+
+The plan counted the two isolate vectors and forgot that #95's rule needs one too;
+that is three. The fourth is a **Phase 1 loose end this phase found**: #87 added
+"a `hole`-class Undecoded region against a `capture` Source" to the isolate list
+and gave it nothing to exercise it, which is exactly the gap #66 and #70 exist to
+prevent. `isolate-hole-against-capture` closes it. Adding an isolate-list entry
+without a vector is the mistake to watch for in Phase 4, since #96 and #97 touch
+the same section.
+
+***#94 is a rule that cannot have a vector, and that is recorded rather than
+worked around.*** A transport stream that withheld content and one that did not
+are byte-identical — which is the whole reason the rule is needed. `check.py`'s
+`RULES` table would fail the build for a rule naming no vector, so #94 is
+deliberately absent from it, with a comment saying why. Listing it would have
+meant either a permanent red build or a vector that does not test what it claims.
+
+***The advisory schema had its first user, and the six branches held.***
+`advisory-transport-content-type` is `accept` with `violations: 1` and
+`advisory: true`; `build.py` refuses `advisory` off the accept tier at
+construction time, so the invalid combination cannot reach the manifest.
+
 ### Phase 4 — prose and docs (#96, #97, #99)
 
 Independent of everything above, and safe to land in any order once the rules have

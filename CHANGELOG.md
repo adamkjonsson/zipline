@@ -130,6 +130,27 @@ quietly.
 
 ### Fixed
 
+- **Intra-file derivation gets a detection procedure, and stops resting on an
+  optional field.** ([#93](https://github.com/adamkjonsson/zipline/issues/93))
+  The prohibition was argued from the `digest` — "no file can contain its own
+  hash" — but `digest` is an option a writer may omit, and
+  `isolate-self-derived`'s own is the placeholder `sha256:0000`. It now rests on
+  the ordering instead: a stage reads its input and then writes its output, so a
+  file cannot be among its own inputs whether or not it carries a digest.
+
+  Detection is stated as **partial by design**, since there is no in-band
+  self-identifier: a reader handed a *path* compares it against a `zpf-input`
+  `uri` after normalisation and MAY isolate on a match; a reader handed a file
+  object — stdin, a socket, a tar member — cannot, and is **not obliged to
+  detect it**. Saying so keeps a reader that cannot check from looking
+  non-conformant, and tells one that can what to compare.
+
+  The vector also carried a **second violation** through `0.15`: session 21 was
+  `zpf`-sourced with no `origin` and no `spans`, so a reader could isolate it for
+  entirely the wrong reason and appear to pass. It now carries `origin`, and that
+  shape has a vector of its own
+  ([#92](https://github.com/adamkjonsson/zipline/issues/92)).
+
 - **§Conceptual model no longer says a byte run carries no `decoder_id`.**
   ([#91](https://github.com/adamkjonsson/zipline/issues/91)) It told the byte-run
   from the decoder-imposed unit by "a single fact: whether it carries a
@@ -161,6 +182,66 @@ quietly.
   section — and that says nothing about Undecoded, because the offsets describe
   the shape of the output while an Undecoded block accounts for an input. The two
   are not alternatives and a transport stream may carry both.
+
+- **Every record of one participant MUST resolve to the same layer.**
+  ([#90](https://github.com/adamkjonsson/zipline/issues/90)) The layer fixes a
+  stream's offset space, but `0.15` computed it per *record*, through
+  `decoder_id → output_layer`, while mixing decoders per record stayed legal.
+  Nothing forbade a participant holding a `transport` record beside a `decoded`
+  one, so its offset space had two incompatible definitions and every
+  `input_extents` or downstream `spans` resolved against it was meaningless — with
+  no rule broken. Now a semantic violation a reader MAY isolate, which also
+  licenses resolving the layer **once per participant** and caching it. Vector:
+  `isolate-mixed-layer-participant`.
+
+  Not the structural alternative. Putting the layer on the Participant body would
+  make this unexpressible, but the reason the Decoder placement was chosen does not
+  transfer — `decoded = 0` lands on `_reserved` bytes every existing writer wrote
+  0, while a participant's `_reserved` would want `0 = transport` for old capture
+  files and `0 = decoded` for old decoded ones, and one field cannot be both.
+
+- **A `zpf`-sourced participant MUST be created or preserved, never neither.**
+  ([#92](https://github.com/adamkjonsson/zipline/issues/92)) §Conformance
+  described the two ways and forbade being *both*; it never required being
+  *either*. A participant with no `origin` whose records carry no `spans` names no
+  provenance for its bytes at all — nothing resolves one level down, and no
+  coverage obligation can be computed in either direction. Binds on `zpf`-sourced
+  streams only; a capture-sourced participant correctly carries neither. Vector:
+  `isolate-unbound-zpf-stream`.
+
+- **A stage emitting a transport layer MUST NOT withhold content from a stream
+  whose offsets are not sequence-anchored.**
+  ([#94](https://github.com/adamkjonsson/zipline/issues/94)) The exemption that
+  frees a transport stream from carrying a Discontinuity assumes its offsets can
+  express the break, which holds only where something anchors them. In a
+  message-oriented or `N = 1` stream with no `isn` — `tunnel/outer.zpf` is one —
+  offsets are the accumulation of what arrived, and a withheld datagram leaves no
+  trace while the block that would say so is barred by the layer. Academic before
+  `0.15`, because a transport stream was a capture's reassembled output; reachable
+  now that a stage may declare `output_layer = transport` and filter.
+
+  **No reader can check this**, and the text says so: a file that withheld and one
+  that did not are byte-identical, which is exactly the defect. It has no vector
+  for the same reason, and `check.py`'s rule table records the omission as a
+  decision rather than leaving it to look like an oversight. A stage needing to
+  withhold emits a decoded layer, where the break is expressible.
+
+- **`content_type` at the transport layer is a MUST NOT, and its violation is
+  advisory.** ([#95](https://github.com/adamkjonsson/zipline/issues/95)) `0.15`
+  stated it as prose, the option registry still read `Record (decoded)`, and the
+  isolate list did not name the case — so a checker could not tell whether it was
+  a MUST NOT, whether it isolated, or what to do with the label. It is now a MUST
+  NOT and **advisory**: dropping the label loses nothing and the record stays
+  fully readable, so there is no unit a reader could soundly discard. A reader
+  MUST ignore the label and SHOULD report it, and MUST NOT read it as evidence
+  that the stream is decoded — which would put every later offset in that
+  participant in the wrong space. Vector: `advisory-transport-content-type`.
+
+  This is the format's first violation that **accepts**, and the three tiers could
+  not say it. `manifest.json` gains an optional `advisory: true` on an `accept`
+  entry, which then declares 1 violation rather than 0 — a key rather than a fourth
+  tier, because a tier names what a *reader does* and a reader accepts these files
+  completely.
 
 ### Clarified
 

@@ -178,6 +178,33 @@ RULES = {
         "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
         "passthrough-discontinuity",
     ),
+    # 0.16's four. Each is a MUST the syntax already allowed you to break, which
+    # is why each needed a vector before it needed a checker.
+    "layer-consistency": (
+        "every record of one participant MUST resolve to the same layer",
+        "isolate-mixed-layer-participant",
+    ),
+    "zpf-stream-created-or-preserved": (
+        "a zpf-sourced participant MUST carry origin or hold records with spans, never neither",
+        "isolate-unbound-zpf-stream",
+    ),
+    "undecoded-capture-bytes-only": (
+        "against a capture source the hole class is unavailable -- "
+        "the transport offsets already carry the gap",
+        "isolate-hole-against-capture",
+    ),
+    "content-type-transport-advisory": (
+        "content_type at the transport layer is a MUST NOT whose violation is ADVISORY: "
+        "a reader reports it, ignores the label, and accepts the file",
+        "advisory-transport-content-type",
+    ),
+    # NOT in this table, deliberately: "a stage emitting a transport layer MUST
+    # NOT withhold content from a stream whose offsets are not sequence-anchored"
+    # (#94). It is a writer obligation with no file-visible signature -- a stream
+    # that withheld and one that did not are byte-identical, which is the whole
+    # reason the rule is needed. No vector can express it, so listing it here
+    # would fail the build forever for a rule that is correctly unverifiable.
+    # Recorded here rather than omitted silently, so the gap is a decision.
 }
 
 

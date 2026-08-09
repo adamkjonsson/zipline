@@ -129,8 +129,20 @@ predecessor `.zpf` and never will, so a rule that inferred "decoded" from
 **The unit is the stream, not the file.** `decoder_id` and `source_id` are
 per-record, so one file MAY hold streams at different positions in that table and
 needs no syntax to say so. What a file MUST NOT do is derive one of its own
-streams from another: `spans` name a Source carrying a `digest`, and no file can
-contain its own hash, so every derived stream's predecessor is a *different* file.
+streams from another: every derived stream's predecessor is a *different* file.
+The reason is not the `digest` — that option is optional, so a file could omit it
+and the prohibition still holds. It is that a stage reads its input and then
+writes its output, so a file cannot be among its own inputs without the offsets
+its `spans` name having been fixed before the file that contains them existed.
+
+**Detecting it needs a name the file does not carry.** There is no in-band
+self-identifier: the only signal is a `zpf-input` Source's `uri`, so a reader
+handed a **path** compares the two after normalisation and MAY isolate on a match,
+while a reader handed a file object — stdin, a socket, a tar member, all of which
+a reader may legitimately accept — cannot, and is **not obliged to detect it**.
+The rule binds the writer either way. This is stated so that a reader which cannot
+check is not thought non-conformant, and so that one which can knows what to
+compare.
 
 A byte-preserving transform (a [merge](#sequenced-files-precomputed-order))
 re-emits byte runs into its output, where they are *pass-through records*. Such a
@@ -956,7 +968,7 @@ truth — the label never replaces them.
 An unknown scheme is treated as opaque. This lets the decoder say *what each unit
 is* without the format having to parse it.
 
-**A record at the transport layer carries no `content_type`**, including one
+**A record at the transport layer MUST NOT carry a `content_type`**, including one
 emitted by a reassembly decoder, where `prim:bytes` is now mechanically legal and
 is the obvious wrong answer. `content_type` types a *value* — what this unit **is**
 — and a reassembly record's boundaries are wherever the reassembler happened to
@@ -966,6 +978,15 @@ are right, which is exactly the property the
 neutralise; labelling an arbitrary window `prim:bytes` asserts it is a unit when it
 is a slice. It would also type identical bytes differently by provenance, since a
 capture-sourced reassembler declaring itself is only a SHOULD.
+
+**Violating this is advisory, not isolating**, and it is the only MUST NOT in this
+document with that strength. Dropping the label loses nothing and the record stays
+fully readable, so there is no unit a reader could soundly discard and nothing it
+would gain by discarding one — the treatment `tcp_role` gets, not the one an
+`origin` on a capture-sourced stream gets. A reader meeting one **MUST ignore the
+label** and SHOULD report it; what it MUST NOT do is take the label as evidence
+that the stream is decoded after all, which would put every later offset in that
+participant in the wrong space.
 
 Absent already says the right thing, and says something new here: the fallback is
 the decoder `name`, so a consumer that used to report nothing about how a stream
@@ -2012,6 +2033,24 @@ That is the property, not the file kind: a transport stream is exempt for the
 mirror-image reason, its hole-inclusive offsets having already expressed the break
 (see *A transport-layer stream MUST NOT carry one*, below).
 
+**The exemption assumes the offsets can express it, and one kind of transport
+stream cannot.** Hole-inclusive offsets carry a break because something anchors
+them — a TCP `isn` and `seq_start`, or another transport's sequence numbers. In a
+**message-oriented or `N = 1`** stream with no such anchor, offsets are the
+accumulation of the payloads that arrived, and a datagram that never reaches the
+output leaves no trace: nothing says a message is missing, and the Discontinuity
+that would say so is barred by the layer. `tunnel/outer.zpf` is such a stream —
+UDP, no `isn`, four `message` records.
+
+So a stage emitting a **transport** layer **MUST NOT withhold content** from a
+stream whose offsets are not sequence-anchored. Before `0.15` this cost nothing to
+say, because a transport stream was a capture's reassembled output and nothing
+dropped from it; a stage may now declare `output_layer = transport` and filter,
+which is what makes the rule necessary. It binds the writer and **no reader can
+check it** — a file that withheld and one that did not are byte-identical, which
+is precisely the defect. A stage that needs to withhold from such a stream emits a
+decoded layer instead, where the break is expressible.
+
 **Do these two join?** is the whole test, and it falls to the producer because
 only the producer knows what it did with the input:
 
@@ -2264,7 +2303,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes **correspond to** — the input the unit was computed from, not necessarily a copy of it (see below) |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded        | which **decoder** produced or declined this record or region — not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it). The decoder's [`output_layer`](#decoder-descriptor-0x03) then gives the layer, which may be transport |
-| `0x0091` | content_type     | string     | Record (decoded)         | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
+| `0x0091` | content_type     | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
 | `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical four, and MUST agree with the class if it accompanies one of them |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
@@ -2492,10 +2531,32 @@ those bytes from the output altogether. A file whose streams are a mix declares
 every input it drew on and sets `produced_by`/`produced_at` once, as any derived
 file does.
 
+**And a `zpf`-sourced participant MUST be one or the other.** The two ways above
+are exhaustive, so a participant carrying **neither** `origin` nor records with
+`spans` is a violation: its records reference a `zpf-input` Source and say nothing
+about which stream inside it they came from, so nothing resolves one level down
+and no coverage obligation can be computed either way. A reader MAY isolate it.
+The rule binds on `zpf`-sourced streams alone — a capture-sourced participant
+carries neither, and its `source_id` is the whole of its provenance.
+
 One decode stage MAY also mix *decoders* per-record (HTTP on one session,
 TLS-then-HTTP on another). Every file holding a `zpf`-sourced stream MUST declare
 each of its input `.zpf`s as a `zpf-input` Source and set the File Header
 `produced_by`/`produced_at`.
+
+**But every record of one participant MUST resolve to the same layer.** Mixing
+decoders says what each record *is*; the layer says where the stream's bytes
+**are**, and one participant cannot have two answers. A participant holding a
+record whose decoder declares `transport` beside one whose decoder declares
+`decoded` — or a decoder-less record, which is transport by the
+[layer rule](#conceptual-model), beside a decoded one — has an offset space with
+two incompatible definitions, and a reader computing `input_extents` or resolving
+a downstream `spans` entry against it gets a number that means nothing. Such a
+participant is a semantic violation a reader MAY isolate.
+
+This is what makes *the stream's layer* well defined rather than merely intended,
+and it is why a reader may resolve the layer **once per participant** and cache
+it, rather than per record.
 
 **The head-of-pipeline reassembler SHOULD declare itself, and MUST NOT be required
 to.** A capture-sourced transport stream MAY carry a Decoder declaring
@@ -2530,6 +2591,13 @@ handshake was observed — it fixes the stream's absolute origin (see
 set the `message` flag. A sessionization stage's output is `zpf`-sourced and carries
 all three exactly as a capture's does, which is the point of it being a transport
 layer at all.
+
+Two further requirements bind on the layer, and both are stated in full elsewhere:
+such a record carries **no `content_type`** (see
+[Typing a decoded record](#typing-a-decoded-record)), and a stage emitting this
+layer **MUST NOT withhold content** from a stream whose offsets are not
+sequence-anchored, having no way to express the break (see
+[Discontinuity](#discontinuity-0x22)).
 
 - A **capture-sourced** record references a `capture` Source. It carries a
   `decoder_id` exactly when its stream has a decoder — which for a head-of-pipeline
@@ -2703,9 +2771,13 @@ readers in two tiers, split by what the violation poisons:
   *content* violates a MUST — it references an undeclared
   `session_id`/`pid`/`source_id`/`decoder_id`; an id is declared twice; a
   block appears where its kind is forbidden (an `origin` option on a
-  capture-sourced stream, a Discontinuity on a transport-layer one, a stream
+  capture-sourced stream, a Discontinuity on a transport-layer one, a `hole`-class
+  Undecoded region against a `capture` Source, a stream
   derived from another in the same file, a block referencing a session after its
-  [Session End](#session-end-0x12), a second Session End); the coverage
+  [Session End](#session-end-0x12), a second Session End); a participant is
+  malformed as a stream (its records resolve to **two layers**; it is
+  `zpf`-sourced and carries **neither** `origin` nor records with `spans`; it
+  carries `origin` *and* holds records with `spans`); the coverage
   guarantee fails — the reader MAY reject the file, or discard the smallest
   unit it can soundly isolate: the offending block, or the session it belongs
   to. It MUST NOT silently reinterpret or repair the data — no reordering
