@@ -80,6 +80,20 @@ and `content_type` on a transport-layer record. A fifth changes what an Undecode
 block against a `capture` Source *means*, which is the one place this release
 touches semantics rather than prose.
 
+**Two of the fixes are the same defect `0.14` was written to stop**, and the
+checklist step `0.14` added to stop it did not catch either. `0.15` changed the
+layer rule and left two paragraphs asserting the old one — and because neither
+paragraph *restates* the rule, a check that enumerates a rule's copies passes them
+clean: the layer rule is stated exactly once, so the enumeration reports one site,
+correct. What they do is assert its negation, in words sharing no phrase with it.
+So `check.py` now carries `RETIRED_CLAIMS`
+([#100](https://github.com/adamkjonsson/zipline/issues/100)): claims the model has
+retired, each with the release that retired it and the issue that found it,
+failing the build if one reappears and matching whitespace-collapsed so a
+line-wrapped copy is still caught. It is a **ratchet, not a detector** — it cannot
+find a stale claim nobody has noticed, only hold a retired one from returning
+quietly.
+
 ### Changed
 
 - **An Undecoded block's body is read by the referenced source's `kind`, and
