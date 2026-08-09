@@ -1928,14 +1928,19 @@ identified purely by `(source_id, session_id, participant_id,
 via the decoded records whose `spans` cite the same input stream — the same
 lookup it already does for provenance.
 
-A **transport-layer** stream, however it was produced, expresses its
-TCP gaps *implicitly*, as a discontinuity between consecutive records' sequence
-numbers — neither carries Undecoded blocks, because no decoder ran and the
-pass-through re-emits its input's records, gaps included. A decoder writer that
-needs those gaps made explicit reconstructs them from the sequence discontinuity
-via its software support, and emits Undecoded blocks in the decode stage's output
-file. (A pass-through preserving a *decoded* layer is the other case: its input
-already had Undecoded blocks, and it re-emits them unchanged.)
+**A transport-layer stream expresses its gaps in its offsets**, which is why it
+may not carry a [Discontinuity](#discontinuity-0x22) — that rule and its reasoning
+are stated there. It says nothing about *this* block, and the two are not
+alternatives: the offsets describe the shape of the output, an Undecoded block
+accounts for an **input**. A transport-layer stream may carry both, and a
+capture-sourced one commonly does, for the reason given at the top of this
+section.
+
+A decoder writer wanting a transport input's gaps as explicit blocks rather than
+as offset arithmetic reconstructs them from the sequence discontinuity via its
+software support, and emits Undecoded blocks in the decode stage's output file.
+(A pass-through preserving a *decoded* layer is the other case: its input already
+had Undecoded blocks, and it re-emits them unchanged.)
 
 ### Discontinuity (`0x22`)
 

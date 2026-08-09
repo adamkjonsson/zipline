@@ -114,6 +114,25 @@ touches semantics rather than prose.
   defect there that was not vector-side alone — the text disagreed with itself, so
   no reading could have produced a correct vector.
 
+### Fixed
+
+- **§Undecoded no longer says a transport-layer stream carries no Undecoded
+  blocks.** ([#89](https://github.com/adamkjonsson/zipline/issues/89)) The
+  section's closing paragraph still read "neither carries Undecoded blocks,
+  because no decoder ran" — contradicting the paragraph 60 lines above it that
+  legalised the case, and contradicting two of `0.15`'s own accept-tier vectors:
+  `undecoded-in-capture` (no decoder anywhere) and `sessionization-stage`
+  (`output_layer = transport`, carrying a `gap`). The sentence *was* edited in
+  `0.15`, for the retirement of "raw" and not for the rule that changed two
+  paragraphs earlier, which also left its "neither" with a single subject.
+
+  Rewritten as a **reference rather than a restatement**, the treatment `0.14`
+  gave #63 and #64: a transport-layer stream expresses its gaps in its offsets,
+  which is why it may not carry a Discontinuity — stated once, in that block's own
+  section — and that says nothing about Undecoded, because the offsets describe
+  the shape of the output while an Undecoded block accounts for an input. The two
+  are not alternatives and a transport stream may carry both.
+
 ### Clarified
 
 - **The single-file Discontinuity check is stated as a predicate, with the layer
