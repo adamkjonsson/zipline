@@ -116,6 +116,21 @@ touches semantics rather than prose.
 
 ### Fixed
 
+- **§Conceptual model no longer says a byte run carries no `decoder_id`.**
+  ([#91](https://github.com/adamkjonsson/zipline/issues/91)) It told the byte-run
+  from the decoder-imposed unit by "a single fact: whether it carries a
+  `decoder_id`", which `0.15` made false when it let reassembly be a decoder —
+  `sessionization-stage` ships records that carry a `decoder_id` and are byte
+  runs, and the `content_type` rule rests on exactly that. Worse placed than
+  [#89](https://github.com/adamkjonsson/zipline/issues/89): the correct two-axis
+  statement is three paragraphs below it, so the section contradicted itself
+  within one screen, in the first thing an implementer reads.
+
+  The distinction now follows from the stream's **layer** and points at the rule
+  four paragraphs down rather than restating a fact about `decoder_id`. The trap
+  is named outright, since it is the one a `0.14` reader carries in: a reassembly
+  record carries a `decoder_id` and is a byte run all the same.
+
 - **§Undecoded no longer says a transport-layer stream carries no Undecoded
   blocks.** ([#89](https://github.com/adamkjonsson/zipline/issues/89)) The
   section's closing paragraph still read "neither carries Undecoded blocks,

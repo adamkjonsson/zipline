@@ -82,10 +82,12 @@ participant in its session**: the single peer when `N = 2`, the whole room when
 the record has a sender and a direction, not a specific addressee.) A
 record may be either a *byte run* (transport-truthful; boundaries fall where
 reassembly produced them) or a *decoder-imposed unit* (boundaries set by an app
-decoder). Which one a record is, is told by a single fact: **whether it carries a
-`decoder_id`**. A byte run carries none; a decoder-imposed unit always does.
-What that unit *means* (HTTP message, TLS record, …) comes from the referenced
-decoder, not from any separate marker on the record.
+decoder). Which one a record is follows from its stream's **layer**, defined
+below: a transport-shaped stream holds byte runs, a decoded-shaped one holds
+units. It does **not** follow from whether the record carries a `decoder_id` —
+reassembly is a decoder too, so a reassembly record carries one and is a byte run
+all the same. What a unit *means* (HTTP message, TLS record, …) comes from the
+referenced decoder, not from any separate marker on the record.
 
 **Provenance and layer are independent axes, and this document keys on both.**
 Where a stream's bytes came from and what shape they have are different
