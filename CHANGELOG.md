@@ -130,6 +130,39 @@ quietly.
 
 ### Fixed
 
+- **`transform_params_digest`'s restriction is stated as placement, not as the
+  absence of a transform.**
+  ([#96](https://github.com/adamkjonsson/zipline/issues/96)) The option said "a
+  capture-sourced stream is not the output of a transform" — the exact claim
+  `0.15` spent an entry refuting when it legalised an Undecoded block on such a
+  stream, on the grounds that reassembly *is* a transform and a destructive one.
+  The outcome was right and the reason was not. A reassembler wanting its
+  configuration recorded declares itself as a Decoder and puts it in that
+  descriptor's `params_digest` (`reassembler-declared`); this option is for a
+  stage that produced records **without decoding** and so has no Decoder to hang
+  one on, which a capture-sourced file has none of.
+
+  Two smaller things in the same paragraph. "A file holding nothing else" now
+  reads "a file all of whose streams are capture-sourced". And `produced_by`'s
+  registry entry no longer implies derived files only — `proxy-decoded` sets it on
+  a file with no `zpf`-sourced stream, which was legal and unstated; every file
+  was produced by something, and only a file holding a `zpf`-sourced stream is
+  *required* to say so.
+
+- **"Raw" is gone from the worked examples.**
+  ([#99](https://github.com/adamkjonsson/zipline/issues/99)) `0.15` retired the
+  term but left `raw.zpf` as the predecessor's filename through the decoded-file
+  walkthrough and the annotator example — about a dozen uses, in prose explaining
+  what resolves where. A reader learning the model there learned "raw file →
+  decoded file", the implication the two-axis model exists to remove. It is
+  `transport.zpf` now, which names the layer rather than the retired axis.
+
+  Documentation only: no vector or fixture bytes change. `raw-minimal`,
+  `isolate-discontinuity-in-raw` and `chain/raw.zpf` keep their names, which are
+  identifiers that downstream harnesses reference — the churn would buy tidiness
+  and cost every port a migration. Ordinary English uses ("raw TCP segment", "raw
+  byte string") are untouched; those were never the retired term.
+
 - **Intra-file derivation gets a detection procedure, and stops resting on an
   optional field.** ([#93](https://github.com/adamkjonsson/zipline/issues/93))
   The prohibition was argued from the `digest` — "no file can contain its own
@@ -165,6 +198,20 @@ quietly.
   four paragraphs down rather than restating a fact about `decoder_id`. The trap
   is named outright, since it is the one a `0.14` reader carries in: a reassembly
   record carries a `decoder_id` and is a byte run all the same.
+
+- **`0.15`'s byte-compatibility claim is corrected where it stands.**
+  ([#97](https://github.com/adamkjonsson/zipline/issues/97)) That release said
+  "every existing `.zpf` re-reads correctly unmodified", which contradicts the
+  `0.x` rule the specification opens with: a conformant `0.15` reader MUST reject
+  `version_minor = 14`, so no existing file re-reads at all. The byte-level half
+  was right and is independently verified — the Decoder body stays 4 bytes and
+  `decoded = 0` lands on bytes a conformant `0.14` writer MUST have written 0.
+
+  The `0.15` entry is amended in place with a note saying what was wrong, rather
+  than rewritten to look correct: the property has operational content only for
+  files **re-stamped** to `0.15`, which is what happened to `reordered-decoded`.
+  The same clause is added to that release's headline, so a reader does not have
+  to reconcile the two claims themselves.
 
 - **§Undecoded no longer says a transport-layer stream carries no Undecoded
   blocks.** ([#89](https://github.com/adamkjonsson/zipline/issues/89)) The
@@ -271,7 +318,10 @@ quietly.
 ## [0.15] — 2026-08-08
 
 **A feature release, and the first that changes what already-written files
-mean.** `0.13` shipped the corrective third of
+mean** — which inside `0.x`, where a reader rejects a `version_minor` it does not
+implement, bites only on files **re-stamped** to `0.15` (clause added in `0.16`,
+[#97](https://github.com/adamkjonsson/zipline/issues/97)). `0.13` shipped the
+corrective third of
 [#41](https://github.com/adamkjonsson/zipline/issues/41); `0.15` finishes it —
 provenance and layer as independent axes, and sessionization as a decoder that
 declares the layer it emits — and closes the hole
@@ -401,10 +451,20 @@ changes is load-bearing somewhere in those four files.
   **No existing file changes — not one byte.** The field occupies two bytes that
   were `_reserved`, which a conformant writer MUST have written 0, and `decoded` is
   numbered **0**. So every Decoder Descriptor ever written already holds the value
-  that says what it always meant, and every existing `.zpf` re-reads correctly
-  unmodified. The JSON-Lines projection does change: a `decoder` line now always
-  carries `"output_layer"`. The ordering is chosen for exactly that reason and is
-  deliberately *not* parallel to Source `kind`.
+  that says what it always meant, and a `0.14` Decoder body **re-stamped to
+  `0.15`** is correct with no byte of it changing — which is what happened to
+  `reordered-decoded`. The JSON-Lines projection does change: a `decoder` line now
+  always carries `"output_layer"`. The ordering is chosen for exactly that reason
+  and is deliberately *not* parallel to Source `kind`.
+
+  > *Corrected in `0.16`
+  > ([#97](https://github.com/adamkjonsson/zipline/issues/97)).* As shipped, this
+  > entry said "every existing `.zpf` re-reads correctly unmodified", which
+  > contradicts the `0.x` rule this document opens with: a conformant `0.15`
+  > reader **MUST reject** `version_minor = 14`, so no existing file re-reads at
+  > all. The byte-level claim was right and is verified; the compatibility claim
+  > around it was not. Inside `0.x` the property has operational content only for
+  > files re-stamped to `0.15`.
 
   **A body field rather than an option, and this release is when that was
   affordable.** As an option it would have been *not safe to skip* — the second

@@ -292,6 +292,22 @@ Independent of everything above, and safe to land in any order once the rules ha
 stopped moving. #99 is the largest diff and the least risky: a filename through
 one worked example.
 
+***Done. Two judgement calls worth recording:***
+
+***#97 amends a shipped entry in place rather than rewriting it.*** The `0.15`
+section is dated and released, and Keep a Changelog would leave it alone. But the
+sentence is factually wrong about a normative rule, and leaving it correct-looking
+was not an option either. It now carries a marked note saying what was wrong and
+what holds instead — the same treatment this project gives a superseded design
+decision, and consistent with recording rather than hiding.
+
+***#99 stopped at the specification.*** The rename is `raw.zpf` → `transport.zpf`
+through the two worked examples. `chain/raw.zpf` keeps its name alongside
+`raw-minimal` and `isolate-discontinuity-in-raw`, and `vectors/README.md` now says
+so and says why, so the divergence between the specification's example and the
+fixture is a recorded decision rather than something a later reader has to
+rediscover.
+
 ### Phase 5 — changelog, conformance sweep, release
 
 Run #100 over the finished release. Draft `Changed` from the entries written in

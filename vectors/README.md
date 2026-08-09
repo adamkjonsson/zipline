@@ -267,6 +267,13 @@ cap.pcap ──[sessionize]──▶ raw.zpf ──[http decode]──▶ decode
                                                    [annotate]──▶ annotated.zpf
 ```
 
+`raw.zpf` is a **transport-layer** stream. Its filename predates `0.15` retiring
+"raw" as a normative term, and is kept for the same reason `raw-minimal`'s is —
+harnesses reference it. The specification's own worked example, which used to use
+the same name, calls it `transport.zpf` since `0.16`
+([#99](https://github.com/adamkjonsson/zipline/issues/99)); the two are separate
+artifacts and nothing requires them to agree.
+
 The byte budget is fixed and small enough to check by hand: session 7 carries
 `pid 0` with a 9-byte request, and `pid 1` with a 16-byte response head plus a
 4-byte tail the decoder cannot parse. So `decoded.zpf` covers `[0,9)` of pid 0

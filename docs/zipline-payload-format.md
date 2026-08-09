@@ -697,7 +697,7 @@ So decoding is a **stream → stream transform**, carried out file to file rathe
 than as an in-record layer:
 
 ```
-raw.zpf  ──[ http/1.1 decoder ]──▶  decoded.zpf
+transport.zpf  ──[ http/1.1 decoder ]──▶  decoded.zpf
 ```
 
 The output is one coherent boundary scheme (protocol messages); the input is
@@ -1037,13 +1037,13 @@ The input `.zpf` is a
 (logical stream offsets, not transport offsets) and a `content_type` saying what
 its bytes are (here the http decoder's own `dec:` types), and the undecodable
 tail is stated as an explicit `undecoded` block (referencing the input span whose
-bytes it could not parse — its ids read in `raw.zpf`'s namespace, coincidentally
+bytes it could not parse — its ids read in `transport.zpf`'s namespace, coincidentally
 equal to the output's here — not copying them):
 
 ```jsonl
 {"type":"file","format":"zipline-payload/0.16","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
-{"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
+{"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
 {"type":"decoder","decoder_id":1,"output_layer":"decoded","name":"http/1.1","version":"0.4",
  "params_digest":"sha256:00ab…"}
@@ -1073,15 +1073,15 @@ of their own, provenance is the participants' `origin`, and the Undecoded block
 rides along unchanged.
 
 Note the two Sources. `decoded.zpf` is the immediate input, which `origin` names
-and the records reference. `raw.zpf` is declared as well — not as a second input,
+and the records reference. `transport.zpf` is declared as well — not as a second input,
 but because the inherited `undecoded` line has always been a statement about
-`raw.zpf`'s stream, and it must keep resolving there. Numbering it as it was in
+`transport.zpf`'s stream, and it must keep resolving there. Numbering it as it was in
 the input lets the block be copied verbatim:
 
 ```jsonl
 {"type":"file","format":"zipline-payload/0.16","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
-{"type":"source","source_id":1,"kind":"zpf-input","uri":"raw.zpf",
+{"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"decoded.zpf",
  "digest":"sha256:44dd…"}
@@ -1105,31 +1105,31 @@ the input lets the block be copied verbatim:
 ```
 
 The `name` line is the whole point of the transform, and it is the only line the
-input did not already have. Had the same tool annotated `raw.zpf` instead, the
+input did not already have. Had the same tool annotated `transport.zpf` instead, the
 result would look like the merge's output: a pass-through preserving a
 *transport* layer, with byte-run records, no `decoder_id`s, and no Undecoded
 blocks.
 
 **Records and inherited Undecoded blocks resolve differently here, and the
-difference is easy to misread.** `raw.zpf` is declared in this file, which makes
+difference is easy to misread.** `transport.zpf` is declared in this file, which makes
 it look as though the records relate to it. They do not:
 
-- The **`undecoded` line names `raw.zpf` directly** and resolves in **one hop**.
-  Its offsets have always been in `raw.zpf`'s stream, which is why that Source
+- The **`undecoded` line names `transport.zpf` directly** and resolves in **one hop**.
+  Its offsets have always been in `transport.zpf`'s stream, which is why that Source
   must be declared at all.
 - A **record** resolves through the **immediate** input. It carries `source_id 2`
   (`decoded.zpf`) and no `spans`, so a consumer takes its participant's `origin`
   to the corresponding stream in `decoded.zpf`, computes the record's
   [positional range](#referencing-the-source-by-stream-offset) — offsets are
   preserved, so it is the same range there — and reads the `spans` on the record
-  it finds, which name `raw.zpf`. Two hops, and **this file alone cannot say
-  which raw bytes a record came from**.
+  it finds, which name `transport.zpf`. Two hops, and **this file alone cannot say
+  which transport bytes a record came from**.
 
 That asymmetry is deliberate. `spans` is the discriminator between a stage that
 *built* a record and one that *re-emitted* it (see [Conformance](#conformance)),
 so a pass-through cannot carry its input's spans forward without destroying the
 test that tells the two apart. The Undecoded block is exempt because it is not
-provenance for anything this file produced — it is a statement *about* `raw.zpf`,
+provenance for anything this file produced — it is a statement *about* `transport.zpf`,
 carried along intact.
 
 ### Worked example: a decrypted tunnel
@@ -1407,9 +1407,18 @@ applies one configuration to its whole output.
 
 A derived file may therefore carry this option **and** an inherited `decoder_id`
 whose descriptor has its own `params_digest`. That is not a duplicate: the two
-describe different stages, one upstream and one here. A capture-sourced stream is
-not the output of a transform, so a file holding nothing else MUST NOT carry the
-option.
+describe different stages, one upstream and one here.
+
+**A file all of whose streams are capture-sourced MUST NOT carry the option**, and
+the reason is placement rather than the absence of a transform. Reassembly *is* a
+transform — a destructive one, which is why such a file may declare what its
+reassembler discarded — but a reassembler that wants its configuration recorded
+declares itself as a Decoder and puts it in that descriptor's `params_digest`,
+which `reassembler-declared` demonstrates. This option is for a stage that
+produced records **without decoding** and so has no Decoder of its own to hang a
+digest on; a capture-sourced file has no such stage. The `produced_by` and
+`produced_at` options are different and are **not** restricted this way — every
+file was produced by something, and a capture-sourced file may name it.
 
 **File flags.** The `flags` option is a u16 bitfield of file-level assertions;
 when absent, every bit is 0. Bit `0x0001` (**SINGLE_CLOCK**) asserts that every
@@ -2278,7 +2287,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0001` | comment          | string     | any                      | free-text human note attached to the block                     |
 | `0x0010` | time_epoch       | i64        | File Header              | origin for record timestamps (Unix-epoch ticks); default 0     |
 | `0x0011` | creator          | string     | File Header              | tool + version that wrote the file                             |
-| `0x0012` | produced_by      | string     | File Header              | tool + version that ran the transform (derived files)          |
+| `0x0012` | produced_by      | string     | File Header              | tool + version that wrote this file. **Required** of a file holding a `zpf`-sourced stream; permitted on any file, including a capture-sourced one — a writer exists either way |
 | `0x0013` | produced_at      | i64        | File Header              | wall-clock build time of this artifact (Unix seconds)          |
 | `0x0014` | flags            | u16        | File Header              | file-level flags bitfield; bit `0x0001` = SINGLE_CLOCK (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0015` | transform_params_digest | string | File Header           | hash of the config of a transform that produced records **without decoding** — a filter, a reordering stage, a merge. A decode stage's config lives on its Decoder (`params_digest`); see [Layers](#layers-transport-and-decoded-live-in-separate-streams) |
@@ -2375,7 +2384,7 @@ numbers happen to coincide. In the [end-to-end decoded
 example](#a-decoded-file-end-to-end) the decoded file's own `session_id 7` and
 the `session_id 7` cited by its `spans` and its `undecoded` block are the *same
 number by coincidence*; resolving either means looking up session 7 in
-`raw.zpf`, not in the decoded file. (A writer drawing
+`transport.zpf`, not in the decoded file. (A writer drawing
 `session_id`s from a global sequence — see
 [Identifiers & ordering](#identifiers--ordering) — makes them literally identical,
 which is convenient but does not change that the span is read in the source's
