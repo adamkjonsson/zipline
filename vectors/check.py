@@ -32,6 +32,9 @@ What it does verify:
     defines. Multi-file fixtures are walked file by file, same as any vector
   * reject vectors actually contain the structural defect they claim
   * each accept vector's .jsonl parses and has one line per block
+  * every key in every .jsonl is one the JSONL mapping defines, spelled the way
+    it spells it -- a body field's or a registered option's canonical name,
+    except where the alias table gives it a shorter one
   * for chain/ specifically: every declared digest is the real SHA-256 of the
     sibling file it names, and decoded.zpf's spans plus Undecoded blocks cover
     exactly the streams raw.zpf actually contains
@@ -63,7 +66,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 16
+MAJOR, MINOR = 0, 17
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -243,6 +246,172 @@ RETIRED_CLAIMS = {
         "distinction is the layer, not the presence of the field",
     ),
 }
+
+
+# Keys the projection defines structurally. Neither the option registry nor a
+# block's body table can supply them, because they name no binary field and no
+# option: the block discriminator, the two escapes that carry unrecognised data
+# (see "Unrecognised data: the four escapes"), and the one member of a structured
+# option's entries that is not itself a field or option name.
+#
+# Declared, for the reason RULES is declared: derived from nothing, so a check
+# over the tables alone would report them as unknown keys. Everything else must
+# come from the specification.
+PROJECTION_KEYS = {
+    "type": "the block discriminator",
+    "options": "the unrecognised-option escape, an array of {id, value}",
+    "id": "an entry in that array",
+    "value": "an entry in that array",
+    "content": "the unrecognised-block escape, the whole content as base64",
+    "extent": "a member of an `input_extents` entry",
+}
+
+# Fields the mapping says have no JSON key at all: framing and on-disk-only.
+# `type`, `reserved` and `length` are frame fields and appear in no body table;
+# the version pair projects only through the `format` alias, so writing either
+# half as a key is the same defect as writing a binary name that has an alias.
+NOT_PROJECTED = {
+    "magic",
+    "end_magic",
+    "payload_len",
+    "_reserved",
+    "version_major",
+    "version_minor",
+}
+
+
+def spec_body_fields() -> set[str]:
+    """Return every block body field the specification names.
+
+    One table per block, found by its header row, in the same way spec_tables()
+    finds the registry -- a looser match picks up the value tables that follow
+    several of them.
+    """
+    fields: set[str] = set()
+    in_table = False
+    for line in read_text(SPEC).splitlines():
+        if line.startswith("| Field"):
+            in_table = True
+            continue
+        if in_table:
+            m = re.match(r"^\| `([^`]+)`", line)
+            if m:
+                fields.add(m.group(1))
+            elif not line.startswith("|"):
+                in_table = False
+    return fields
+
+
+def spec_aliases() -> tuple[set[str], dict[str, str]]:
+    """Return the brevity aliases: the JSON keys, and the binary names they replace.
+
+    A row is a *rename* only where its right column is a bare binary name (with
+    an optional parenthetical saying where it applies). The other rows describe a
+    *rendering* -- the version pair as one `format` string, a flags bit as a
+    boolean -- and rename nothing, so `flags` stays a legal key. Reading every
+    row as a rename would forbid it.
+    """
+    keys: set[str] = set()
+    renamed: dict[str, str] = {}
+    in_table = False
+    for line in read_text(SPEC).splitlines():
+        if line.startswith("| JSONL key"):
+            in_table = True
+            continue
+        if in_table:
+            if not line.startswith("|"):
+                break
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            m = re.match(r"^`([^`]+)`$", cells[0])
+            if not m:
+                continue  # the ---- separator row
+            keys.add(m.group(1))
+            rename = re.match(r"^`(\w+)`(?:\s*\([^)]*\))?$", cells[1])
+            if rename:
+                renamed[rename.group(1)] = m.group(1)
+    return keys, renamed
+
+
+def jsonl_keys(path: str) -> Iterator[tuple[int, str]]:
+    """Yield (line number, key) for every key in one projection, nested included."""
+
+    def walk_value(value: object) -> Iterator[str]:
+        if isinstance(value, dict):
+            for k, v in value.items():
+                yield k
+                yield from walk_value(v)
+        elif isinstance(value, list):
+            for v in value:
+                yield from walk_value(v)
+
+    for i, line in enumerate(read_text(path).splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # check_jsonl reports it; one defect, one message
+        for key in walk_value(obj):
+            yield i, key
+
+
+def check_jsonl_keys() -> list[str]:
+    """Every JSONL key must be one the mapping defines, spelled the way it says.
+
+    The mapping is one rule plus a short list of exceptions: a key is a body
+    field's or a registered option's canonical name, except where the alias table
+    gives it a shorter one -- and then the alias is the spelling, not a second
+    one. `flow_key` shipped in two fixtures against a table saying `key` (#104),
+    which no check could see, because both spellings name something real.
+
+    A key outside all of that is an "unknown key on a known block", which the
+    projection deliberately gives no escape: a converter must reject or drop it.
+    A fixture is the wrong place to find out.
+
+    Mechanical, and ground rule 2 holds: it compares the tree's key names against
+    the specification's own tables. Nothing here parses a block body or rules on
+    what a value means.
+    """
+    opts, _blocks = spec_tables()
+    alias_keys, renamed = spec_aliases()
+    body = spec_body_fields()
+    if not opts or not body or not alias_keys:
+        return ["jsonl keys: could not parse the specification's tables"]
+
+    allowed = (body | set(opts.values()) | alias_keys | set(PROJECTION_KEYS)) - NOT_PROJECTED
+    allowed -= set(renamed)
+
+    out, seen, files = [], set(), 0
+    for root, _dirs, names in sorted(os.walk(HERE)):
+        for fn in sorted(names):
+            if not fn.endswith(".jsonl"):
+                continue
+            files += 1
+            label = os.path.relpath(os.path.join(root, fn), HERE)
+            for i, key in jsonl_keys(os.path.join(root, fn)):
+                seen.add(key)
+                if key in allowed:
+                    continue
+                if key in renamed:
+                    out.append(
+                        f"{label}:{i}: key '{key}' is the binary name of a listed "
+                        f"brevity alias -- the projection spells it '{renamed[key]}'"
+                    )
+                elif key in NOT_PROJECTED:
+                    out.append(
+                        f"{label}:{i}: key '{key}' is framing or on-disk-only and has no JSON key"
+                    )
+                else:
+                    out.append(
+                        f"{label}:{i}: key '{key}' is neither a body field, a "
+                        f"registry option name, nor a listed alias"
+                    )
+    if not out:
+        print(
+            f"  jsonl keys: {len(seen)} distinct across {files} files -- "
+            f"every one a body field, an option or an alias"
+        )
+    return out
 
 
 def check_retired_claims() -> list[str]:
@@ -710,6 +879,7 @@ def main() -> int:
     failures += check_chain()
     failures += check_tunnel()
     failures += check_capability_coverage(manifest)
+    failures += check_jsonl_keys()
     failures += check_retired_claims()
 
     if failures:

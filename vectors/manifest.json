@@ -1,5 +1,5 @@
 {
-  "format": "zipline-payload/0.16",
+  "format": "zipline-payload/0.17",
   "vectors": [
     {
       "name": "raw-minimal",
@@ -1008,7 +1008,7 @@
       "options": [
         "0x0020"
       ],
-      "summary": "version_minor is 17 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.16 reader MUST reject it.",
+      "summary": "version_minor is 18 while major is 0. In the 0.x regime the pair (0, minor) is the compatibility identity, so a 0.17 reader MUST reject it.",
       "spec_section": "File Header -- version numbering",
       "expect": "Reject the file. This is the vector that distinguishes a 0.x-aware reader from one that assumes minors are always skippable.",
       "has_jsonl": false

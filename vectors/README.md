@@ -2,7 +2,7 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.16`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.17`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
@@ -98,6 +98,19 @@ block-type table out of the specification and requires each entry to appear in
 some vector, so **new syntax cannot ship uncovered**. Rules — permissions with no
 id to derive, like session fan-out — are declared in `check.py`'s `RULES` beside
 the vector exercising each.
+
+**Every `.jsonl` key is one the mapping defines**, and since `0.17` that is
+enforced too. The JSONL projection is one rule plus a short list of exceptions: a
+key is a body field's or a registered option's canonical name, except where the
+[brevity alias table](../docs/zipline-payload-format.md#jsonl--binary-field-mapping)
+gives it a shorter one. `check.py` builds that vocabulary from the specification's
+own tables and requires every key in every projection to be in it.
+
+`tunnel/inner.jsonl` and `tunnel/outer.jsonl` shipped `flow_key` where the table
+says `key` (#104), and nothing could see it: both spellings name something real,
+so neither a JSON parse nor a registry lookup notices. Two of that fixture's four
+members were out of a conformant reader's accept tier for a reason unrelated to
+what the fixture exists to test.
 
 It hard-fails rather than warning. Session fan-out shipped in `0.13` as a
 *Clarified* item with nothing exercising it, and the gap survived a whole release

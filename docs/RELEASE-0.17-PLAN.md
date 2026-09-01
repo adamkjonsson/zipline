@@ -13,10 +13,12 @@ what "done" means.*
 itself.** `0.16` was corrective, like `0.11`, `0.12` and `0.14`; `0.15` before it
 was the feature release that split provenance and layer. `0.17` takes the three
 findings `python-zipline`'s `0.3.0` planning pass raised against `0.16`, and — in
-the same release, because the same evidence produced them — answers the two
-questions that pass split out rather than leaving a producer to guess.
+the same release, because the same evidence produced them — answers the questions
+that pass split out rather than leaving a producer to guess. One of the two
+turned out to cost more than a paragraph and moved to `0.18`; see scope decision
+2.
 
-The evidence behind five of these eight is `kober`, a spec-driven decoder run over
+The evidence behind four of these seven is `kober`, a spec-driven decoder run over
 `zpfwire`-converted DNS and HTTP captures. It is the first implementation to
 decode at **field** granularity, which is why it is the first to find that a
 decoded record has no name, that a 4-bit field has no width, and that a nested
@@ -28,7 +30,7 @@ decomposition is a stream the document has no verdict on.
 | [#107](https://github.com/adamkjonsson/zipline/issues/107) | A decoded record has no name: the type or the name, not both | spec, **new option**, **blocking** |
 | [#109](https://github.com/adamkjonsson/zipline/issues/109) | The timestamp rule's "last source element in its span set" is read as per-run | docs |
 | [#105](https://github.com/adamkjonsson/zipline/issues/105) | A field narrower or wider than 8/16/32/64 has no `prim:` token | spec, **decided as a "no"** |
-| [#106](https://github.com/adamkjonsson/zipline/issues/106) | Is a field-granular decoded stream still a stream? | spec, **capped** |
+| [#106](https://github.com/adamkjonsson/zipline/issues/106) | Is a field-granular decoded stream still a stream? | spec, **moved to `0.18` at Phase 0** |
 | [#98](https://github.com/adamkjonsson/zipline/issues/98) | `skipped` does two unrelated jobs, and only one is a break | spec, **deferred from `0.16`** |
 | [#103](https://github.com/adamkjonsson/zipline/issues/103) | §Layers still says a derived file is never a mix | spec |
 | [#104](https://github.com/adamkjonsson/zipline/issues/104) | `tunnel/{inner,outer}.jsonl` spell the flow key `flow_key` | vectors, process |
@@ -68,7 +70,7 @@ or an omission, and widens in the dark. After this release the widening is
 *documented as forced*, which is a different thing from undocumented and
 convenient.
 
-### 2. #106 is in, capped to one reading and one paragraph
+### 2. #106 is capped to one reading and one paragraph — and the cap binds
 
 The temptation is to defer it: it is filed as a question, it blocks nobody, and
 one of its three readings — a Discontinuity at every seam of a decomposition —
@@ -95,6 +97,40 @@ the `A ≥ B` clause.
 if writing it turns up a case where decomposition and withholding are not
 separable — it moves to `0.18` and this release ships `label` without it. It
 blocks nobody, and #107 is compatible with all three readings by construction.
+
+***Settled in Phase 0: the cap is exercised, and #106 moves to `0.18`.*** Not for
+want of time, and not because decomposition and withholding turned out to be
+inseparable — they are separable. Because reading 1 is not the cheap reading the
+issue prices it as.
+
+The duty as written keys on whether **content ran continuously** from the end of
+one unit into the start of the next, not on whether content was withheld. For a
+parent and the child carved out of it, it did not: the child restarts *inside*
+what was just emitted. So reading 1 is not a clarification of the duty — it is a
+**carve-out from it**, and the sentence it needs is not "this pair joins" but
+"this pair is exempt".
+
+That has a consequence outside the nested case, which is what decides it. Today
+the absence of a Discontinuity between two adjacent decoded records means their
+payloads concatenate; a consumer may splice them. Exempting decomposition weakens
+that to "they concatenate **unless** one contains the other", and every consumer
+of every decoded stream — not only a field-granular one — would have to check
+`spans` for containment before splicing. Buying that with one paragraph, in the
+release that also ships the option making such files first-class, is the trade
+this cap exists to refuse.
+
+`0.18` gets it with the option that Phase 0 could not price and #106 does not
+list: an explicit **positive** marker for a decomposing stream, so that the
+absence of a block keeps meaning exactly what it means today. That is `0.18`'s
+question to weigh against readings 1, 2 and 3 — and it is close enough to #80's
+shape (a participant-level statement about what stored adjacency asserts) that
+the two should be read together, which scope decision 3 already schedules.
+
+**What ships without it:** `label` on the flat, non-overlapping case, which is
+what its vector exercises and what the four-`u32` evidence is. The **nested**
+case stays unjudged, and `python-zipline` should hear that in those words — a
+clean `ConformanceChecker` on 176 nested records is not the document agreeing
+with them.
 
 ### 3. #80 stays out, and this is the release that has to say why
 
@@ -140,6 +176,40 @@ touched, not while writing it:
 **Take the rename of the new one unless Phase 0 turns up a reason not to.** The
 mapping table's whole job is that a JSON key names one thing.
 
+***Settled in Phase 0: the new option is `role`, at `0x0092`.*** Phase 0 turned up
+a reason not to rename — and then a sharper reason to rename anyway.
+
+**The reason not to:** the registry already reuses names across `applies to`
+scopes, and more than once. There are **three** `reason` options (`0x00A0`
+Undecoded, `0x00C0` Session End, `0x00D1` Discontinuity) and **two** `flags`
+(`0x0014` File Header, `0x0052` Session). Two `label`s would not be a new shape
+in this registry; it is the shape the registry already has, and the JSONL mapping
+resolves it the same way it resolves the others — the block's `type` selects
+which option a key means.
+
+**The reason to rename anyway** is what those reuses have in common: each reused
+name means *the same kind of thing* in every place it appears. A `reason` is
+always why-this-is-so; `flags` is always a bitfield of this block's own flags. The
+name is reused where the **concept** is one and the **scope** differs, which is
+precisely why reusing it costs a reader nothing.
+
+`label` fails that test in the one way that matters. `0x00B0` is documented as a
+**human** name — "map participant ids → human labels", "the human name being
+assigned". A reader who transfers that reading onto a Record lands on "a human
+note about this record", which is `comment` — the exact confusion #107 exists to
+end, arrived at by way of the precedent rather than in spite of it.
+
+`role` transfers correctly, and by the same precedent: `tcp_role` already means
+"which of a known set of parts does this thing play", scoped to the protocol that
+defines the set. `role` is that at the decoder's scope — *what part does this
+record play, in the vocabulary its decoder documents* — which is #107's own
+sentence. `0x0092` is free and sits beside `content_type` at `0x0091`, where the
+issue suggested it.
+
+Considered and not taken: `field`, which would prejudge #106 by asserting the
+granularity the option is deliberately silent about; and `name`, already
+overloaded by the decoder `name` that scopes this very option.
+
 ### 5. #98 is in, and it is the cut line
 
 `0.16` filed it rather than fixing it, for a stated reason: it is a design change
@@ -151,7 +221,7 @@ is that `filtered-decoded` stops being an *example* of #78's duty and becomes a
 positive test of it.
 
 It is also the item to cut if the release runs long. It is the only one of the
-eight that neither blocks an implementation, corrects a contradiction, nor
+seven that neither blocks an implementation, corrects a contradiction, nor
 belongs to the field-granularity story the rest of the release tells.
 
 ### 6. #43, #44 and #45 stay unscheduled
@@ -170,8 +240,9 @@ label-name decision (Phase 0) ───▶ #107's registry entry and mapping row
 
 #104's check.py assertion ───▶ #104's vector fix    guard first, then the fix
 
-#106 ─┬─▶ #107 ships regardless (compatible with all three readings)
-      └─▶ #80, which is re-decided in 0.18 whichever way this lands
+#106 ── moved to 0.18 at Phase 0, and read there beside #80: both are
+        statements about what stored adjacency asserts. #107 ships
+        regardless, being compatible with all three readings
 
 #105 ── same section as #107; one edit to §Typing a decoded record
 
@@ -215,6 +286,57 @@ the correct state — the rule exists and the vectors do not yet match it — bu
 means green is not a usable signal for Phases 1–3, whose verification is instead
 "the failure list holds exactly those two entries and nothing else". `0.14` and
 `0.16` both ran this way; `0.16` was the first to say so up front, and it worked.
+
+***Done. Three things Phase 0 found, and one of them changes the release's
+shape.***
+
+***The cap on #106 was exercised, and the release is seven items rather than
+eight.*** Reading 1 is a carve-out from the duty rather than a clarification of
+it, and it would weaken what an *absent* Discontinuity means for every decoded
+stream. Reasoning in scope decision 2; the issue is on `0.18`.
+
+***`reject-unknown-minor` rolled on its own, 17 → 18, not 16 → 17 as this
+document said.*** The vector stamps `MINOR + 1` — one above whatever version it
+ships against — so the release rolling 16 → 17 rolls the vector 17 → 18. Read
+back out of the stamped bytes rather than trusting the constant: `version_minor
+= 18` at file offset `0x000E`, every other vector at `17`. Coverage baseline
+before anything else moved: 37 options, 12 blocks, 22 rules, all exercised, 53
+vectors consistent.
+
+***The JSONL-key assertion could not be "every key is an option name or an
+alias", which is what #104 proposed and what this plan repeated.*** Written that
+way it passes clean on the defect: `flow_key` **is** a registry option name, so a
+membership test over the registry sees nothing wrong. The rule the mapping
+actually states is one rule plus exceptions — a key is a body field's or a
+registered option's canonical name, *except* where the alias table gives it a
+shorter one — and "except" is the load-bearing word: where an alias exists, the
+alias is the spelling and the binary name is **not** a legal key. So the check
+subtracts the aliased binary names from the vocabulary it builds, and that
+subtraction is the whole of what catches #104.
+
+Which rows are renames has to be read off the table rather than assumed. Three of
+its six rows describe a **rendering** — the version pair as one `format` string,
+a flags bit as a boolean — and rename nothing; reading them as renames would
+forbid `flags`, a legal key on two blocks. The check takes a row as a rename only
+where its right column is a bare binary name with an optional parenthetical,
+which is exactly the three that are (`ts`, `pid`, `key`).
+
+It reproduces the defect from the tree as it stands — three sites,
+`tunnel/inner.jsonl:4` and `:9` and `tunnel/outer.jsonl:3`, and nothing else —
+which is what Phase 0 required of it. Six keys the projection defines
+structurally (`type`, the two escapes' `options`/`id`/`value`/`content`, and
+`extent` inside an `input_extents` entry) are declared rather than derived, for
+the reason `RULES` is declared: they name no binary field and no option, so no
+table can supply them.
+
+***One dangling promise, found by reading the paragraph the assertion enforces.***
+The alias table's preamble said "one further key, deprecated, is listed below"
+and nothing was listed below. The key was `time_units`, removed outright in
+`0.10`; the parenthetical has been pointing at nothing for seven releases.
+Deleted. A first draft replaced it with a sentence spelling out that the alias is
+the only legal spelling — reverted, because that sentence is a **copy** of the
+mapping's own "except" rule, and a copy that can drift is what `RETIRED_CLAIMS`
+exists to catch. The checker's failure message is where that guidance belongs.
 
 ### Phase 1 — #108, the offset floor
 
@@ -260,22 +382,20 @@ The advisory treatment is what keeps the option cheap: dropping the label loses
 nothing, the record stays fully readable, and there is no unit a reader could
 soundly discard.
 
-### Phase 3 — #106 and #98, the two duty questions
+### Phase 3 — #98, the duty question that stayed
 
-- **#106** — the paragraph at §Discontinuity saying overlap-by-decomposition is
-  not a non-join, the sentence at the predicate saying what its `A ≥ B` silence
-  does and does not mean, and an accept vector: a nested decomposition, parent
-  and children citing the same input bytes, no Discontinuity, conformant. That
-  vector is the whole point — a permission with no vector is how #66 happened.
+#106 moved to `0.18` at Phase 0, so this phase is one item.
+
 - **#98** — `dropped` as a canonical bytes-class word beside `skipped`, its
   registry note, and the checker rule it makes possible: a bytes-class `dropped`
   region lying between the input regions of two adjacent units with no
   Discontinuity is a violation. `filtered-decoded` moves onto `dropped` and
   becomes a positive test; an isolate vector carries the violation.
 
-Neither closes the general case and nothing can — the duty rests on producer
-knowledge. #98 closes the case #78 was opened for, and #106 closes the case this
-release's own new option creates.
+It does not close the general case and nothing can — the duty rests on producer
+knowledge. #98 closes the case #78 was opened for. The case this release's own
+new option creates — a nested decomposition — is what #106 will close, and until
+it does, that shape is unjudged rather than blessed.
 
 ### Phase 4 — the corrections (#103, #104, #109)
 
@@ -329,9 +449,9 @@ Draft `Changed` from the entry written in Phase 1, not from memory.
 
 ## Definition of done
 
-- [ ] All eight in-scope issues closed, each in the commit that finishes it —
-      except #106 if Phase 0 exercises its cap, which is closed as moved with the
-      reason recorded.
+- [ ] ~~All eight in-scope issues~~ **Seven**, each closed in the commit that
+      finishes it. #106 moved to `0.18` at Phase 0 with the reason recorded —
+      the cap in scope decision 2, exercised.
 - [ ] A record's `seq_start` below the stream origin is a stated violation with a
       stated reader behaviour, the handshake's `isn + 1` is a MUST, and a negative
       vector carries the shape found in the wild.
@@ -340,9 +460,9 @@ Draft `Changed` from the entry written in Phase 1, not from memory.
       things.
 - [ ] The document says whether a sub-byte field's width is recoverable, so that
       a producer can tell a decision from an omission.
-- [ ] Either the seam duty's answer for a decomposing stage is stated with a
-      vector, or #106 is scheduled with its cap recorded — and in the first case
-      the predicate says what its untested pairs mean.
+- [x] Either the seam duty's answer for a decomposing stage is stated with a
+      vector, or #106 is scheduled with its cap recorded. *The second: on the
+      `0.18` milestone, to be read beside #80.*
 - [ ] `skipped` and `dropped` are two canonical words with two jobs, and
       `filtered-decoded` is a positive test rather than an example.
 - [ ] No statement in the specification implies that a derived file is exactly one
@@ -352,9 +472,9 @@ Draft `Changed` from the entry written in Phase 1, not from memory.
       brevity alias, enforced by `check.py` rather than by review.
 - [ ] The timestamp rule is per unit at both ends of a unit, in words that cannot
       be read as per run.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.17`. *Estimated
-      57 entries — 53 today plus #108, #107, #106 and #98 — and the estimate has
-      run low twice.*
+- [ ] `python3 vectors/check.py` green; every vector stamps `0.17`. ~~*Estimated
+      57 entries — 53 today plus #108, #107, #106 and #98*~~ — **56** with #106
+      moved, and the estimate has run low twice.
 - [ ] `CHANGELOG.md` `[0.17]` complete, with a `Changed` section covering #108 and
       an `Added` section covering #107 and #98.
 - [ ] `#80`'s re-decision is on the `0.18` milestone with the deadline argument

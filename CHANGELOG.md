@@ -60,6 +60,30 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.17] — unreleased
+
+**A feature release, and the one that decides what a decoded record may say
+about itself.** `0.16` was corrective; `0.17` takes the three findings
+`python-zipline`'s `0.3.0` planning pass raised against it and, in the same
+release, answers a question that pass split out rather than leaving a producer
+to guess. Four of its seven items rest on one piece of evidence: the
+first implementation to decode real captures at **field** granularity, which is
+why it is the first to find that a decoded record has no name, that a sub-byte
+field's width is unrecoverable, and that a nested decomposition is a stream this
+document has no verdict on — that last one is `0.18`'s to answer, and why is
+recorded with the rest. Scope and reasoning in
+[docs/RELEASE-0.17-PLAN.md](docs/RELEASE-0.17-PLAN.md); every item is an issue on
+the [`0.17` milestone](https://github.com/adamkjonsson/zipline/milestone/5).
+
+**Expect a small *Changed* section and a large *Clarified* one.** Exactly one
+entry tightens conformance — a record whose `seq_start` precedes its stream's
+origin — and files in the wild carry one, which is how it was found. The rest
+add a name a decoded record can carry, a canonical word for content that was
+removed rather than withheld, and answers to questions the document had left
+silent.
+
+---
+
 ## [0.16] — 2026-08-09
 
 **A corrective release, like `0.11`, `0.12` and `0.14`.** `0.15` replaced the
@@ -1361,6 +1385,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.17]: https://github.com/adamkjonsson/zipline/compare/v0.16...HEAD
 [0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15
 [0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14
