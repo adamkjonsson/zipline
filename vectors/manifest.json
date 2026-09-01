@@ -730,7 +730,7 @@
         "0x00D0",
         "0x00D1"
       ],
-      "summary": "A filter over a decoded HTTP file: it keeps two records and drops the one between them. Like a reordering stage it is a decode stage with an INHERITED decoder, so its own config lives in transform_params_digest. The dropped region is Undecoded with reason = skipped -- the same value a discarded byte-order mark carries, which is exactly the ambiguity #78 raised: skipped does two unrelated jobs, and only one of them is a break. What tells them apart is not the reason but whether the survivors still join, and here they do not, so the seam carries a Discontinuity. Its width is DECLARED as 40: a filter knows the length of what it dropped, and an absent width would claim that length is unknowable. Declaring it keeps the output offset space aligned with the input's -- record C sits at [100,160) in both -- which does not make this a pass-through, since the spans-versus-origin test is what decides that and these are spans.",
+      "summary": "A filter over a decoded HTTP file: it keeps two records and drops the one between them. Like a reordering stage it is a decode stage with an INHERITED decoder, so its own config lives in transform_params_digest. The removed region is Undecoded with reason = dropped, which since 0.17 is the word for content that was removed rather than withheld -- and it is what makes this a POSITIVE test rather than an example. Before it this region carried `skipped`, the same value a discarded byte-order mark carries, so this file and undecoded-skipped were byte-shaped alike and disagreed about whether a block was owed with nothing in either to tell them apart. The reason word still does not DECIDE the duty -- the test is whether the survivors join -- but here the producer has said outright that it removed content, so a checker can raise the missing block. Its width is DECLARED as 40: a filter knows the length of what it dropped, and an absent width would claim that length is unknowable. Declaring it keeps the output offset space aligned with the input's -- record C sits at [100,160) in both -- which does not make this a pass-through, since the spans-versus-origin test is what decides that and these are spans.",
       "spec_section": "Discontinuity (0x22) -- what a producer owes the block",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
@@ -1250,7 +1250,7 @@
         "0x00A0",
         "0x00C1"
       ],
-      "summary": "Finding 3 as ONE file: a decode stage whose own output breaks, saying nothing. It is discontinuity-unknown-width with the Discontinuity deleted and nothing else changed -- the same tls-records stage, the same lost TCP segment, the same complete coverage. Every other rule is satisfied, which is the point: the coverage guarantee is about the INPUT and has no opinion on the output, so a checker that only accumulates ranges passes this file. This is the defect 0.13 shipped the block for and 0.15 finally forbids -- under 0.14 this file was conformant. Unlike splice/ it needs no second file, because a hole-class Undecoded region lying between the input regions of two adjacent output units is the one shape of the duty that is decidable from a single file.",
+      "summary": "Finding 3 as ONE file: a decode stage whose own output breaks, saying nothing. It is discontinuity-unknown-width with the Discontinuity deleted and nothing else changed -- the same tls-records stage, the same lost TCP segment, the same complete coverage. Every other rule is satisfied, which is the point: the coverage guarantee is about the INPUT and has no opinion on the output, so a checker that only accumulates ranges passes this file. This is the defect 0.13 shipped the block for and 0.15 finally forbids -- under 0.14 this file was conformant. Unlike splice/ it needs no second file, because a hole-class Undecoded region lying between the input regions of two adjacent output units is one of the two shapes of the duty decidable from a single file -- the other being a bytes-class region carrying reason = dropped, which isolate-unmarked-drop carries.",
       "spec_section": "Discontinuity (0x22) -- what a producer owes the block",
       "expect": "ISOLATE or reject. The Undecoded region is hole-class -- no bytes existed at [100,139) anywhere upstream -- and it lies between the input regions of two output units this file stores as neighbours. No content can have been carried forward across it, so the two records cannot join and the file MUST say so. Contrast undecoded-skipped, where a discarded BOM sits between two units that DO join and no block is owed; the reason word is not what decides it. Note a reader needs only this file: that is what makes this the checkable core rather than splice/'s two-file case.",
       "has_jsonl": false
@@ -1440,6 +1440,44 @@
       "spec_section": "Referencing the source by stream offset -- the origin is a floor",
       "expect": "ACCEPT, and REPORT. Place the syn record at zero width at the stream's current position -- offset 0 here -- so the participant's extent is 12, the length of its data. A reader that instead computes (1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent to match; that is the defect this vector exists to catch, and it is the number a real converter produced. Rejecting or isolating this file is NOT conformant: the advisory strength is stated in Referencing the source by stream offset. The record is not deleted -- its timestamp, flags and payload stay readable, and only its PLACEMENT is refused.",
       "has_jsonl": true
+    },
+    {
+      "name": "isolate-unmarked-drop",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 640,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x41"
+      ],
+      "options": [
+        "0x0001",
+        "0x0012",
+        "0x0013",
+        "0x0015",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00A0",
+        "0x00C1"
+      ],
+      "summary": "#78's own title case, as ONE file, and the half of it that could not be tested until 0.17. It is filtered-decoded with the Discontinuity deleted and nothing else changed: the same filter, the same removed record, the same complete coverage. The survivors do not join -- 40 bytes of content went missing between them -- and the file says nothing, so a downstream stage may splice records A and C into one run that never existed. WHY THIS IS NOW CHECKABLE: the region carries reason = dropped, the word 0.17 adds for content that was REMOVED rather than withheld. Before it this file wrote `skipped`, which is also what a discarded byte-order mark writes -- and a BOM owes no block, because it withholds no content. The two cases were byte-shaped alike, so a checker raising this one would have raised undecoded-skipped too and been wrong. The hole-class twin of this vector is isolate-unmarked-break, which was decidable all along because no bytes existed there at all.",
+      "spec_section": "Discontinuity (0x22) -- what a producer owes the block",
+      "expect": "ISOLATE or reject. The Undecoded region carries reason = dropped and lies between the input regions of two output units this file stores as neighbours -- A ends at 60, C starts at 100 -- so the producer has stated that content of this stream was removed between two records it presents as joining. A Discontinuity is required and there is none. Contrast undecoded-skipped, where the withheld region is a BOM carrying no content of the stream and no block is owed: the reason word does not decide the duty, but `dropped` is the producer's own statement that it does bind here. Note a reader needs only this file, as with isolate-unmarked-break.",
+      "has_jsonl": false
     },
     {
       "name": "isolate-unknown-output-layer",

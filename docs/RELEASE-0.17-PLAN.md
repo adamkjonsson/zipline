@@ -462,6 +462,35 @@ knowledge. #98 closes the case #78 was opened for. The case this release's own
 new option creates — a nested decomposition — is what #106 will close, and until
 it does, that shape is unjudged rather than blessed.
 
+***Done. One vocabulary word, and it moved a rule from one decidable case to
+two.***
+
+***The plan called it "the checker rule it makes possible" and sited it wrongly.***
+`dropped` does not add a rule beside the duty; it completes the **existing**
+single-file predicate, which had exactly one decidable case and now has two. That
+is a smaller change than the plan implies and a better-placed one: the predicate
+is where a checker looks, the class test and the word test are one condition, and
+a checker testing only the class would pass this rule's own title case while one
+testing only the word would miss the lost segment. Both clauses now sit in the
+one quoted predicate.
+
+***The retired claim was in three places again, and only one of them is text the
+ratchet scans.*** "One case is decidable from a single file" is now false;
+`RETIRED_CLAIMS` holds it and reproduces it against the pre-edit specification.
+The other two copies were `isolate-unmarked-break`'s summary in `build.py` and its
+row in `vectors/README.md` — the same pair Phase 1 hit. Two phases, same shape, so
+it is worth saying plainly: **a claim retired in the specification is worth
+grepping for in `vectors/` before the phase closes**, because the ratchet cannot
+see it there.
+
+***Verified with a one-off reader over the bytes, not the projections.***
+Ground rule 2 keeps the predicate out of `check.py`, and the two isolate vectors
+have no `.jsonl` to read, so the check walked the blocks: `filtered-decoded` fires
+and finds its block, `isolate-unmarked-drop` fires and finds none,
+`isolate-unmarked-break` is unchanged, and `undecoded-skipped` and `decoded-basic`
+stay silent. That silence is the half worth checking — a rule that raised the BOM
+case would be worse than no rule.
+
 ### Phase 4 — the corrections (#103, #104, #109)
 
 Independent of everything above, and safe in any order once the rules have stopped

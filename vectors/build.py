@@ -2142,11 +2142,15 @@ vector(
     "A filter over a decoded HTTP file: it keeps two records and drops the one "
     "between them. Like a reordering stage it is a decode stage with an "
     "INHERITED decoder, so its own config lives in transform_params_digest. "
-    "The dropped region is Undecoded with reason = skipped -- the same value a "
-    "discarded byte-order mark carries, which is exactly the ambiguity #78 "
-    "raised: skipped does two unrelated jobs, and only one of them is a break. "
-    "What tells them apart is not the reason but whether the survivors still "
-    "join, and here they do not, so the seam carries a Discontinuity. Its "
+    "The removed region is Undecoded with reason = dropped, which since 0.17 is "
+    "the word for content that was removed rather than withheld -- and it is "
+    "what makes this a POSITIVE test rather than an example. Before it this "
+    "region carried `skipped`, the same value a discarded byte-order mark "
+    "carries, so this file and undecoded-skipped were byte-shaped alike and "
+    "disagreed about whether a block was owed with nothing in either to tell "
+    "them apart. The reason word still does not DECIDE the duty -- the test is "
+    "whether the survivors join -- but here the producer has said outright that "
+    "it removed content, so a checker can raise the missing block. Its "
     "width is DECLARED as 40: a filter knows the length of what it dropped, "
     "and an absent width would claim that length is unknowable. Declaring it "
     "keeps the output offset space aligned with the input's -- record C sits "
@@ -2178,7 +2182,7 @@ vector(
             ],
         ),
         undecoded(
-            1, 1, 7, 60, 100, [o_reason("skipped"), o_decoder_id(1), o_comment("filtered out")]
+            1, 1, 7, 60, 100, [o_reason("dropped"), o_decoder_id(1), o_comment("filtered out")]
         ),
         discontinuity(7, 1, [o_width(40), o_disc_reason("records-dropped")]),
         record(
@@ -2239,7 +2243,7 @@ vector(
             "pid": 1,
             "off_start": 60,
             "off_end": 100,
-            "reason": "skipped",
+            "reason": "dropped",
             "decoder_id": 1,
             "comment": "filtered out",
         },
@@ -3146,8 +3150,9 @@ vector(
     "This is the defect 0.13 shipped the block for and 0.15 finally forbids -- "
     "under 0.14 this file was conformant. Unlike splice/ it needs no second "
     "file, because a hole-class Undecoded region lying between the input "
-    "regions of two adjacent output units is the one shape of the duty that is "
-    "decidable from a single file.",
+    "regions of two adjacent output units is one of the two shapes of the duty "
+    "decidable from a single file -- the other being a bytes-class region "
+    "carrying reason = dropped, which isolate-unmarked-drop carries.",
     "Discontinuity (0x22) -- what a producer owes the block",
     [
         file_header(options=[o_produced_by("zpf-tls 0.2"), o_produced_at(1719580000)]),
@@ -3547,6 +3552,82 @@ vector(
     "PLACEMENT is refused.",
     violations=1,
     advisory=True,
+)
+
+vector(
+    "isolate-unmarked-drop",
+    "isolate",
+    "#78's own title case, as ONE file, and the half of it that could not be "
+    "tested until 0.17. It is filtered-decoded with the Discontinuity deleted "
+    "and nothing else changed: the same filter, the same removed record, the "
+    "same complete coverage. The survivors do not join -- 40 bytes of content "
+    "went missing between them -- and the file says nothing, so a downstream "
+    "stage may splice records A and C into one run that never existed. "
+    "WHY THIS IS NOW CHECKABLE: the region carries reason = dropped, the word "
+    "0.17 adds for content that was REMOVED rather than withheld. Before it "
+    "this file wrote `skipped`, which is also what a discarded byte-order mark "
+    "writes -- and a BOM owes no block, because it withholds no content. The "
+    "two cases were byte-shaped alike, so a checker raising this one would "
+    "have raised undecoded-skipped too and been wrong. The hole-class twin of "
+    "this vector is isolate-unmarked-break, which was decidable all along "
+    "because no bytes existed there at all.",
+    "Discontinuity (0x22) -- what a producer owes the block",
+    [
+        file_header(
+            options=[
+                o_produced_by("zpf-filter 0.1"),
+                o_produced_at(1719560000),
+                o_transform_params_digest("sha256:3b9a"),
+            ]
+        ),
+        source(1, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+        record(
+            7,
+            1,
+            1,
+            1000,
+            b"A" * 60,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 1, 7, 0, 60)]),
+                o_content_type("dec:request"),
+            ],
+        ),
+        # The removal is declared, and honestly: reason = dropped says content
+        # of the stream went with it. THE VIOLATION is what does not follow --
+        # no Discontinuity, so records A and C are simply adjacent at 60.
+        undecoded(
+            1, 1, 7, 60, 100, [o_reason("dropped"), o_decoder_id(1), o_comment("filtered out")]
+        ),
+        record(
+            7,
+            1,
+            1,
+            1200,
+            b"C" * 60,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 1, 7, 100, 160)]),
+                o_content_type("dec:response"),
+            ],
+        ),
+        session_end(7, [o_input_extents([(1, 1, 7, 160)])]),
+        end_block(),
+    ],
+    expect="ISOLATE or reject. The Undecoded region carries reason = dropped "
+    "and lies between the input regions of two output units this file "
+    "stores as neighbours -- A ends at 60, C starts at 100 -- so the "
+    "producer has stated that content of this stream was removed between "
+    "two records it presents as joining. A Discontinuity is required and "
+    "there is none. Contrast undecoded-skipped, where the withheld region "
+    "is a BOM carrying no content of the stream and no block is owed: the "
+    "reason word does not decide the duty, but `dropped` is the "
+    "producer's own statement that it does bind here. Note a reader needs "
+    "only this file, as with isolate-unmarked-break.",
+    violations=1,
 )
 
 vector(

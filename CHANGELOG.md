@@ -124,6 +124,36 @@ silent.
 
   New vector: `decoded-field-roles`.
 
+- **`dropped`: a canonical bytes-class `reason` for content that was removed
+  rather than withheld.**
+  ([#98](https://github.com/adamkjonsson/zipline/issues/98)) `skipped` was doing
+  two unrelated jobs and only one of them is a break. A decoder discarding a
+  byte-order mark and a filter dropping a record wrote the same word, and the two
+  files were byte-shaped alike: `undecoded-skipped` owes no Discontinuity, because
+  a BOM withholds no content of the stream and the text either side joins;
+  `filtered-decoded` requires one, because a whole record went missing. Nothing in
+  either file distinguished them.
+
+  `dropped` says content of the stream was removed. The **word still does not
+  decide the duty** — the test remains whether the survivors join, and only the
+  producer knows — but it is the producer's own statement that they do not, which
+  is what makes the case checkable.
+
+  So the single-file predicate now has **two** decidable cases rather than one: a
+  `hole`-class region between the input regions of two adjacent output units, and
+  a bytes-class region carrying `reason = dropped`. `undecodable` decides nothing,
+  since a failed parse says nothing about whether content went with it, and
+  `skipped` decides nothing by design. The `hole` half has had a vector since
+  `0.15`; the other half could not be tested at all while one word did both jobs.
+
+  `filtered-decoded` moves onto `dropped` and stops being an *example* of #78's
+  duty — the predicate now fires on it and finds the block. Its negative twin,
+  `isolate-unmarked-drop`, is that file with the Discontinuity deleted and nothing
+  else changed. The canonical vocabulary is now five words, not four; the
+  vocabulary itself was already open, so no existing file becomes invalid and a
+  producer that wrote `dropped` before this release was already saying the right
+  thing.
+
 ### Clarified
 
 - **`prim:` types storage, not the wire: a sub-byte field's width is not

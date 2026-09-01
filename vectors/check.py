@@ -210,6 +210,14 @@ RULES = {
         "vocabulary scoped to its decoder's name, as a dec: token is, and asserts no tree",
         "decoded-field-roles",
     ),
+    # 0.17's second decidable case. The hole-class one has had a vector since
+    # 0.15 (isolate-unmarked-break); this is the bytes-class half, which could
+    # not be tested at all while one word did both jobs.
+    "dropped-is-a-break": (
+        "a bytes-class `dropped` region between two adjacent units requires a "
+        "Discontinuity; `skipped` does not, and the word is the producer's statement",
+        "isolate-unmarked-drop",
+    ),
     # 0.17's floor. Like 0.16's four, a MUST the syntax already let you break --
     # and the second MUST NOT whose violation is advisory rather than isolating.
     "seq-start-origin-floor": (
@@ -260,6 +268,13 @@ RETIRED_CLAIMS = {
         108,
         "the origin floor is a second advisory MUST NOT; the document gives that "
         "strength wherever it can say exactly what a reader does instead",
+    ),
+    "only-holes-are-decidable": (
+        r"One case is decidable from a single file",
+        "0.17",
+        98,
+        "two cases are: a hole-class region between two adjacent units, and a "
+        "bytes-class region carrying reason = dropped",
     ),
     "byte-run-has-no-decoder-id": (
         r"A byte run carries none",
