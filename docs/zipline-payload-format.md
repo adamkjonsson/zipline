@@ -738,9 +738,11 @@ Decoding is also not the *only* file → file stage: **all derivation is
 file → file**. The [merge](#sequenced-files-precomputed-order) is a
 *byte-preserving* transform — it re-emits its inputs' byte runs as
 **pass-through records** rather than imposing new units — and it uses the same
-`zpf-input` Source / `digest` / provenance machinery. A derived file is
-therefore exactly one of a *decode stage* or a *pass-through transform*, never a
-mix (see [Conformance](#conformance)).
+`zpf-input` Source / `digest` / provenance machinery. A derived **stream** is
+therefore exactly one of a *decode stage*'s output or a *pass-through
+transform*'s, never half of each — and the discriminator binds **per
+participant**, so one file MAY hold a created stream beside a preserved one (see
+[Conformance](#conformance), which states the test).
 
 **Transforms that change no data.** A tool that only *adds* something — a
 [label](#nameidentity-resolution-0x30), a `comment`, a session-level annotation —
@@ -1264,7 +1266,7 @@ hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
  "version":"1.1","params_digest":"sha256:2f60"}
 
-{"type":"session","session_id":10,"proto":"tcp","flow_key":"10.8.0.2:44300 -> 10.8.0.9:80"}
+{"type":"session","session_id":10,"proto":"tcp","key":"10.8.0.2:44300 -> 10.8.0.9:80"}
 {"type":"participant","session_id":10,"pid":0,"endpoint":["10.8.0.2:44300"],"isn":1000}
 {"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1000,"payload":"…40 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":0,"off_end":60}],
@@ -1275,7 +1277,7 @@ hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 {"type":"session_end","session_id":10,
  "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
 
-{"type":"session","session_id":11,"proto":"tcp","flow_key":"10.8.0.2:44301 -> 10.8.0.9:53"}
+{"type":"session","session_id":11,"proto":"tcp","key":"10.8.0.2:44301 -> 10.8.0.9:53"}
 {"type":"participant","session_id":11,"pid":0,"endpoint":["10.8.0.2:44301"],"isn":5000}
 {"type":"record","session_id":11,"sender_pid":0,"source_id":1,"ts":1100,"payload":"…20 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":60,"off_end":100}],
@@ -1858,9 +1860,25 @@ stamp could). Consequences:
   propagates down the chain and is always ultimately the packet time of the
   contributing capture.
 
+**The span set is per unit, not per run.** Where a stage emits **several** units
+from one reassembled run — a decoder producing one record per protocol message,
+which is the ordinary case rather than the exception — each unit's `timestamp` is
+the completion time of the last input record contributing to **that unit**. A
+run's own completion time is its *last* unit's; stamping the earlier ones with it
+claims they completed after they did. Three messages arriving in three packets
+carry three different stamps, though reassembly offered them as one run.
+
+This is what makes ordering decoded records by `timestamp` *reproduce* the input's
+timeline rather than approximate it — the property hint-less decoded output leans
+on. Under the per-run reading every unit in a run collapses to one key, ordering
+within the run becomes whatever the merge's tie-break does, and that property
+quietly stops holding.
+
 The first-packet time is recoverable from capture-source `spans` provenance; a
 writer that wants it without full provenance MAY add an optional `ts_first` TLV.
-The canonical `timestamp` is always the completion (last-packet) time.
+It is **per unit in the same way**: the time of the *first* input record
+contributing to that unit, not to the run it was carved from. The canonical
+`timestamp` is always the completion (last-packet) time.
 
 `timestamp` is **signed** (i64, as are `ts_first`, `time_epoch`, and
 `produced_at`): the configurable `time_epoch` origin admits times *before* it

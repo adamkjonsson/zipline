@@ -4313,7 +4313,7 @@ def build_tunnel() -> None:
                 "type": "session",
                 "session_id": 1,
                 "proto": "udp",
-                "flow_key": "198.51.100.7:51820 -> 203.0.113.9:51820",
+                "key": "198.51.100.7:51820 -> 203.0.113.9:51820",
             },
             {"type": "participant", "session_id": 1, "pid": 0, "endpoint": ["198.51.100.7:51820"]},
             *(
@@ -4578,7 +4578,7 @@ def build_tunnel() -> None:
                 "type": "session",
                 "session_id": 10,
                 "proto": "tcp",
-                "flow_key": "10.8.0.2:44300 -> 10.8.0.9:80",
+                "key": "10.8.0.2:44300 -> 10.8.0.9:80",
             },
             {
                 "type": "participant",
@@ -4622,7 +4622,7 @@ def build_tunnel() -> None:
                 "type": "session",
                 "session_id": 11,
                 "proto": "tcp",
-                "flow_key": "10.8.0.2:44301 -> 10.8.0.9:53",
+                "key": "10.8.0.2:44301 -> 10.8.0.9:53",
             },
             {
                 "type": "participant",

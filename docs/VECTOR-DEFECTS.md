@@ -4,10 +4,10 @@ A running list of vectors found to be wrong, and what fixed them. Defects 1 and 
 were found while porting `0.9 → 0.12` against `vectors/` at tag `v0.12` (commit
 `c291afc`); the list is appended to as later reviews reach further into the tree.
 
-**Status: 3 defects, affecting 4 vectors and the vectors README. All fixed.**
+**Status: 4 defects, affecting 6 vectors and the vectors README. All fixed.**
 Defect 2 by commit `a52c717` and defect 1 by the `0.13` version-stamp commit,
-which regenerated the three vectors; defect 3 in `0.16`. The file is kept as the
-record of what was wrong and why.
+which regenerated the three vectors; defect 3 in `0.16`; defect 4 in `0.17`. The
+file is kept as the record of what was wrong and why.
 
 Ground rule 2 says a vector that disagrees with the specification is the thing
 that is wrong, and defects 1 and 2 were vector-side under it. **Defect 3 is the
@@ -197,6 +197,57 @@ writes `session_id = 0`, its offsets are correct as they stand, and its `.hex`
 annotates them as capture byte offsets rather than "in the input's namespace" —
 `build.py` had printed that label unconditionally, which was wrong on the one
 vector where a reader most needed it right.
+
+---
+
+## Defect 4 — `tunnel/{inner,outer}.jsonl` spell the flow key `flow_key`, where the mapping says `key`
+
+**→ FIXED in `0.17`** ([#104](https://github.com/adamkjonsson/zipline/issues/104)),
+vector-side under ground rule 2, together with the two example lines in the
+specification's tunnel walkthrough.
+
+Found by `python-zipline` at Phase 1 of its `0.14` → `0.16` port, when the version
+gate moved and `tunnel/outer.zpf` became readable for the first time.
+
+**Affected:** `tunnel/inner.jsonl` and `tunnel/outer.jsonl` (both `accept`).
+Consequence: **fails a correct reader**. A reader following the mapping table
+emits `"key"` and cannot round-trip either file, so two of that fixture's four
+members were out of the accept tier for a reason unrelated to what the fixture
+exists to test — the layer rule, the fan-out, the declined crossing.
+
+### What was wrong
+
+Both files spelled the Session flow key with its **binary** name:
+
+```jsonl
+{"type":"session","session_id":1,"proto":"udp","flow_key":"198.51.100.7:51820 -> 203.0.113.9:51820"}
+```
+
+The JSONL ↔ binary mapping lists that option among the **brevity aliases** — the
+keys whose JSON name deliberately differs from the binary name — as `key`, and
+the parenthesis under the table exists precisely to stop a reader assuming the
+JSON name always matches the option name.
+
+The suite disagreed with itself: `descriptive-metadata.jsonl` shipped `"key"` at
+the same version. So did the specification — `"key"` at the IRC example,
+`"flow_key"` at the two tunnel walkthrough lines. Walkthrough and fixture are both
+new in `0.15`, and both read as having been written from the option registry
+rather than from the alias table.
+
+### The fix
+
+The two `.jsonl` files and the two walkthrough lines now write `"key"`. The
+mapping table is unchanged — it was unambiguous, and one vector already obeyed it.
+
+**The guard matters more than the fix.** `check.py` now builds the projection's
+key vocabulary out of the specification's own tables and requires every key in
+every `.jsonl` to be in it. The obvious form of that check would not have caught
+this: `flow_key` **is** a registry option name, so a membership test over the
+registry passes it. What the mapping states is one rule plus exceptions — a key is
+a body field's or a registered option's canonical name, *except* where the alias
+table gives it a shorter one — so the check subtracts the aliased binary names,
+and that subtraction is the whole of what sees the defect. It reproduced all three
+sites from the tree before the fix landed.
 
 ---
 

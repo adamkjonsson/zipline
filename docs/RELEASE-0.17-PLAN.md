@@ -519,6 +519,34 @@ makes it worth a release slot is that the misreading is already in the reference
 implementation's own documentation in three places, including the worked example
 every decoder written from it inherits.
 
+***Done, and the red window closed where the plan said it would.*** `check.py` is
+green: 56 vectors, 38 options, 12 blocks, 25 rules, 5 retired claims, and the
+JSONL-key assertion reports 56 distinct keys across 42 files with nothing outside
+the vocabulary the specification defines.
+
+***#104 was two fixes, and the second is the one that lasts.*** The spellings were
+a two-line change. The guard was not: written the way the issue proposed — every
+key is a registry option name or a listed alias — it passes clean on the defect,
+because `flow_key` **is** a registry option name. Phase 0 found that and rebuilt
+the check around the mapping's *except* clause instead. Recorded as defect 4 in
+`VECTOR-DEFECTS.md`, with the working and non-working forms of the check written
+down, since the next person to add a mechanical guard will reach for the obvious
+one first.
+
+***#103's fix is one sentence; entering the claim is the durable half.*** It
+survived two releases because it is not a restatement of the rule it contradicts
+and shares no phrase with it — the exact case `RETIRED_CLAIMS` exists for and the
+`0.14` grep could not see. Entered with the wording as it stood, verified to
+reproduce against the pre-edit text.
+
+***#109 grew one paragraph beyond the issue's proposal, and it is the paragraph
+that says why it matters.*** The issue asked for a sentence pinning the per-unit
+reading; the reason the misreading is expensive — ordering by `timestamp` stops
+*reproducing* the input's timeline and starts approximating it, because every unit
+in a run collapses to one key — was in the issue's body and not in its proposal.
+A rule stated without the property it protects is the kind of rule a later editor
+trims.
+
 ### Phase 5 — changelog, conformance sweep, release
 
 Run `RETIRED_CLAIMS` and the new JSONL-key assertion over the finished release.

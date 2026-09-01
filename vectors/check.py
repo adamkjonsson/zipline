@@ -269,6 +269,13 @@ RETIRED_CLAIMS = {
         "the origin floor is a second advisory MUST NOT; the document gives that "
         "strength wherever it can say exactly what a reader does instead",
     ),
+    "derived-file-is-not-a-mix": (
+        r"exactly one of a \*decode stage\* or a \*pass-through transform\*, never a\s+mix",
+        "0.17",
+        103,
+        "the discriminator binds per participant, not per file; one file MAY hold a "
+        "created stream beside a preserved one (mixed-derivation)",
+    ),
     "only-holes-are-decidable": (
         r"One case is decidable from a single file",
         "0.17",

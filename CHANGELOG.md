@@ -175,6 +175,29 @@ silent.
   `prim:` checkable. A producer could not previously tell the omission from the
   decision, and picked the widening in the dark.
 
+- **A decoded record's `timestamp` is per unit, not per reassembled run.**
+  ([#109](https://github.com/adamkjonsson/zipline/issues/109)) The rule already
+  said "the last source element **in its span set**", which is per unit; the
+  reading that kept appearing was per *run*, stamping every message a decoder
+  carves out of one contiguous run with the run's completion time. Three 4-byte
+  messages arriving in three packets then carry one stamp instead of three, and
+  the two earlier ones claim to have completed after they did.
+
+  It matters beyond display. The rule is what makes ordering decoded records by
+  `timestamp` *reproduce* the input's timeline rather than approximate it — the
+  property hint-less decoded output leans on. Under the per-run reading every unit
+  in a run collapses to one key, and ordering within it becomes whatever the
+  merge's tie-break does.
+
+  Stated explicitly now, with `ts_first` given the same treatment at the other end
+  of a unit: the first input record contributing to **that unit**, not to the run
+  it was carved from. No file changes and no vector can test it — a per-run stamp
+  and a per-unit one are both well-formed, and only the input's timeline tells
+  them apart — which is why it was worth stating rather than leaving to the
+  reader. The misreading had reached three places in the reference
+  implementation's own documentation, including the worked example every decoder
+  written from it inherits.
+
 ### Changed
 
 - **The stream origin is a floor: a record's `seq_start` MUST NOT precede it.**
@@ -220,6 +243,42 @@ silent.
 
   New vector: `advisory-seq-start-below-origin`, carrying the shape found in the
   wild.
+
+### Fixed
+
+- **§Layers no longer says a derived file is never a mix.**
+  ([#103](https://github.com/adamkjonsson/zipline/issues/103)) `0.15` made the
+  created-or-preserved discriminator bind **per participant**, so one file may
+  decode one session while passing another through — which is what
+  `mixed-derivation` is an accept-tier vector for. §Layers kept `0.14`'s
+  conclusion that a derived *file* is exactly one of the two, never a mix,
+  correct when written and false since. The section is where an implementer goes
+  to learn what a derived file *is*, and the practical cost was a classifier built
+  the wrong way round: one file-wide kind, locked and short-circuited, which then
+  fails `mixed-derivation` with no way to tell which of the two statements was
+  normative.
+
+  The paragraph now states derivation per **stream** and says the discriminator is
+  per participant, pointing at §Conformance for the test. The retired claim is in
+  `RETIRED_CLAIMS`, so it cannot return a third time — it survived two releases
+  because it is not a *restatement* of the rule it contradicts and shares no
+  phrase with it, which is exactly what the `0.14` grep could not see.
+
+- **`tunnel/{inner,outer}.jsonl` spell the flow key `key`, as the mapping says.**
+  ([#104](https://github.com/adamkjonsson/zipline/issues/104)) Both fixtures wrote
+  the binary name `flow_key` where the brevity-alias table gives the JSON name
+  `key`, so a reader following the table could not round-trip either — two of that
+  fixture's four members out of the accept tier for a reason unrelated to what it
+  exists to test. The specification's own tunnel walkthrough carried the same two
+  spellings and is corrected with them. Vector-side under ground rule 2: the
+  mapping was unambiguous and `descriptive-metadata.jsonl` already obeyed it.
+  Recorded as defect 4 in [docs/VECTOR-DEFECTS.md](docs/VECTOR-DEFECTS.md).
+
+  **`check.py` now enforces the mapping**, which is the part that outlives the
+  fix: it builds the projection's key vocabulary from the specification's own
+  tables and requires every key in every `.jsonl` to be in it. The obvious form of
+  that check does not work — `flow_key` *is* a registry option name — so it
+  subtracts the aliased binary names, which is the whole of what sees this defect.
 
 ---
 
