@@ -2,7 +2,7 @@
 
 Small `.zpf` files, each with its expected JSON-Lines projection or its expected
 failure, for testing an implementation of the
-[Zipline Payload Format](../docs/zipline-payload-format.md) `0.16`.
+[Zipline Payload Format](../docs/zipline-payload-format.md) `0.17`.
 
 Run `python3 check.py` to verify the tree is self-consistent.
 Run `python3 build.py` to regenerate it.
@@ -99,6 +99,19 @@ some vector, so **new syntax cannot ship uncovered**. Rules — permissions with
 id to derive, like session fan-out — are declared in `check.py`'s `RULES` beside
 the vector exercising each.
 
+**Every `.jsonl` key is one the mapping defines**, and since `0.17` that is
+enforced too. The JSONL projection is one rule plus a short list of exceptions: a
+key is a body field's or a registered option's canonical name, except where the
+[brevity alias table](../docs/zipline-payload-format.md#jsonl--binary-field-mapping)
+gives it a shorter one. `check.py` builds that vocabulary from the specification's
+own tables and requires every key in every projection to be in it.
+
+`tunnel/inner.jsonl` and `tunnel/outer.jsonl` shipped `flow_key` where the table
+says `key` (#104), and nothing could see it: both spellings name something real,
+so neither a JSON parse nor a registry lookup notices. Two of that fixture's four
+members were out of a conformant reader's accept tier for a reason unrelated to
+what the fixture exists to test.
+
 It hard-fails rather than warning. Session fan-out shipped in `0.13` as a
 *Clarified* item with nothing exercising it, and the gap survived a whole release
 until an implementation reviewed it; an advisory line is exactly what gets
@@ -181,7 +194,7 @@ naive implementation most often fails by treating extension as corruption.
 | `proxy-decoded` | **Case G — a decoded stream with no predecessor file.** A TLS-terminating proxy: records carry `decoder_id` and reference a **`capture`** Source, with no `spans` and no `origin`, because the bytes their units were computed from were never written to a `.zpf`. The cell the two axes were conflated to forbid. The coverage guarantee does not apply — it is scoped per *input* participant stream and there is none — and the Decoder is a claim of **identity, not a recipe**: nothing can regenerate this output. |
 | `undecoded-in-capture` | An Undecoded block in a **capture-sourced** file, its offsets byte offsets into the capture. The stage is the *reassembler*, declaring an overlapping retransmit it discarded. Barred before `0.15` on the assumption that capture-sourced meant no transform had run — and reassembly is a transform. The stream stays at the transport layer, so its gap is expressed by sequence numbers and it still may not carry a Discontinuity. |
 | `mixed-derivation` | One derived file with a **decode-stage stream beside a pass-through stream**: session 10 carries `spans`, session 11's participant carries `origin`. Before `0.15` a derived file was exactly one of the two, which left a tool with a decoder for one protocol and not the other two dishonest options — pass everything through, or mark the second stream entirely Undecoded, **dropping those bytes from the output**. The replacement rule binds per participant, not per file. |
-| `filtered-decoded` | A **filter**: it keeps two decoded records and drops the one between them. The dropped region is Undecoded `skipped` — the same value a discarded BOM carries, which is the ambiguity [#78](https://github.com/adamkjonsson/zipline/issues/78) raised. What tells the two apart is not the reason but whether the survivors still **join**, and here they do not, so the seam carries a Discontinuity. Its `width` is **declared** as 40: a filter knows the length of what it dropped, and an absent width would claim otherwise. Declaring it keeps the output offset space aligned with the input's. |
+| `filtered-decoded` | A **filter**: it keeps two decoded records and drops the one between them. The removed region is Undecoded **`dropped`** — the word `0.17` adds for content that was removed rather than withheld, and what turns this file from an *example* of [#78](https://github.com/adamkjonsson/zipline/issues/78)'s duty into a positive test of it. Until then it wrote `skipped`, the same value a discarded BOM carries. What tells the two apart is still not the reason but whether the survivors **join**, and here they do not, so the seam carries a Discontinuity. Its `width` is **declared** as 40: a filter knows the length of what it dropped, and an absent width would claim otherwise. Declaring it keeps the output offset space aligned with the input's. |
 
 ### Reject tier
 
@@ -206,7 +219,7 @@ naive implementation most often fails by treating extension as corruption.
 | `isolate-extents-disagree` | Two output sessions drawing on one input stream, declaring **different** extents for it — 200 and 160. An input stream has one length, and under fan-out every consuming session declares that whole length, so the two Session Ends contradict each other. Only reachable once fan-out is legal. |
 | `isolate-discontinuity-in-raw` | A Discontinuity block on a **transport-layer** stream. That offset space is already hole-inclusive, so the sequence numbers and a declared `width` are two accounts of the same missing bytes, with no rule for which to believe. Since `0.15` the bar is the layer rather than the file kind; the vector's name keeps the retired word because harnesses reference it. |
 | `isolate-self-derived` | **Intra-file derivation**: `spans` naming a `zpf-input` Source whose `uri` is this very file, with the stream they claim to come from sitting beside them. Only reachable once mixed-state files are legal, which is what makes it worth pinning. A stage reads its input and then writes its output, so a file cannot be among its own inputs. **Detection is partial by design** — the only signal is the `uri`, so a reader handed a *path* may compare and isolate, while one handed a file object cannot and is not obliged to. |
-| `isolate-unmarked-break` | **Finding 3 as one file**, and the vector this suite most needed: a decode stage whose own output breaks, saying nothing. It is `discontinuity-unknown-width` with the Discontinuity deleted and nothing else changed. Every other rule is satisfied — coverage is *complete*, because the guarantee is about the input and has no opinion on the output — so a checker that only accumulates ranges passes it. **Under `0.14` this file was conformant.** Unlike `splice/` it needs no second file: a `hole`-class Undecoded region between the input regions of two adjacent output units is the one shape of the duty decidable from a single file. |
+| `isolate-unmarked-break` | **Finding 3 as one file**, and the vector this suite most needed: a decode stage whose own output breaks, saying nothing. It is `discontinuity-unknown-width` with the Discontinuity deleted and nothing else changed. Every other rule is satisfied — coverage is *complete*, because the guarantee is about the input and has no opinion on the output — so a checker that only accumulates ranges passes it. **Under `0.14` this file was conformant.** Unlike `splice/` it needs no second file: a `hole`-class Undecoded region between the input regions of two adjacent output units is one of the two shapes of the duty decidable from a single file. Its twin is `isolate-unmarked-drop`. |
 
 ### Added in `0.16`
 
@@ -218,7 +231,19 @@ first **advisory** vector.
 | `isolate-mixed-layer-participant` | *(isolate)* **One participant, two layers**: a record whose decoder declares `decoded` beside one whose decoder declares `transport`. Every other rule holds — both decoders declared, coverage complete — which is the point: under `0.15` this file broke nothing stated. The layer fixes the stream's **offset space**, and this stream has two incompatible answers for it. Mixing *decoders* per record stays legal; mixing the **layers they declare**, within one participant, does not. |
 | `isolate-unbound-zpf-stream` | *(isolate)* A `zpf`-sourced participant that is **neither created nor preserved**: no `origin`, and its record carries no `spans`. Nothing says which stream inside the input its bytes came from. The two ways of producing a `zpf`-sourced stream are exhaustive and `0.15` never said so — the discriminator forbade being *both* and was silent on being *neither*, which is how `isolate-self-derived` shipped carrying this as a second, unintended violation. |
 | `isolate-hole-against-capture` | *(isolate)* A **`hole`**-class Undecoded region against a `capture` Source. `undecoded-in-capture` is the conformant shape of the same block; this is the class it may not use, because the reassembled stream is a transport layer whose hole-inclusive offsets already carry the gap. Two accounts of the same missing bytes with no rule for which to believe — the contradiction that also bars a Discontinuity there. |
-| `advisory-transport-content-type` | *(accept, **advisory**)* A transport-layer record carrying `content_type: prim:bytes`. A **MUST NOT**, and the only one whose violation is advisory: dropping the label loses nothing and the record stays readable, so there is no unit a reader could soundly discard. **Rejecting or isolating this file is not conformant.** A reader ignores the label, reports it, and MUST NOT conclude the stream is decoded — which would put every later offset in that participant in the wrong space. |
+| `advisory-transport-content-type` | *(accept, **advisory**)* A transport-layer record carrying `content_type: prim:bytes`. A **MUST NOT** whose violation is advisory: dropping the label loses nothing and the record stays readable, so there is no unit a reader could soundly discard. **Rejecting or isolating this file is not conformant.** A reader ignores the label, reports it, and MUST NOT conclude the stream is decoded — which would put every later offset in that participant in the wrong space. |
+
+### Added in `0.17`
+
+The suite's first vector for an option that names a record rather than typing it,
+a second **advisory** one, and the vector that turns `filtered-decoded` from an
+example of the origination duty into a positive test of it.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `isolate-unmarked-drop` | *(isolate)* **#78's own title case as one file**, and the half of it that could not be tested until `0.17`: a filter that removes a record, declares the region `dropped`, and emits **no** Discontinuity — so a downstream stage may splice the survivors into a run that never existed. It is `filtered-decoded` with the block deleted and nothing else changed. Before `dropped` this region wrote `skipped`, which is also what a discarded BOM writes, and a BOM owes no block — so the two cases were byte-shaped alike and a checker raising this one would have raised `undecoded-skipped` too, wrongly. The `hole`-class twin is `isolate-unmarked-break`. |
+| `decoded-field-roles` | *(accept)* One record per protocol **field**, each named by `0.17`'s `role`. Four `u32` fields, contiguous and non-overlapping, each typed `prim:u32` — so before `role` this file could carry the **type** or the **name** and not both: `prim:u32` leaves a reader able to read every value and unable to tell which field is the checksum, `dec:checksum` names it and discards the normative typing. The two options are independent and every record here carries both. `role` is read in the namespace of the decoder `name` that `decoder_id` resolves to, exactly as a `dec:` token is. |
+| `advisory-seq-start-below-origin` | *(accept, **advisory**)* A zero-length `syn` record at the `isn` rather than `isn + 1`. The origin is a **floor** since `0.17`, and this is the shape found in the wild — worth seeing because the arithmetic does not report the error, it absorbs it: `seq_start − (isn + 1)` is modular, so the record lands at offset 4294967295 and the stream measures 4294967295 bytes where its data ends at 12. Advisory, because the damage is bounded and the document can say exactly what to do instead — the record is **unplaceable**, a zero-width range at the stream's current position, covering no byte and contributing nothing to the extent. **Rejecting or isolating this file is not conformant.** |
 
 ## Multi-file fixtures
 

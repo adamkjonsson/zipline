@@ -60,6 +60,228 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.17] — 2026-09-01
+
+**A feature release, and the one that decides what a decoded record may say
+about itself.** `0.16` was corrective; `0.17` takes the three findings
+`python-zipline`'s `0.3.0` planning pass raised against it and, in the same
+release, answers a question that pass split out rather than leaving a producer
+to guess. Four of its seven items rest on one piece of evidence: the
+first implementation to decode real captures at **field** granularity, which is
+why it is the first to find that a decoded record has no name, that a sub-byte
+field's width is unrecoverable, and that a nested decomposition is a stream this
+document has no verdict on — that last one is `0.18`'s to answer, and why is
+recorded with the rest. Scope and reasoning in
+[docs/RELEASE-0.17-PLAN.md](docs/RELEASE-0.17-PLAN.md); every item is an issue on
+the [`0.17` milestone](https://github.com/adamkjonsson/zipline/milestone/5).
+
+**Expect a small *Changed* section and a large *Clarified* one.** Exactly one
+entry tightens conformance — a record whose `seq_start` precedes its stream's
+origin — and files in the wild carry one, which is how it was found. The rest
+add a name a decoded record can carry, a canonical word for content that was
+removed rather than withheld, and answers to questions the document had left
+silent.
+
+### Added
+
+- **`role` (`0x0092`): a decoded record may carry its type and its name at once.**
+  ([#107](https://github.com/adamkjonsson/zipline/issues/107)) A string on Record,
+  decoded layer only, advisory, saying what the record **is** within a vocabulary
+  scoped to its decoder's `name`.
+
+  The gap it closes is total rather than partial. A decoder emitting one record
+  per protocol field produces four `u32` fields as four records typed
+  `prim:u32` — contiguous, non-overlapping, `payload_len` binding exactly, a
+  conformant and well-formed decoded stream in which **nothing says which one is
+  the checksum**. Position is not a contract: an optional field the decoder later
+  emits renumbers everything after it. The first implementation to decode at field
+  granularity reported 176 of 176 DNS records distinguishable only by `comment`.
+
+  The two spellings available before this each destroyed the other's information.
+  `content_type = prim:u32` leaves the value readable by a generic reader and says
+  nothing about which field it is; `dec:checksum` names the field, discards the
+  normative typing, and makes `dec:checksum` and `dec:seq_no` two distinct types
+  that happen both to be `u32`; `comment` is defined as a free-text human note, so
+  a consumer parsing it relies on something this document says means nothing.
+  `role` is **independent** of `content_type` — a record may carry both, either or
+  neither — which is the whole of the change.
+
+  Three constraints keep it small, each borrowed from a mechanism already here.
+  It is **name-scoped to the record's decoder**, exactly as a `dec:` token is, so
+  two decoders may both use `checksum` without colliding — and that declared scope
+  is what makes it more than a `comment`, not any ability to verify the meaning,
+  which this format has for neither. It is **opaque to the format**: it names a
+  record and asserts no tree, so `dns.flags.qr` is a convention this document does
+  not parse. And it is **advisory, decoded layer only** — the transport-layer bar
+  and its advisory strength are now stated once for both labels, since the reason
+  is the same for each: a reassembly record's boundaries are wherever the
+  reassembler chunked, so a label on it asserts a unit where there is a slice.
+
+  Whether a **nested** decomposition is a well-formed decoded stream at all is a
+  separate question, deliberately not answered here
+  ([#106](https://github.com/adamkjonsson/zipline/issues/106)); `role` is
+  compatible with any answer to it, which is why it did not wait for one.
+
+  New vector: `decoded-field-roles`.
+
+- **`dropped`: a canonical bytes-class `reason` for content that was removed
+  rather than withheld.**
+  ([#98](https://github.com/adamkjonsson/zipline/issues/98)) `skipped` was doing
+  two unrelated jobs and only one of them is a break. A decoder discarding a
+  byte-order mark and a filter dropping a record wrote the same word, and the two
+  files were byte-shaped alike: `undecoded-skipped` owes no Discontinuity, because
+  a BOM withholds no content of the stream and the text either side joins;
+  `filtered-decoded` requires one, because a whole record went missing. Nothing in
+  either file distinguished them.
+
+  `dropped` says content of the stream was removed. The **word still does not
+  decide the duty** — the test remains whether the survivors join, and only the
+  producer knows — but it is the producer's own statement that they do not, which
+  is what makes the case checkable.
+
+  So the single-file predicate now has **two** decidable cases rather than one: a
+  `hole`-class region between the input regions of two adjacent output units, and
+  a bytes-class region carrying `reason = dropped`. `undecodable` decides nothing,
+  since a failed parse says nothing about whether content went with it, and
+  `skipped` decides nothing by design. The `hole` half has had a vector since
+  `0.15`; the other half could not be tested at all while one word did both jobs.
+
+  `filtered-decoded` moves onto `dropped` and stops being an *example* of #78's
+  duty — the predicate now fires on it and finds the block. Its negative twin,
+  `isolate-unmarked-drop`, is that file with the Discontinuity deleted and nothing
+  else changed. The canonical vocabulary is now five words, not four; the
+  vocabulary itself was already open, so no existing file becomes invalid and a
+  producer that wrote `dropped` before this release was already saying the right
+  thing.
+
+### Clarified
+
+- **`prim:` types storage, not the wire: a sub-byte field's width is not
+  recoverable, and that is a decision.**
+  ([#105](https://github.com/adamkjonsson/zipline/issues/105)) A field narrower or
+  wider than 8/16/32/64 — a 4-bit flag, a 24-bit length — has no `prim:` token,
+  and the conformant move is to widen to the smallest that holds it. The value
+  stays readable by any reader, which is what the width-binding rule is for; the
+  true width is gone, and `spans` do not recover it, since a sub-byte field names
+  the byte containing it and several fields name the same byte.
+
+  Nothing about a file changes. What changes is that the silence is now a stated
+  answer: `prim:` types **storage**, exactly as it already does for byte order,
+  where a big-endian wire value is byte-swapped by the emitting decoder and never
+  by the reader. A field's true width is the decoder's business, read from what
+  the decoder documents. The alternatives are recorded as weighed and declined — a
+  significant-bits option would add a field no reader can act on, and opening the
+  vocabulary would break the width-binding rule that is the only thing making
+  `prim:` checkable. A producer could not previously tell the omission from the
+  decision, and picked the widening in the dark.
+
+- **A decoded record's `timestamp` is per unit, not per reassembled run.**
+  ([#109](https://github.com/adamkjonsson/zipline/issues/109)) The rule already
+  said "the last source element **in its span set**", which is per unit; the
+  reading that kept appearing was per *run*, stamping every message a decoder
+  carves out of one contiguous run with the run's completion time. Three 4-byte
+  messages arriving in three packets then carry one stamp instead of three, and
+  the two earlier ones claim to have completed after they did.
+
+  It matters beyond display. The rule is what makes ordering decoded records by
+  `timestamp` *reproduce* the input's timeline rather than approximate it — the
+  property hint-less decoded output leans on. Under the per-run reading every unit
+  in a run collapses to one key, and ordering within it becomes whatever the
+  merge's tie-break does.
+
+  Stated explicitly now, with `ts_first` given the same treatment at the other end
+  of a unit: the first input record contributing to **that unit**, not to the run
+  it was carved from. No file changes and no vector can test it — a per-run stamp
+  and a per-unit one are both well-formed, and only the input's timeline tells
+  them apart — which is why it was worth stating rather than leaving to the
+  reader. The misreading had reached three places in the reference
+  implementation's own documentation, including the worked example every decoder
+  written from it inherits.
+
+### Changed
+
+- **The stream origin is a floor: a record's `seq_start` MUST NOT precede it.**
+  ([#108](https://github.com/adamkjonsson/zipline/issues/108)) The origin is
+  `isn + 1` where the participant carries an `isn`, the first captured byte
+  otherwise. The floor was *presumed* everywhere — the leading hole is defined as
+  `first seq_start − (isn + 1)`, and "without an `isn` there is no room below the
+  first captured byte" — but presumed is not stated, so a file carrying a record
+  below the origin broke nothing this document said, and a checker had nothing to
+  cite.
+
+  The **handshake record's `seq_start` is now a MUST** rather than prose inside a
+  "a writer MAY record" sentence: where a writer records the handshake, the record
+  sits at `isn + 1`. That is where the mistake is actually made — a converter in
+  the field writes it at `isn`, one below the origin.
+
+  What that costs is the reason this is a `Changed` and not a note. The subtraction
+  is modular, so it does not report the error, it absorbs it: one zero-length
+  record at `isn` lands at offset 4294967295 and the stream measures 4294967295
+  bytes. On a real 71 KB capture the stream measured 2³²−1 where its data ended at
+  74931, and the coverage check then reported four violations against a file that
+  was otherwise correct.
+
+  **A reader meeting one MUST treat that record as unplaceable**: a zero-width
+  range at the stream's current position, covering no byte and contributing
+  nothing to the extent. It MUST NOT place it at the wrapped offset. Three
+  treatments were available before this — wrap it, skip it, place it at zero width
+  — and all three were defensible, so two conformant readers could disagree about
+  the offset space, which is the one thing this format cannot leave open.
+
+  **The violation is advisory, not isolating**: the reader accepts the file,
+  applies the rule, and SHOULD report. Isolation is for damage a reader cannot
+  bound; here one record is unplaceable and every other byte is where it was, so
+  discarding the session would lose a whole capture to fix one offset. This is the
+  **second** advisory MUST NOT — `content_type` at the transport layer was the
+  first, and the sentence calling it the only one is retired accordingly.
+
+  One limit is stated with the rule rather than left to be found: the floor is
+  decidable only within the serial-arithmetic half-space, so a `seq_start` more
+  than 2³¹ below the origin is indistinguishable from one above it. That is a
+  property of the sequence space — the same limit governs record ordering and
+  every `ack` edge — not a gap in the rule.
+
+  New vector: `advisory-seq-start-below-origin`, carrying the shape found in the
+  wild.
+
+### Fixed
+
+- **§Layers no longer says a derived file is never a mix.**
+  ([#103](https://github.com/adamkjonsson/zipline/issues/103)) `0.15` made the
+  created-or-preserved discriminator bind **per participant**, so one file may
+  decode one session while passing another through — which is what
+  `mixed-derivation` is an accept-tier vector for. §Layers kept `0.14`'s
+  conclusion that a derived *file* is exactly one of the two, never a mix,
+  correct when written and false since. The section is where an implementer goes
+  to learn what a derived file *is*, and the practical cost was a classifier built
+  the wrong way round: one file-wide kind, locked and short-circuited, which then
+  fails `mixed-derivation` with no way to tell which of the two statements was
+  normative.
+
+  The paragraph now states derivation per **stream** and says the discriminator is
+  per participant, pointing at §Conformance for the test. The retired claim is in
+  `RETIRED_CLAIMS`, so it cannot return a third time — it survived two releases
+  because it is not a *restatement* of the rule it contradicts and shares no
+  phrase with it, which is exactly what the `0.14` grep could not see.
+
+- **`tunnel/{inner,outer}.jsonl` spell the flow key `key`, as the mapping says.**
+  ([#104](https://github.com/adamkjonsson/zipline/issues/104)) Both fixtures wrote
+  the binary name `flow_key` where the brevity-alias table gives the JSON name
+  `key`, so a reader following the table could not round-trip either — two of that
+  fixture's four members out of the accept tier for a reason unrelated to what it
+  exists to test. The specification's own tunnel walkthrough carried the same two
+  spellings and is corrected with them. Vector-side under ground rule 2: the
+  mapping was unambiguous and `descriptive-metadata.jsonl` already obeyed it.
+  Recorded as defect 4 in [docs/VECTOR-DEFECTS.md](docs/VECTOR-DEFECTS.md).
+
+  **`check.py` now enforces the mapping**, which is the part that outlives the
+  fix: it builds the projection's key vocabulary from the specification's own
+  tables and requires every key in every `.jsonl` to be in it. The obvious form of
+  that check does not work — `flow_key` *is* a registry option name — so it
+  subtracts the aliased binary names, which is the whole of what sees this defect.
+
+---
+
 ## [0.16] — 2026-08-09
 
 **A corrective release, like `0.11`, `0.12` and `0.14`.** `0.15` replaced the
@@ -1361,6 +1583,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.17]: https://github.com/adamkjonsson/zipline/compare/v0.16...v0.17
 [0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15
 [0.14]: https://github.com/adamkjonsson/zipline/compare/v0.13...v0.14

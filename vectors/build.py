@@ -41,7 +41,7 @@ def read_text(path: str) -> str:
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 16
+MAJOR, MINOR = 0, 17
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -454,6 +454,10 @@ def o_content_type(v: str) -> Opt:
     return option(0x0091, s(v), "content_type")
 
 
+def o_role(v: str) -> Opt:
+    return option(0x0092, s(v), "role")
+
+
 def o_reason(v: str) -> Opt:
     return option(0x00A0, s(v), "reason")
 
@@ -694,6 +698,178 @@ vector(
             "input_extents": [
                 {"source_id": 1, "session_id": 7, "pid": 0, "extent": 18},
                 {"source_id": 1, "session_id": 7, "pid": 1, "extent": 139},
+            ],
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "decoded-field-roles",
+    "accept",
+    "One record per protocol FIELD, each named by 0.17's role. The case #107 "
+    "was filed for, and deliberately the case with none of the confounders: "
+    "four u32 fields, contiguous, non-overlapping, in stored order, each a "
+    "token in the closed prim: vocabulary with payload_len binding exactly, "
+    "and the decoded stream is a well-defined 16 bytes. "
+    "WHAT ROLE ADDS: before it, this file could carry the TYPE or the NAME and "
+    "not both. content_type = prim:u32 leaves a generic reader able to read "
+    "every value and unable to tell which field is the checksum; dec:checksum "
+    "names it and throws away the normative typing, and makes dec:checksum and "
+    "dec:seq_no two distinct types that happen both to be u32. Position is not "
+    "a contract either -- an optional field the decoder later emits renumbers "
+    "everything after it. The two options are INDEPENDENT, and every record "
+    "here carries both. "
+    "SCOPE: role is read in the namespace of the decoder name that decoder_id "
+    "resolves to, exactly as a dec: token is, so another decoder's `checksum` "
+    "is a different name. It is opaque to the format: it names a record and "
+    "asserts no tree. "
+    "Session End declares input_extents, so the coverage guarantee is "
+    "checkable from this file alone -- four spans, [0,16), meeting the "
+    "declared extent exactly.",
+    "Typing a decoded record -- a type is not a name",
+    [
+        file_header(options=[o_produced_by("zpf-fielddecode 0.1"), o_produced_at(1719800000)]),
+        source(1, 1, [o_uri("frames.zpf"), o_digest("sha256:5e7a")]),
+        decoder(1, [o_dec_name("acme-hdr"), o_dec_version("2.0")]),
+        session(31, [o_proto("acme")]),
+        participant(31, 0, [o_endpoint("10.0.0.1:9000")]),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 1),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 0, 4)]),
+                o_content_type("prim:u32"),
+                o_role("version"),
+            ],
+        ),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 16),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 4, 8)]),
+                o_content_type("prim:u32"),
+                o_role("length"),
+            ],
+        ),
+        # The record the whole issue is about: without a role, nothing in the
+        # file says THIS is the checksum -- and its type says only prim:u32,
+        # which is also what the other three say.
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 0xDEADBEEF),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 8, 12)]),
+                o_content_type("prim:u32"),
+                o_role("checksum"),
+            ],
+        ),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 42),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 12, 16)]),
+                o_content_type("prim:u32"),
+                o_role("seq_no"),
+            ],
+        ),
+        session_end(31, [o_input_extents([(1, 0, 30, 16)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-fielddecode 0.1",
+            "produced_at": 1719800000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "frames.zpf",
+            "digest": "sha256:5e7a",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "acme-hdr",
+            "version": "2.0",
+        },
+        {"type": "session", "session_id": 31, "proto": "acme"},
+        {"type": "participant", "session_id": 31, "pid": 0, "endpoint": ["10.0.0.1:9000"]},
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 1)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 0, "off_end": 4}],
+            "content_type": "prim:u32",
+            "role": "version",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 16)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 4, "off_end": 8}],
+            "content_type": "prim:u32",
+            "role": "length",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 0xDEADBEEF)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 8, "off_end": 12}],
+            "content_type": "prim:u32",
+            "role": "checksum",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 42)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 12, "off_end": 16}],
+            "content_type": "prim:u32",
+            "role": "seq_no",
+        },
+        {
+            "type": "session_end",
+            "session_id": 31,
+            "input_extents": [
+                {"source_id": 1, "session_id": 30, "pid": 0, "extent": 16},
             ],
         },
         {"type": "end"},
@@ -1966,11 +2142,15 @@ vector(
     "A filter over a decoded HTTP file: it keeps two records and drops the one "
     "between them. Like a reordering stage it is a decode stage with an "
     "INHERITED decoder, so its own config lives in transform_params_digest. "
-    "The dropped region is Undecoded with reason = skipped -- the same value a "
-    "discarded byte-order mark carries, which is exactly the ambiguity #78 "
-    "raised: skipped does two unrelated jobs, and only one of them is a break. "
-    "What tells them apart is not the reason but whether the survivors still "
-    "join, and here they do not, so the seam carries a Discontinuity. Its "
+    "The removed region is Undecoded with reason = dropped, which since 0.17 is "
+    "the word for content that was removed rather than withheld -- and it is "
+    "what makes this a POSITIVE test rather than an example. Before it this "
+    "region carried `skipped`, the same value a discarded byte-order mark "
+    "carries, so this file and undecoded-skipped were byte-shaped alike and "
+    "disagreed about whether a block was owed with nothing in either to tell "
+    "them apart. The reason word still does not DECIDE the duty -- the test is "
+    "whether the survivors join -- but here the producer has said outright that "
+    "it removed content, so a checker can raise the missing block. Its "
     "width is DECLARED as 40: a filter knows the length of what it dropped, "
     "and an absent width would claim that length is unknowable. Declaring it "
     "keeps the output offset space aligned with the input's -- record C sits "
@@ -2002,7 +2182,7 @@ vector(
             ],
         ),
         undecoded(
-            1, 1, 7, 60, 100, [o_reason("skipped"), o_decoder_id(1), o_comment("filtered out")]
+            1, 1, 7, 60, 100, [o_reason("dropped"), o_decoder_id(1), o_comment("filtered out")]
         ),
         discontinuity(7, 1, [o_width(40), o_disc_reason("records-dropped")]),
         record(
@@ -2063,7 +2243,7 @@ vector(
             "pid": 1,
             "off_start": 60,
             "off_end": 100,
-            "reason": "skipped",
+            "reason": "dropped",
             "decoder_id": 1,
             "comment": "filtered out",
         },
@@ -2970,8 +3150,9 @@ vector(
     "This is the defect 0.13 shipped the block for and 0.15 finally forbids -- "
     "under 0.14 this file was conformant. Unlike splice/ it needs no second "
     "file, because a hole-class Undecoded region lying between the input "
-    "regions of two adjacent output units is the one shape of the duty that is "
-    "decidable from a single file.",
+    "regions of two adjacent output units is one of the two shapes of the duty "
+    "decidable from a single file -- the other being a bytes-class region "
+    "carrying reason = dropped, which isolate-unmarked-drop carries.",
     "Discontinuity (0x22) -- what a producer owes the block",
     [
         file_header(options=[o_produced_by("zpf-tls 0.2"), o_produced_at(1719580000)]),
@@ -3176,7 +3357,8 @@ vector(
     "advisory-transport-content-type",
     "accept",
     "A transport-layer record carrying a content_type, which 0.16 makes a MUST "
-    "NOT -- and the only one in the format whose violation is ADVISORY. The "
+    "NOT whose violation is ADVISORY -- one of two, the other being 0.17's "
+    "origin floor (advisory-seq-start-below-origin). The "
     "reassembly decoder declares output_layer = transport and labels its record "
     "prim:bytes, which is mechanically legal and is the wrong answer: the "
     "record's boundaries are wherever the reassembler chunked the stream, so "
@@ -3265,6 +3447,187 @@ vector(
     "stated in Typing a decoded record.",
     violations=1,
     advisory=True,
+)
+
+vector(
+    "advisory-seq-start-below-origin",
+    "accept",
+    "A zero-length syn record whose seq_start is the isn rather than isn + 1, "
+    "which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit "
+    "below it. This is the shape found in the wild -- a converter writing the "
+    "handshake at the isn -- and it is worth seeing what it costs, because the "
+    "arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) "
+    "is modular, so the syn record lands at offset 4294967295 and the stream "
+    "measures 4294967295 bytes where its data ends at 12. Every coverage check "
+    "against this participant then fails for a file that is otherwise correct. "
+    "WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other "
+    "byte is exactly where it was, so the damage is bounded and the document "
+    "can say precisely what to do instead -- the record occupies a ZERO-WIDTH "
+    "range at the stream's current position (here 0, it being first), covers no "
+    "byte, and contributes nothing to the extent. Isolating the session would "
+    "discard a whole capture to fix one offset. "
+    "The manifest marks it advisory: true, so it declares 1 violation on the "
+    "ACCEPT tier.",
+    "Referencing the source by stream offset -- the origin is a floor",
+    [
+        file_header(),
+        source(1, 0, [o_uri("tcp.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
+        # THE VIOLATION: the handshake record sits at the isn, one below the
+        # origin. isn + 1 is where it belongs -- the SYN consumes a sequence
+        # number but delivers no byte.
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1000)]),
+        # Three ordinary data records from the origin. Their offsets are
+        # [0,4) [4,8) [8,12), and the extent is 12 -- unchanged by the record
+        # above, which is the point of the zero-width rule.
+        record(7, 0, 1, 2000, b"AAAA", flags=0x0001, options=[o_seq_start(1001)]),
+        record(7, 0, 1, 3000, b"BBBB", flags=0x0001, options=[o_seq_start(1005)]),
+        record(7, 0, 1, 4000, b"CCCC", flags=0x0001, options=[o_seq_start(1009)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "tcp.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAA"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3000,
+            "flags": ["psh"],
+            "payload": b64(b"BBBB"),
+            "seq_start": 1005,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 4000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCC"),
+            "seq_start": 1009,
+        },
+        {"type": "end"},
+    ],
+    expect="ACCEPT, and REPORT. Place the syn record at zero width at the "
+    "stream's current position -- offset 0 here -- so the participant's "
+    "extent is 12, the length of its data. A reader that instead computes "
+    "(1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent "
+    "to match; that is the defect this vector exists to catch, and it is "
+    "the number a real converter produced. Rejecting or isolating this "
+    "file is NOT conformant: the advisory strength is stated in "
+    "Referencing the source by stream offset. The record is not deleted -- "
+    "its timestamp, flags and payload stay readable, and only its "
+    "PLACEMENT is refused.",
+    violations=1,
+    advisory=True,
+)
+
+vector(
+    "isolate-unmarked-drop",
+    "isolate",
+    "#78's own title case, as ONE file, and the half of it that could not be "
+    "tested until 0.17. It is filtered-decoded with the Discontinuity deleted "
+    "and nothing else changed: the same filter, the same removed record, the "
+    "same complete coverage. The survivors do not join -- 40 bytes of content "
+    "went missing between them -- and the file says nothing, so a downstream "
+    "stage may splice records A and C into one run that never existed. "
+    "WHY THIS IS NOW CHECKABLE: the region carries reason = dropped, the word "
+    "0.17 adds for content that was REMOVED rather than withheld. Before it "
+    "this file wrote `skipped`, which is also what a discarded byte-order mark "
+    "writes -- and a BOM owes no block, because it withholds no content. The "
+    "two cases were byte-shaped alike, so a checker raising this one would "
+    "have raised undecoded-skipped too and been wrong. The hole-class twin of "
+    "this vector is isolate-unmarked-break, which was decidable all along "
+    "because no bytes existed there at all.",
+    "Discontinuity (0x22) -- what a producer owes the block",
+    [
+        file_header(
+            options=[
+                o_produced_by("zpf-filter 0.1"),
+                o_produced_at(1719560000),
+                o_transform_params_digest("sha256:3b9a"),
+            ]
+        ),
+        source(1, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+        record(
+            7,
+            1,
+            1,
+            1000,
+            b"A" * 60,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 1, 7, 0, 60)]),
+                o_content_type("dec:request"),
+            ],
+        ),
+        # The removal is declared, and honestly: reason = dropped says content
+        # of the stream went with it. THE VIOLATION is what does not follow --
+        # no Discontinuity, so records A and C are simply adjacent at 60.
+        undecoded(
+            1, 1, 7, 60, 100, [o_reason("dropped"), o_decoder_id(1), o_comment("filtered out")]
+        ),
+        record(
+            7,
+            1,
+            1,
+            1200,
+            b"C" * 60,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 1, 7, 100, 160)]),
+                o_content_type("dec:response"),
+            ],
+        ),
+        session_end(7, [o_input_extents([(1, 1, 7, 160)])]),
+        end_block(),
+    ],
+    expect="ISOLATE or reject. The Undecoded region carries reason = dropped "
+    "and lies between the input regions of two output units this file "
+    "stores as neighbours -- A ends at 60, C starts at 100 -- so the "
+    "producer has stated that content of this stream was removed between "
+    "two records it presents as joining. A Discontinuity is required and "
+    "there is none. Contrast undecoded-skipped, where the withheld region "
+    "is a BOM carrying no content of the stream and no block is owed: the "
+    "reason word does not decide the duty, but `dropped` is the "
+    "producer's own statement that it does bind here. Note a reader needs "
+    "only this file, as with isolate-unmarked-break.",
+    violations=1,
 )
 
 vector(
@@ -3950,7 +4313,7 @@ def build_tunnel() -> None:
                 "type": "session",
                 "session_id": 1,
                 "proto": "udp",
-                "flow_key": "198.51.100.7:51820 -> 203.0.113.9:51820",
+                "key": "198.51.100.7:51820 -> 203.0.113.9:51820",
             },
             {"type": "participant", "session_id": 1, "pid": 0, "endpoint": ["198.51.100.7:51820"]},
             *(
@@ -4215,7 +4578,7 @@ def build_tunnel() -> None:
                 "type": "session",
                 "session_id": 10,
                 "proto": "tcp",
-                "flow_key": "10.8.0.2:44300 -> 10.8.0.9:80",
+                "key": "10.8.0.2:44300 -> 10.8.0.9:80",
             },
             {
                 "type": "participant",
@@ -4259,7 +4622,7 @@ def build_tunnel() -> None:
                 "type": "session",
                 "session_id": 11,
                 "proto": "tcp",
-                "flow_key": "10.8.0.2:44301 -> 10.8.0.9:53",
+                "key": "10.8.0.2:44301 -> 10.8.0.9:53",
             },
             {
                 "type": "participant",

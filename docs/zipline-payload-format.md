@@ -1,20 +1,21 @@
-# Zipline Payload Format (v0.16)
+# Zipline Payload Format (v0.17)
 
-> Status: **version 0.16** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.17** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
 > `0.10` was the first revision informed by a real implementation; `0.11`,
 > `0.12`, `0.14` and `0.16` corrected what successive reviews of them found;
 > `0.13` was the first since `0.9` to *add* capability rather than only correct,
-> and `0.15` is the first to change what already-written files mean. More are
+> `0.15` is the first to change what already-written files mean, and `0.17` the
+> first driven by an implementation decoding at field granularity. More are
 > expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` through `0.16`
-> followed. Note `0.16` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.17`
+> followed. Note `0.17` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -260,7 +261,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.16","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -462,7 +463,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.16","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -549,7 +550,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.16","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -737,9 +738,11 @@ Decoding is also not the *only* file → file stage: **all derivation is
 file → file**. The [merge](#sequenced-files-precomputed-order) is a
 *byte-preserving* transform — it re-emits its inputs' byte runs as
 **pass-through records** rather than imposing new units — and it uses the same
-`zpf-input` Source / `digest` / provenance machinery. A derived file is
-therefore exactly one of a *decode stage* or a *pass-through transform*, never a
-mix (see [Conformance](#conformance)).
+`zpf-input` Source / `digest` / provenance machinery. A derived **stream** is
+therefore exactly one of a *decode stage*'s output or a *pass-through
+transform*'s, never half of each — and the discriminator binds **per
+participant**, so one file MAY hold a created stream beside a preserved one (see
+[Conformance](#conformance), which states the test).
 
 **Transforms that change no data.** A tool that only *adds* something — a
 [label](#nameidentity-resolution-0x30), a `comment`, a session-level annotation —
@@ -800,6 +803,47 @@ handshake and the first captured byte are the leading hole `[0, K)`
 (`K = first seq_start − (isn + 1)`), named like any other. Without an `isn` there
 is no room below the first captured byte, so a pre-first-byte loss simply is not
 representable — one more reason `isn` is mandatory once the handshake is seen.
+
+**The origin is a floor: a record's `seq_start` MUST NOT precede it.** The origin
+is `isn + 1` where the participant carries an `isn`, and the first captured byte
+otherwise. Everything above measures from it — the leading hole is
+`first seq_start − (isn + 1)`, and a record's offset is `seq_start − (isn + 1)` —
+so a record below the origin has a negative offset in a space with none, and the
+modular subtraction does not report that. It returns a number just under 2³²
+instead: one zero-length record at `isn` rather than `isn + 1` puts that record at
+offset 4294967295 and makes the stream measure 4294967295 bytes, whatever its data
+actually spans.
+
+**A reader that meets one MUST treat that record as unplaceable.** It occupies a
+**zero-width range at the stream's current position** — the offset the preceding
+record ended at, or `0` where there is none — contributes nothing to the extent,
+and covers no byte of the stream. A reader **MUST NOT** place it at the wrapped
+offset the arithmetic yields.
+
+**Violating the floor is advisory, not isolating**, the treatment
+[`content_type` at the transport layer](#typing-a-decoded-record) gets: the reader
+**accepts the file**, applies the rule above, and SHOULD report. This is the
+specific rule for this violation, in the sense [Conformance](#conformance) gives
+that phrase, and it binds instead of the general licence to isolate. The reason is
+the reason that licence exists — isolation is for damage a reader cannot bound,
+and here it can: one record is unplaceable and every other byte of the stream is
+exactly where it was. A reader that discarded the session over it would lose the
+whole capture to fix one offset, and two readers taking different options would
+disagree about the stream, which is what this rule exists to stop.
+
+Zero width is what makes the rule safe to apply: a record the reader cannot place
+is one whose bytes it cannot attribute to any offset, and a zero-width range is
+the only claim that stays true whatever the writer meant. Note that it is not
+*deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
+consumer indexing by anything other than offset still sees it.
+
+**The floor is decidable only within the serial-arithmetic half-space.** The
+comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
+`seq_start` comparison uses, so a `seq_start` more than 2³¹ below the origin is
+indistinguishable from one above it and no checker can raise it. That is a
+property of the sequence space, not a gap in this rule: the same limit governs
+record ordering and every `ack` edge, and it is far beyond any distance real
+traffic travels.
 
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
@@ -968,19 +1012,61 @@ truth — the label never replaces them.
 An unknown scheme is treated as opaque. This lets the decoder say *what each unit
 is* without the format having to parse it.
 
-**A record at the transport layer MUST NOT carry a `content_type`**, including one
-emitted by a reassembly decoder, where `prim:bytes` is now mechanically legal and
-is the obvious wrong answer. `content_type` types a *value* — what this unit **is**
-— and a reassembly record's boundaries are wherever the reassembler happened to
-chunk the stream. Two conformant reassemblers chunk one stream differently and both
+**A type is not a name, and a record needs both.** `content_type` says what a
+record's bytes *are*. It does not say *which* record this is, and for a decoder
+emitting one record per protocol field the difference is total: four `u32` fields
+decode to four records typed `prim:u32`, contiguous, non-overlapping, each with
+`payload_len` binding exactly — a conformant, well-formed decoded stream in which
+nothing says which one is the checksum. Position is not a contract, since a
+decoder that later emits an optional field, or omits one it could not parse,
+renumbers everything after it.
+
+Before `0.17` the two available spellings each destroyed the other's information.
+`dec:checksum` names the field and discards the normative typing that let a
+generic reader read the value — and it types a *value*, so `dec:checksum` and
+`dec:seq_no` become two distinct types that happen both to be `u64`, with nothing
+left saying they share one. `comment` is defined as a free-text human note, so a
+consumer parsing it relies on something this document says means nothing.
+
+**`role`** is the name: a string saying what this record **is**, within its
+decoder's vocabulary. It is independent of `content_type` — a record may carry
+both, either, or neither — which is the whole point: the type and the name stop
+competing for one field. Three properties, each borrowed from a mechanism already
+here:
+
+- **Name-scoped to the record's decoder**, exactly as a `dec:` token is: the
+  namespace is the Decoder `name` that `decoder_id` resolves to, so two decoders
+  may both use `checksum` without colliding. This is the whole of what makes it
+  more than a `comment` — not that a reader can verify the meaning, since it
+  cannot verify a `dec:` token either, but that the **scope is declared**, so a
+  consumer knows exactly how far the name travels.
+- **Opaque to the format.** It names a record; it does **not** assert a tree. A
+  producer writing `dns.flags.qr` is using a convention this document does not
+  parse, the same way a `dec:` value is unparsed. Whether a **nested**
+  decomposition — a record naming bytes a record before it already emitted — is a
+  well-formed decoded stream at all is a separate question this version does not
+  settle
+  ([#106](https://github.com/adamkjonsson/zipline/issues/106)); `role` is
+  compatible with any answer to it, which is why it did not wait for one.
+- **Advisory, and decoded layer only** — the treatment `content_type` gets, below,
+  and for the same reasons.
+
+**A record at the transport layer MUST NOT carry a `content_type`, and MUST NOT
+carry a `role`**, including one emitted by a reassembly decoder, where
+`prim:bytes` is now mechanically legal and is the obvious wrong answer. Both are
+labels on a *unit* — one saying what it is, one saying which it is — and a
+reassembly record's boundaries are wherever the reassembler happened to chunk the
+stream. Two conformant reassemblers chunk one stream differently and both
 are right, which is exactly the property the
 [logical offset space](#referencing-the-source-by-stream-offset) exists to
 neutralise; labelling an arbitrary window `prim:bytes` asserts it is a unit when it
 is a slice. It would also type identical bytes differently by provenance, since a
 capture-sourced reassembler declaring itself is only a SHOULD.
 
-**Violating this is advisory, not isolating**, and it is the only MUST NOT in this
-document with that strength. Dropping the label loses nothing and the record stays
+**Violating this is advisory, not isolating** — a deliberately unusual strength
+for a MUST NOT, which this document gives only where it can say exactly what a
+reader does instead (the [origin floor](#referencing-the-source-by-stream-offset)
+is the other). Dropping the label loses nothing and the record stays
 fully readable, so there is no unit a reader could soundly discard and nothing it
 would gain by discarding one — the treatment `tcp_role` gets, not the one an
 `origin` on a capture-sourced stream gets. A reader meeting one **MUST ignore the
@@ -1041,7 +1127,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.16","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1079,7 +1165,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.16","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1174,13 +1260,13 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.16","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
  "version":"1.1","params_digest":"sha256:2f60"}
 
-{"type":"session","session_id":10,"proto":"tcp","flow_key":"10.8.0.2:44300 -> 10.8.0.9:80"}
+{"type":"session","session_id":10,"proto":"tcp","key":"10.8.0.2:44300 -> 10.8.0.9:80"}
 {"type":"participant","session_id":10,"pid":0,"endpoint":["10.8.0.2:44300"],"isn":1000}
 {"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1000,"payload":"…40 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":0,"off_end":60}],
@@ -1191,7 +1277,7 @@ hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 {"type":"session_end","session_id":10,
  "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
 
-{"type":"session","session_id":11,"proto":"tcp","flow_key":"10.8.0.2:44301 -> 10.8.0.9:53"}
+{"type":"session","session_id":11,"proto":"tcp","key":"10.8.0.2:44301 -> 10.8.0.9:53"}
 {"type":"participant","session_id":11,"pid":0,"endpoint":["10.8.0.2:44301"],"isn":5000}
 {"type":"record","session_id":11,"sender_pid":0,"source_id":1,"ts":1100,"payload":"…20 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":60,"off_end":100}],
@@ -1310,7 +1396,7 @@ MUST be the first block in the file. Body:
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `0` for this document                                        |
-| `version_minor` | u16  | `13` for this document                                       |
+| `version_minor` | u16  | `17` for this document                                       |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -1324,7 +1410,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.16` is the sixteenth minor and is **greater** than `0.9`. A writer stamps
+number: `0.17` is the seventeenth minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -1747,8 +1833,9 @@ layer, told apart by the referenced source's `kind`. (A pass-through preserving 
 *decoded* layer re-emits decoded records, `decoder_id`s included — see
 [Conformance](#conformance).)
 A record at the decoded layer MAY also carry a `content_type` labelling what its
-`payload` is (see [Typing a decoded record](#typing-a-decoded-record)); a record
-at the transport layer carries none, whether or not it has a decoder, for the
+`payload` is, and a `role` naming what the record is within its decoder's
+vocabulary (see [Typing a decoded record](#typing-a-decoded-record)); a record at
+the transport layer carries neither, whether or not it has a decoder, for the
 reason given there.
 Because the frame `length` (u32) bounds the whole block, `payload_len` is in
 practice capped a little below 4 GiB (it must share the block with the body and
@@ -1773,9 +1860,25 @@ stamp could). Consequences:
   propagates down the chain and is always ultimately the packet time of the
   contributing capture.
 
+**The span set is per unit, not per run.** Where a stage emits **several** units
+from one reassembled run — a decoder producing one record per protocol message,
+which is the ordinary case rather than the exception — each unit's `timestamp` is
+the completion time of the last input record contributing to **that unit**. A
+run's own completion time is its *last* unit's; stamping the earlier ones with it
+claims they completed after they did. Three messages arriving in three packets
+carry three different stamps, though reassembly offered them as one run.
+
+This is what makes ordering decoded records by `timestamp` *reproduce* the input's
+timeline rather than approximate it — the property hint-less decoded output leans
+on. Under the per-run reading every unit in a run collapses to one key, ordering
+within the run becomes whatever the merge's tie-break does, and that property
+quietly stops holding.
+
 The first-packet time is recoverable from capture-source `spans` provenance; a
 writer that wants it without full provenance MAY add an optional `ts_first` TLV.
-The canonical `timestamp` is always the completion (last-packet) time.
+It is **per unit in the same way**: the time of the *first* input record
+contributing to that unit, not to the run it was carved from. The canonical
+`timestamp` is always the completion (last-packet) time.
 
 `timestamp` is **signed** (i64, as are `ts_first`, `time_epoch`, and
 `produced_at`): the configurable `time_epoch` origin admits times *before* it
@@ -1785,10 +1888,14 @@ the resolutions `tick_hz` is meant for.
 
 **Handshake records.** A writer MAY record an observed TCP handshake as a
 zero-length record carrying the `syn` flag: `timestamp` is the SYN packet's
-capture time and `seq_start` is `isn + 1` — the stream origin, so its computed
-end equals it and every causal edge and ordering rule works unchanged (it
-precedes the data that starts at the same origin simply by being produced
-first). The responder's SYN-ACK is its own zero-length `syn` record, and MAY
+capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin, so
+its computed end equals it and every causal edge and ordering rule works unchanged
+(it precedes the data that starts at the same origin simply by being produced
+first). Recording the handshake is the writer's choice; where it does, this is the
+record's shape. `isn` itself is one below the origin, and a record there breaks
+the [floor rule](#referencing-the-source-by-stream-offset) — the SYN consumes a
+sequence number but delivers no byte, which is exactly why the origin is `isn + 1`
+and not `isn`. The responder's SYN-ACK is its own zero-length `syn` record, and MAY
 carry an `ack` like any record. This is how session-establishment *timing* is
 carried; the handshake's identity already lives on the participant (`isn`,
 `tcp_role`).
@@ -1834,7 +1941,7 @@ is what lets one *rule* read both as well.
   is a statement about the capture and is addressed the way the capture is
   addressed.
 
-Options: `reason` (string, e.g. `undecodable` / `skipped` / `gap` /
+Options: `reason` (string, e.g. `undecodable` / `skipped` / `dropped` / `gap` /
 `truncated`), `reason_class` (string, `hole` or `bytes` — required with a
 non-canonical `reason`), `decoder_id` (u16, which decoder declined the region).
 
@@ -1867,7 +1974,7 @@ intent, which some consumers use for their own purposes:
 
 | Class           | Meaning                                                                                   | Canonical values          |
 |-----------------|-------------------------------------------------------------------------------------------|---------------------------|
-| **bytes exist** | the bytes are present at that span in `source_id`; a consumer MAY follow the reference to fetch them | `undecodable`, `skipped`  |
+| **bytes exist** | the bytes are present at that span in `source_id`; a consumer MAY follow the reference to fetch them | `undecodable`, `skipped`, `dropped` |
 | **hole**        | the range has no bytes anywhere upstream — a plain *gap*                                    | `gap`, `truncated`        |
 
 Either way the bytes are not in *this* file. What the class promises is the bytes
@@ -1885,7 +1992,7 @@ transport is read from the session's `proto` where it matters. A producer wantin
 to say precisely *how* a hole was detected uses the open vocabulary, which is
 what it is for.
 
-The two bytes-exist values differ in **intent**, not in recoverability.
+The three bytes-exist values differ in **intent**, not in recoverability.
 `undecodable` means the decoder tried and failed. `skipped` means it declined on
 purpose — data it does not care about, or data carrying no information: a
 byte-order mark, a padding or reserved field. That distinction is needed because
@@ -1893,6 +2000,18 @@ the [coverage guarantee](#coverage-honesty-undecoded-blocks) leaves a decoder no
 honest third option: without `skipped`, a decoder that ignores a BOM must either
 stretch a record's `spans` across a region no output unit corresponds to, or
 report them `undecodable`, asserting a failure that did not occur.
+
+**`dropped` means content was removed**: the region carried content of the stream
+this stage is producing, and the stage did not carry it forward. A filter that
+drops a record writes `dropped`; a decoder that discards a byte-order mark writes
+`skipped`. The difference is not how deliberate the decision was — both are
+deliberate — but **whether anything of the stream's content went missing with it**.
+A BOM carried none, so the text either side of it still runs continuously. A
+dropped record carried its own, so the records either side of it do not.
+
+That is what `skipped` alone could not say. Before `0.17` both cases wrote the
+same word, and two byte-identical files — one where the survivors join and one
+where they do not — were indistinguishable to every consumer and every checker.
 
 **Correspondence is not proximity**, and this is where the difference bites. A
 discarded byte-order mark corresponds to no output unit — nothing downstream was
@@ -1909,8 +2028,8 @@ unparsed bytes should not have deliberate skips folded into the total.
 
 **A non-canonical `reason` MUST carry `reason_class`** (string, `hole` or
 `bytes`) naming its class. The vocabulary is open precisely so a producer can be
-more specific than the four canonical words; `reason_class` is what keeps that
-freedom from costing the consumer its one actionable fact. The canonical four
+more specific than the five canonical words; `reason_class` is what keeps that
+freedom from costing the consumer its one actionable fact. The canonical five
 imply their class and need no `reason_class`; if one carries it anyway, it MUST
 agree with the table above.
 
@@ -2087,11 +2206,18 @@ neighbours assert that they join, and for reordered neighbours that assertion is
 false. Such a stage emits a Discontinuity at each seam, with **no** `width`: what
 lies between two units that were never adjacent is not a hole to be counted.
 
-**One case is decidable from a single file, and it is the one that shipped
-broken.** Where an Undecoded region of the **`hole`** class lies between the input
-regions of two adjacent output units, no other reading is available — no bytes
-existed there, so no content can have been carried forward, and the two units
-cannot join. A checker may raise that from the file alone.
+**Two cases are decidable from a single file.** Where an Undecoded region of the
+**`hole`** class lies between the input regions of two adjacent output units, no
+other reading is available — no bytes existed there, so no content can have been
+carried forward, and the two units cannot join. The same holds where the region is
+bytes-class **`dropped`**, for a different reason: the bytes existed, and the
+producer has said in as many words that it removed content of the stream. A
+checker may raise either from the file alone.
+
+`dropped` is decidable precisely because it is the producer's own statement, not
+an inference from the reason word. The other bytes-exist values decide nothing —
+`skipped` is the BOM case, where the survivors join, and `undecodable` says a
+parse failed without saying whether anything of the stream went with it.
 
 **The predicate, stated so that two checkers agree.** The sentence above says
 which case; this says how to test it. The layer test comes first, because the
@@ -2102,9 +2228,9 @@ whole check is inapplicable without it:
 > each input stream `S = (source_id, session_id, participant_id)` cited by the
 > `spans` of **both**: let `A` be the maximum `off_end` over `r1`'s spans on `S`,
 > and `B` the minimum `off_start` over `r2`'s spans on `S`. If `A < B` and some
-> `hole`-class Undecoded region naming `S` intersects `[A, B)`, then a
-> Discontinuity between `r1` and `r2` is **required**. Where `A ≥ B` the pair is
-> not tested.
+> Undecoded region naming `S` that is **`hole`-class or carries
+> `reason = dropped`** intersects `[A, B)`, then a Discontinuity between `r1` and
+> `r2` is **required**. Where `A ≥ B` the pair is not tested.
 
 Each clause is load-bearing. **Decoded-layer only**, because a transport stream
 expresses the same break in its offsets and is forbidden the block — a checker
@@ -2114,7 +2240,10 @@ cite different ones; a stream only one of them names says nothing about whether
 they join. **Max and min**, because `spans` may overlap, which has been legal
 since `0.14`. And **`A ≥ B` not tested**, because a stage that reorders or
 overlaps its input produces pairs whose input regions run backwards, where "the
-region between them" names nothing.
+region between them" names nothing. And **`dropped` beside the class test**,
+because the two decidable cases are one predicate: a checker that tested only the
+class would pass the filter that is this rule's own title case, and one that
+tested only the word would miss the lost segment.
 
 **Satisfying this predicate is not satisfying the duty.** It is the minimum a
 checker owes, not the rule a producer follows: it is deliberately conservative,
@@ -2313,8 +2442,9 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes **correspond to** — the input the unit was computed from, not necessarily a copy of it (see below) |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded        | which **decoder** produced or declined this record or region — not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it). The decoder's [`output_layer`](#decoder-descriptor-0x03) then gives the layer, which may be transport |
 | `0x0091` | content_type     | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
-| `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
-| `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical four, and MUST agree with the class if it accompanies one of them |
+| `0x0092` | role             | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what this record **is**, in a vocabulary scoped to its decoder's `name`; opaque to the format, and independent of `content_type` (see [Typing a decoded record](#typing-a-decoded-record)) |
+| `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`/`dropped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
+| `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical five, and MUST agree with the class if it accompanies one of them |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
 | `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
@@ -2452,6 +2582,27 @@ constraint (any `payload_len`, including 0). A writer MUST NOT emit a fixed-widt
 mismatch MUST treat the `content_type` as unknown (opaque payload, falling back to
 the decoder `name`), exactly as for an unknown scheme, and MUST NOT pad, truncate,
 or reinterpret — the bytes remain the source of truth.
+
+**`prim:` types storage, not the wire, and this is a decision rather than an
+omission.** A protocol field narrower or wider than 8/16/32/64 — a 4-bit flag, a
+24-bit length — has **no token**, and the conformant move is to widen to the
+smallest that holds it: a 4-bit field is `prim:u8`, a 24-bit one `prim:u32`. The
+*value* stays readable by any reader, which is what the width-binding rule above
+is for, and the field's true width is then **not recoverable from the file**.
+`spans` do not recover it either — a sub-byte field names the byte containing it,
+and several such fields name the same byte.
+
+That is the same answer this document already gives for byte order, a few lines
+above: a fixed-width `prim:` payload is stored little-endian, and a big-endian
+wire value is byte-swapped by the emitting decoder, never by the reader. A field's
+true width is likewise the decoder's business, and a consumer that needs it reads
+what the decoder documents, exactly
+as it does for a `dec:` token or a [`role`](#typing-a-decoded-record). The
+alternatives were weighed and declined: a significant-bits option would add a
+field no reader can act on, and opening the vocabulary would break the
+width-binding rule that is the only thing making `prim:` checkable at all. The
+vocabulary stays closed
+([#105](https://github.com/adamkjonsson/zipline/issues/105)).
 
 ### Identifiers & ordering
 
@@ -2793,8 +2944,9 @@ readers in two tiers, split by what the violation poisons:
   records, no inventing missing declarations, no guessing at what the writer
   meant. Where this document states a specific rule for a violation (the
   per-participant [ordering rule](#identifiers--ordering), the `prim:`
-  [width-mismatch rule](#enums)), that rule is an instance of this tier and
-  takes precedence.
+  [width-mismatch rule](#enums), the
+  [origin floor](#referencing-the-source-by-stream-offset)), that rule is an
+  instance of this tier and takes precedence.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**
@@ -2888,8 +3040,8 @@ by its `type` string.
 | `end`         | End (`0x41`)                      |
 | `custom`      | Custom (`0xFF`)                   |
 
-**Brevity aliases** — the only *current* keys whose JSON name differs from the
-binary name (one further key, deprecated, is listed below):
+**Brevity aliases** — the only keys whose JSON name differs from the binary
+name:
 
 | JSONL key    | Binary field / option                                            |
 |--------------|------------------------------------------------------------------|
@@ -3032,7 +3184,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  10 00                    version_minor = 16   (0.16, little-endian)
+000E  11 00                    version_minor = 17   (0.17, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
