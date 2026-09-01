@@ -571,34 +571,100 @@ Draft `Changed` from the entry written in Phase 1, not from memory.
 
 ## Definition of done
 
-- [ ] ~~All eight in-scope issues~~ **Seven**, each closed in the commit that
+- [x] ~~All eight in-scope issues~~ **Seven**, each closed in the commit that
       finishes it. #106 moved to `0.18` at Phase 0 with the reason recorded —
-      the cap in scope decision 2, exercised.
-- [ ] A record's `seq_start` below the stream origin is a stated violation with a
+      the cap in scope decision 2, exercised. *Two commits carry more than one
+      issue — Phase 2's pair and Phase 4's three — because each pair edits one
+      section or is too small to split usefully. Phases 1 and 3 held to one
+      apiece.*
+- [x] A record's `seq_start` below the stream origin is a stated violation with a
       stated reader behaviour, the handshake's `isn + 1` is a MUST, and a negative
-      vector carries the shape found in the wild.
-- [ ] A decoded record can carry both its type and its name, the name is scoped
+      vector carries the shape found in the wild. *The violation is **advisory**,
+      not isolating — the plan and the issue both said isolate, and both were
+      wrong for the reason in Phase 1.*
+- [x] A decoded record can carry both its type and its name, the name is scoped
       to the record's decoder, and no option name in the registry means two
-      things.
-- [ ] The document says whether a sub-byte field's width is recoverable, so that
-      a producer can tell a decision from an omission.
+      things. *`role` at `0x0092`.*
+- [x] The document says whether a sub-byte field's width is recoverable, so that
+      a producer can tell a decision from an omission. *It is not, and the
+      widening is documented as forced.*
 - [x] Either the seam duty's answer for a decomposing stage is stated with a
       vector, or #106 is scheduled with its cap recorded. *The second: on the
       `0.18` milestone, to be read beside #80.*
-- [ ] `skipped` and `dropped` are two canonical words with two jobs, and
-      `filtered-decoded` is a positive test rather than an example.
-- [ ] No statement in the specification implies that a derived file is exactly one
+- [x] `skipped` and `dropped` are two canonical words with two jobs, and
+      `filtered-decoded` is a positive test rather than an example. *Verified with
+      a one-off reader over the bytes: the predicate fires on it and finds its
+      block, and stays silent on `undecoded-skipped`.*
+- [x] No statement in the specification implies that a derived file is exactly one
       of a decode stage or a pass-through transform, and `RETIRED_CLAIMS` fails
       the build if one returns.
-- [ ] Every `.jsonl` key in the suite is a registry option name or a listed
-      brevity alias, enforced by `check.py` rather than by review.
-- [ ] The timestamp rule is per unit at both ends of a unit, in words that cannot
+- [x] Every `.jsonl` key in the suite is a registry option name or a listed
+      brevity alias, enforced by `check.py` rather than by review. *Not as the
+      issue proposed it, which passes clean on the defect — see Phase 0.*
+- [x] The timestamp rule is per unit at both ends of a unit, in words that cannot
       be read as per run.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.17`. ~~*Estimated
-      57 entries — 53 today plus #108, #107, #106 and #98*~~ — **56** with #106
-      moved, and the estimate has run low twice.
-- [ ] `CHANGELOG.md` `[0.17]` complete, with a `Changed` section covering #108 and
-      an `Added` section covering #107 and #98.
-- [ ] `#80`'s re-decision is on the `0.18` milestone with the deadline argument
+- [x] `python3 vectors/check.py` green; every vector stamps `0.17`. ~~*Estimated
+      57 entries — 53 today plus #108, #107, #106 and #98*~~ — **56**, which is
+      the first estimate in three releases that was not low. 35 accept (two of
+      them advisory), 16 isolate, 5 reject — three of the 56 being multi-file
+      fixtures. 38 options, 12 blocks, 25 rules, all exercised.
+- [x] `CHANGELOG.md` `[0.17]` complete, with a `Changed` section covering #108 and
+      an `Added` section covering #107 and #98. *Every entry drafted in the phase
+      that did the work; nothing reconstructed at release, the fourth release
+      running for which that was the plan and the second where it held.*
+- [x] `#80`'s re-decision is on the `0.18` milestone with the deadline argument
       restated, not left as "a candidate".
-- [ ] `ruff check` and `ruff format` clean.
+- [x] `ruff check` and `ruff format` clean.
+- [x] **Each `RETIRED_CLAIMS` entry reproduces against the tagged release before
+      the one that retired it, and is absent now.** Deferred to Phase 5 so it ran
+      against a finished release, as `0.16` did. The asymmetry is the proof the
+      entries are dated correctly: `0.16`'s two reproduce at `v0.15` and are gone
+      by `v0.16`; `0.17`'s three reproduce at `v0.16`. One of them,
+      `derived-file-is-not-a-mix`, reproduces at **both** `v0.15` and `v0.16` —
+      which is #103 stated mechanically: the claim `0.15` should have retired and
+      did not.
+
+## What execution changed
+
+Recorded because a plan only ever read forwards teaches nothing. Six things this
+document or the issues behind it got wrong:
+
+- **Every issue was right about the defect and one level off about the
+  mechanism** — and that is the finding, not any single instance of it. #104
+  named the check but not the clause that makes it work: written as the issue
+  proposed, it passes clean on the defect, because `flow_key` **is** a registry
+  option name. #98 named the word but placed it beside the duty, when it belongs
+  inside the predicate the duty already has. #108 named the rule and chose the
+  tier that undoes it. #107 named the option but not the registry collision.
+  None of that is a criticism of the issues, which are written from the symptom
+  by the implementation that hit it. It is what these phases are for, and it is
+  worth expecting rather than rediscovering in `0.18`.
+- **The tier was the substance of Phase 1, not a detail of it.** `isolate` is a
+  licence — MAY reject, MAY discard the session — so handing it out for a
+  below-origin record reintroduces exactly the disagreement #108 exists to end.
+  A rule that says what a reader must do cannot ship under a tier that permits
+  three things. Advisory was `0.16`'s manifest key finding its second user, a
+  release after it was built for its first.
+- **Phase 2 removed a rule where the plan expected to add one.** `role` needed no
+  transport-layer MUST NOT of its own: the argument is identical for both labels,
+  so §Typing bars *a label* once instead of twice. Had it been written as
+  planned, this release would have retired its own Phase 1 sentence — "the other"
+  would have become "one of three" a week after it was written.
+- **A retired claim's copies live in `vectors/` too, and the ratchet cannot see
+  them.** Phases 1 and 3 each left two: a vector summary in `build.py`, which
+  reaches `manifest.json`, and a row in `vectors/README.md`. Both were found by
+  grepping, not by the build. The obvious extension is not safe, and Phase 5
+  measured it: two entries fire on `CHANGELOG.md`, correctly, because the
+  changelog *records* retired claims — and `mixed-derivation`'s summary quotes
+  #103's claim deliberately, as history, escaping the pattern only because the
+  pattern carries the specification's markdown emphasis. The suite is entitled to
+  quote a retired claim, and text alone cannot tell that from asserting one.
+  Filed as [#111](https://github.com/adamkjonsson/zipline/issues/111) for `0.18`,
+  with the measurement in it, rather than bolted on during a release phase.
+- **The vector estimate was right for the first time in three releases**, at 56 —
+  and only because #106 moved out. The estimate before that was 57 for eight
+  issues, which would have been low again by the same margin as `0.16`.
+- **`reject-unknown-minor` rolled 17 → 18, not 16 → 17.** The plan said the
+  latter. It stamps `MINOR + 1` by construction, so the release's roll moves it
+  one further; read out of the stamped bytes rather than trusting the constant.
+  Small, and the kind of thing a plan should stop asserting from memory.
