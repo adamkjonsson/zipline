@@ -3176,7 +3176,8 @@ vector(
     "advisory-transport-content-type",
     "accept",
     "A transport-layer record carrying a content_type, which 0.16 makes a MUST "
-    "NOT -- and the only one in the format whose violation is ADVISORY. The "
+    "NOT whose violation is ADVISORY -- one of two, the other being 0.17's "
+    "origin floor (advisory-seq-start-below-origin). The "
     "reassembly decoder declares output_layer = transport and labels its record "
     "prim:bytes, which is mechanically legal and is the wrong answer: the "
     "record's boundaries are wherever the reassembler chunked the stream, so "
@@ -3263,6 +3264,111 @@ vector(
     "MUST NOT conclude from it that the stream is decoded. Rejecting or "
     "isolating this file is NOT conformant: the advisory strength is "
     "stated in Typing a decoded record.",
+    violations=1,
+    advisory=True,
+)
+
+vector(
+    "advisory-seq-start-below-origin",
+    "accept",
+    "A zero-length syn record whose seq_start is the isn rather than isn + 1, "
+    "which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit "
+    "below it. This is the shape found in the wild -- a converter writing the "
+    "handshake at the isn -- and it is worth seeing what it costs, because the "
+    "arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) "
+    "is modular, so the syn record lands at offset 4294967295 and the stream "
+    "measures 4294967295 bytes where its data ends at 12. Every coverage check "
+    "against this participant then fails for a file that is otherwise correct. "
+    "WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other "
+    "byte is exactly where it was, so the damage is bounded and the document "
+    "can say precisely what to do instead -- the record occupies a ZERO-WIDTH "
+    "range at the stream's current position (here 0, it being first), covers no "
+    "byte, and contributes nothing to the extent. Isolating the session would "
+    "discard a whole capture to fix one offset. "
+    "The manifest marks it advisory: true, so it declares 1 violation on the "
+    "ACCEPT tier.",
+    "Referencing the source by stream offset -- the origin is a floor",
+    [
+        file_header(),
+        source(1, 0, [o_uri("tcp.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
+        # THE VIOLATION: the handshake record sits at the isn, one below the
+        # origin. isn + 1 is where it belongs -- the SYN consumes a sequence
+        # number but delivers no byte.
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1000)]),
+        # Three ordinary data records from the origin. Their offsets are
+        # [0,4) [4,8) [8,12), and the extent is 12 -- unchanged by the record
+        # above, which is the point of the zero-width rule.
+        record(7, 0, 1, 2000, b"AAAA", flags=0x0001, options=[o_seq_start(1001)]),
+        record(7, 0, 1, 3000, b"BBBB", flags=0x0001, options=[o_seq_start(1005)]),
+        record(7, 0, 1, 4000, b"CCCC", flags=0x0001, options=[o_seq_start(1009)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "tcp.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAA"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3000,
+            "flags": ["psh"],
+            "payload": b64(b"BBBB"),
+            "seq_start": 1005,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 4000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCC"),
+            "seq_start": 1009,
+        },
+        {"type": "end"},
+    ],
+    expect="ACCEPT, and REPORT. Place the syn record at zero width at the "
+    "stream's current position -- offset 0 here -- so the participant's "
+    "extent is 12, the length of its data. A reader that instead computes "
+    "(1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent "
+    "to match; that is the defect this vector exists to catch, and it is "
+    "the number a real converter produced. Rejecting or isolating this "
+    "file is NOT conformant: the advisory strength is stated in "
+    "Referencing the source by stream offset. The record is not deleted -- "
+    "its timestamp, flags and payload stay readable, and only its "
+    "PLACEMENT is refused.",
     violations=1,
     advisory=True,
 )

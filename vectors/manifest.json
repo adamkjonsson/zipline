@@ -1374,9 +1374,36 @@
         "0x0090",
         "0x0091"
       ],
-      "summary": "A transport-layer record carrying a content_type, which 0.16 makes a MUST NOT -- and the only one in the format whose violation is ADVISORY. The reassembly decoder declares output_layer = transport and labels its record prim:bytes, which is mechanically legal and is the wrong answer: the record's boundaries are wherever the reassembler chunked the stream, so the label asserts a unit where there is a slice. WHY ADVISORY AND NOT ISOLATE: dropping the label loses nothing and the record stays fully readable, so there is no unit a reader could soundly discard. This is the tcp_role treatment, not the origin-on-a-capture treatment. The one thing a reader MUST NOT do is read the label as evidence that the stream is decoded after all, which would put every later offset in this participant into the wrong space. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier -- the file breaks a rule and a conformant reader accepts it anyway, having reported it.",
+      "summary": "A transport-layer record carrying a content_type, which 0.16 makes a MUST NOT whose violation is ADVISORY -- one of two, the other being 0.17's origin floor (advisory-seq-start-below-origin). The reassembly decoder declares output_layer = transport and labels its record prim:bytes, which is mechanically legal and is the wrong answer: the record's boundaries are wherever the reassembler chunked the stream, so the label asserts a unit where there is a slice. WHY ADVISORY AND NOT ISOLATE: dropping the label loses nothing and the record stays fully readable, so there is no unit a reader could soundly discard. This is the tcp_role treatment, not the origin-on-a-capture treatment. The one thing a reader MUST NOT do is read the label as evidence that the stream is decoded after all, which would put every later offset in this participant into the wrong space. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier -- the file breaks a rule and a conformant reader accepts it anyway, having reported it.",
       "spec_section": "Typing a decoded record -- a transport-layer record carries no content_type",
       "expect": "ACCEPT, and REPORT. The projection is the .jsonl file -- the label round-trips, because a reader preserves what it does not act on. A reader MUST ignore the label semantically and SHOULD report it, and MUST NOT conclude from it that the stream is decoded. Rejecting or isolating this file is NOT conformant: the advisory strength is stated in Typing a decoded record.",
+      "has_jsonl": true
+    },
+    {
+      "name": "advisory-seq-start-below-origin",
+      "tier": "accept",
+      "violations": 1,
+      "advisory": true,
+      "bytes": 328,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0063",
+        "0x0070"
+      ],
+      "summary": "A zero-length syn record whose seq_start is the isn rather than isn + 1, which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit below it. This is the shape found in the wild -- a converter writing the handshake at the isn -- and it is worth seeing what it costs, because the arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) is modular, so the syn record lands at offset 4294967295 and the stream measures 4294967295 bytes where its data ends at 12. Every coverage check against this participant then fails for a file that is otherwise correct. WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other byte is exactly where it was, so the damage is bounded and the document can say precisely what to do instead -- the record occupies a ZERO-WIDTH range at the stream's current position (here 0, it being first), covers no byte, and contributes nothing to the extent. Isolating the session would discard a whole capture to fix one offset. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier.",
+      "spec_section": "Referencing the source by stream offset -- the origin is a floor",
+      "expect": "ACCEPT, and REPORT. Place the syn record at zero width at the stream's current position -- offset 0 here -- so the participant's extent is 12, the length of its data. A reader that instead computes (1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent to match; that is the defect this vector exists to catch, and it is the number a real converter produced. Rejecting or isolating this file is NOT conformant: the advisory strength is stated in Referencing the source by stream offset. The record is not deleted -- its timestamp, flags and payload stay readable, and only its PLACEMENT is refused.",
       "has_jsonl": true
     },
     {

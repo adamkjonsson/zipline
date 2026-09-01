@@ -201,6 +201,13 @@ RULES = {
         "a reader reports it, ignores the label, and accepts the file",
         "advisory-transport-content-type",
     ),
+    # 0.17's floor. Like 0.16's four, a MUST the syntax already let you break --
+    # and the second MUST NOT whose violation is advisory rather than isolating.
+    "seq-start-origin-floor": (
+        "a record's seq_start MUST NOT precede the stream origin; the violation is "
+        "ADVISORY and the record is unplaceable, zero-width at the current position",
+        "advisory-seq-start-below-origin",
+    ),
     # NOT in this table, deliberately: "a stage emitting a transport layer MUST
     # NOT withhold content from a stream whose offsets are not sequence-anchored"
     # (#94). It is a writer obligation with no file-visible signature -- a stream
@@ -237,6 +244,13 @@ RETIRED_CLAIMS = {
         89,
         "a transport-layer stream MAY carry Undecoded blocks; the input is the "
         "capture and the stage is the reassembler",
+    ),
+    "only-advisory-must-not": (
+        r"it is the only MUST NOT in this\s+document with that strength",
+        "0.17",
+        108,
+        "the origin floor is a second advisory MUST NOT; the document gives that "
+        "strength wherever it can say exactly what a reader does instead",
     ),
     "byte-run-has-no-decoder-id": (
         r"A byte run carries none",

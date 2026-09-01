@@ -802,6 +802,47 @@ handshake and the first captured byte are the leading hole `[0, K)`
 is no room below the first captured byte, so a pre-first-byte loss simply is not
 representable — one more reason `isn` is mandatory once the handshake is seen.
 
+**The origin is a floor: a record's `seq_start` MUST NOT precede it.** The origin
+is `isn + 1` where the participant carries an `isn`, and the first captured byte
+otherwise. Everything above measures from it — the leading hole is
+`first seq_start − (isn + 1)`, and a record's offset is `seq_start − (isn + 1)` —
+so a record below the origin has a negative offset in a space with none, and the
+modular subtraction does not report that. It returns a number just under 2³²
+instead: one zero-length record at `isn` rather than `isn + 1` puts that record at
+offset 4294967295 and makes the stream measure 4294967295 bytes, whatever its data
+actually spans.
+
+**A reader that meets one MUST treat that record as unplaceable.** It occupies a
+**zero-width range at the stream's current position** — the offset the preceding
+record ended at, or `0` where there is none — contributes nothing to the extent,
+and covers no byte of the stream. A reader **MUST NOT** place it at the wrapped
+offset the arithmetic yields.
+
+**Violating the floor is advisory, not isolating**, the treatment
+[`content_type` at the transport layer](#typing-a-decoded-record) gets: the reader
+**accepts the file**, applies the rule above, and SHOULD report. This is the
+specific rule for this violation, in the sense [Conformance](#conformance) gives
+that phrase, and it binds instead of the general licence to isolate. The reason is
+the reason that licence exists — isolation is for damage a reader cannot bound,
+and here it can: one record is unplaceable and every other byte of the stream is
+exactly where it was. A reader that discarded the session over it would lose the
+whole capture to fix one offset, and two readers taking different options would
+disagree about the stream, which is what this rule exists to stop.
+
+Zero width is what makes the rule safe to apply: a record the reader cannot place
+is one whose bytes it cannot attribute to any offset, and a zero-width range is
+the only claim that stays true whatever the writer meant. Note that it is not
+*deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
+consumer indexing by anything other than offset still sees it.
+
+**The floor is decidable only within the serial-arithmetic half-space.** The
+comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
+`seq_start` comparison uses, so a `seq_start` more than 2³¹ below the origin is
+indistinguishable from one above it and no checker can raise it. That is a
+property of the sequence space, not a gap in this rule: the same limit governs
+record ordering and every `ack` edge, and it is far beyond any distance real
+traffic travels.
+
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
 however it was produced: reassembled from a capture, reassembled from a `.zpf` by
@@ -980,8 +1021,10 @@ neutralise; labelling an arbitrary window `prim:bytes` asserts it is a unit when
 is a slice. It would also type identical bytes differently by provenance, since a
 capture-sourced reassembler declaring itself is only a SHOULD.
 
-**Violating this is advisory, not isolating**, and it is the only MUST NOT in this
-document with that strength. Dropping the label loses nothing and the record stays
+**Violating this is advisory, not isolating** — a deliberately unusual strength
+for a MUST NOT, which this document gives only where it can say exactly what a
+reader does instead (the [origin floor](#referencing-the-source-by-stream-offset)
+is the other). Dropping the label loses nothing and the record stays
 fully readable, so there is no unit a reader could soundly discard and nothing it
 would gain by discarding one — the treatment `tcp_role` gets, not the one an
 `origin` on a capture-sourced stream gets. A reader meeting one **MUST ignore the
@@ -1786,10 +1829,14 @@ the resolutions `tick_hz` is meant for.
 
 **Handshake records.** A writer MAY record an observed TCP handshake as a
 zero-length record carrying the `syn` flag: `timestamp` is the SYN packet's
-capture time and `seq_start` is `isn + 1` — the stream origin, so its computed
-end equals it and every causal edge and ordering rule works unchanged (it
-precedes the data that starts at the same origin simply by being produced
-first). The responder's SYN-ACK is its own zero-length `syn` record, and MAY
+capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin, so
+its computed end equals it and every causal edge and ordering rule works unchanged
+(it precedes the data that starts at the same origin simply by being produced
+first). Recording the handshake is the writer's choice; where it does, this is the
+record's shape. `isn` itself is one below the origin, and a record there breaks
+the [floor rule](#referencing-the-source-by-stream-offset) — the SYN consumes a
+sequence number but delivers no byte, which is exactly why the origin is `isn + 1`
+and not `isn`. The responder's SYN-ACK is its own zero-length `syn` record, and MAY
 carry an `ack` like any record. This is how session-establishment *timing* is
 carried; the handshake's identity already lives on the participant (`isn`,
 `tcp_role`).
@@ -2794,8 +2841,9 @@ readers in two tiers, split by what the violation poisons:
   records, no inventing missing declarations, no guessing at what the writer
   meant. Where this document states a specific rule for a violation (the
   per-participant [ordering rule](#identifiers--ordering), the `prim:`
-  [width-mismatch rule](#enums)), that rule is an instance of this tier and
-  takes precedence.
+  [width-mismatch rule](#enums), the
+  [origin floor](#referencing-the-source-by-stream-offset)), that rule is an
+  instance of this tier and takes precedence.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**

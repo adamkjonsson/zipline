@@ -82,6 +82,52 @@ add a name a decoded record can carry, a canonical word for content that was
 removed rather than withheld, and answers to questions the document had left
 silent.
 
+### Changed
+
+- **The stream origin is a floor: a record's `seq_start` MUST NOT precede it.**
+  ([#108](https://github.com/adamkjonsson/zipline/issues/108)) The origin is
+  `isn + 1` where the participant carries an `isn`, the first captured byte
+  otherwise. The floor was *presumed* everywhere — the leading hole is defined as
+  `first seq_start − (isn + 1)`, and "without an `isn` there is no room below the
+  first captured byte" — but presumed is not stated, so a file carrying a record
+  below the origin broke nothing this document said, and a checker had nothing to
+  cite.
+
+  The **handshake record's `seq_start` is now a MUST** rather than prose inside a
+  "a writer MAY record" sentence: where a writer records the handshake, the record
+  sits at `isn + 1`. That is where the mistake is actually made — a converter in
+  the field writes it at `isn`, one below the origin.
+
+  What that costs is the reason this is a `Changed` and not a note. The subtraction
+  is modular, so it does not report the error, it absorbs it: one zero-length
+  record at `isn` lands at offset 4294967295 and the stream measures 4294967295
+  bytes. On a real 71 KB capture the stream measured 2³²−1 where its data ended at
+  74931, and the coverage check then reported four violations against a file that
+  was otherwise correct.
+
+  **A reader meeting one MUST treat that record as unplaceable**: a zero-width
+  range at the stream's current position, covering no byte and contributing
+  nothing to the extent. It MUST NOT place it at the wrapped offset. Three
+  treatments were available before this — wrap it, skip it, place it at zero width
+  — and all three were defensible, so two conformant readers could disagree about
+  the offset space, which is the one thing this format cannot leave open.
+
+  **The violation is advisory, not isolating**: the reader accepts the file,
+  applies the rule, and SHOULD report. Isolation is for damage a reader cannot
+  bound; here one record is unplaceable and every other byte is where it was, so
+  discarding the session would lose a whole capture to fix one offset. This is the
+  **second** advisory MUST NOT — `content_type` at the transport layer was the
+  first, and the sentence calling it the only one is retired accordingly.
+
+  One limit is stated with the rule rather than left to be found: the floor is
+  decidable only within the serial-arithmetic half-space, so a `seq_start` more
+  than 2³¹ below the origin is indistinguishable from one above it. That is a
+  property of the sequence space — the same limit governs record ordering and
+  every `ack` edge — not a gap in the rule.
+
+  New vector: `advisory-seq-start-below-origin`, carrying the shape found in the
+  wild.
+
 ---
 
 ## [0.16] — 2026-08-09

@@ -363,6 +363,41 @@ format is built on.
 - **One negative vector**: a zero-length `syn` record at `isn`, which is the shape
   in the wild. Isolate tier — the file is readable and one record is unplaceable.
 
+***Done. The tier was wrong, and getting it right is most of what this phase
+decided.***
+
+***The violation is advisory, not isolating, and the reader rule is what makes it
+so.*** This plan said isolate, and so did the issue. But `isolate` is a licence —
+"MAY reject the file, or discard the smallest unit it can soundly isolate" — and
+handing that licence to a reader here reintroduces exactly the disagreement #108
+exists to end: one reader drops the session, another places the record at zero
+width, and they disagree about the stream again. The whole point of writing a
+reader rule is that there is a right answer; a tier that permits three is the
+wrong container for it. `0.16` built the manifest key for precisely this shape —
+the file breaks a rule, the reader reports it and accepts, nothing is discarded —
+and this is its second user. `advisory-seq-start-below-origin`, accept tier,
+`advisory: true`, one violation.
+
+***That falsified a sentence in §Typing, in three places.*** `content_type` at the
+transport layer was documented as "the only MUST NOT in this document with that
+strength". It is now one of two. The sentence no longer counts — it says the
+strength is given where the document can state exactly what a reader does instead,
+which is the property that actually decides it — and the old wording is in
+`RETIRED_CLAIMS`, verified to reproduce against the pre-edit text.
+
+**The other two copies are outside the specification, where the ratchet cannot
+see them:** the vector's summary in `build.py` (which reaches `manifest.json`) and
+its row in `vectors/README.md` both said "the only one". Both corrected. Worth
+recording as a limit of the mechanism rather than a slip: `RETIRED_CLAIMS` scans
+the specification, and a claim can be restated in the suite that illustrates it.
+
+***One thing the issue asserted that the document does not say.*** It offers
+zero-width placement as "the treatment a `seq_start`-less record already gets".
+No such treatment is stated anywhere — a transport record without `seq_start` has
+no defined placement at all. The rule ships on its own terms instead, with the
+argument for zero width given rather than borrowed. Copying that appeal to
+precedent in would have put a false claim about the document into the document.
+
 ### Phase 2 — #107 and #105, what a decoded record says about itself
 
 One section, two edits, in this order.
