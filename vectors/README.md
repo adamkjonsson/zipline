@@ -235,8 +235,12 @@ first **advisory** vector.
 
 ### Added in `0.17`
 
-| Vector | Violation |
-|--------|-----------|
+The suite's first vector for an option that names a record rather than typing it,
+and a second **advisory** one.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `decoded-field-roles` | *(accept)* One record per protocol **field**, each named by `0.17`'s `role`. Four `u32` fields, contiguous and non-overlapping, each typed `prim:u32` — so before `role` this file could carry the **type** or the **name** and not both: `prim:u32` leaves a reader able to read every value and unable to tell which field is the checksum, `dec:checksum` names it and discards the normative typing. The two options are independent and every record here carries both. `role` is read in the namespace of the decoder `name` that `decoder_id` resolves to, exactly as a `dec:` token is. |
 | `advisory-seq-start-below-origin` | *(accept, **advisory**)* A zero-length `syn` record at the `isn` rather than `isn + 1`. The origin is a **floor** since `0.17`, and this is the shape found in the wild — worth seeing because the arithmetic does not report the error, it absorbs it: `seq_start − (isn + 1)` is modular, so the record lands at offset 4294967295 and the stream measures 4294967295 bytes where its data ends at 12. Advisory, because the damage is bounded and the document can say exactly what to do instead — the record is **unplaceable**, a zero-width range at the stream's current position, covering no byte and contributing nothing to the extent. **Rejecting or isolating this file is not conformant.** |
 
 ## Multi-file fixtures

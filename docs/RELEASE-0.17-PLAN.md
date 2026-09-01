@@ -417,6 +417,36 @@ The advisory treatment is what keeps the option cheap: dropping the label loses
 nothing, the record stays fully readable, and there is no unit a reader could
 soundly discard.
 
+***Done. The two edits turned out to be one, and it removed a rule rather than
+adding one.***
+
+***The transport-layer bar is now stated once for both labels, not twice.*** The
+plan assumed `role` would need its own MUST NOT and its own advisory paragraph,
+which would have made a third advisory instance a week after Phase 1 made the
+second — and left two copies of one argument to drift apart. But the argument is
+identical for both: a reassembly record's boundaries are wherever the reassembler
+chunked, so a label on it asserts a unit where there is a slice. So §Typing now
+bars *a label* at the transport layer, `content_type` and `role` together, with
+one advisory treatment and one vector. `content-type-transport-advisory` in
+`RULES` says so; `advisory-transport-content-type` keeps its name and now
+exercises the rule for both.
+
+That also left Phase 1's "the other" parenthetical correct as written. Adding a
+third instance would have retired the sentence again in the same release that
+wrote it.
+
+***#105 shipped as prose beside the width-binding rule, and needs no vector.***
+There is nothing to exercise: it adds no capability and states no new obligation.
+`RULES` is for permissions a file can demonstrate, so an entry there would have
+been a rule with no possible vector — #94's situation, but self-inflicted. It is
+recorded in the changelog as *Clarified*, which is exactly what it is.
+
+***One thing the issue's evidence spells differently from this document.*** #107
+and #105 both use `cites` for what this format calls `spans`, borrowed from the
+implementation that filed them. Worth watching when taking in the remaining
+issues: importing an implementation's vocabulary into normative text is how a
+document acquires a second name for one thing.
+
 ### Phase 3 — #98, the duty question that stayed
 
 #106 moved to `0.18` at Phase 0, so this phase is one item.

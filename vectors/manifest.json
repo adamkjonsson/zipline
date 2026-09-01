@@ -65,6 +65,41 @@
       "has_jsonl": true
     },
     {
+      "name": "decoded-field-roles",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 668,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x0092",
+        "0x00C1"
+      ],
+      "summary": "One record per protocol FIELD, each named by 0.17's role. The case #107 was filed for, and deliberately the case with none of the confounders: four u32 fields, contiguous, non-overlapping, in stored order, each a token in the closed prim: vocabulary with payload_len binding exactly, and the decoded stream is a well-defined 16 bytes. WHAT ROLE ADDS: before it, this file could carry the TYPE or the NAME and not both. content_type = prim:u32 leaves a generic reader able to read every value and unable to tell which field is the checksum; dec:checksum names it and throws away the normative typing, and makes dec:checksum and dec:seq_no two distinct types that happen both to be u32. Position is not a contract either -- an optional field the decoder later emits renumbers everything after it. The two options are INDEPENDENT, and every record here carries both. SCOPE: role is read in the namespace of the decoder name that decoder_id resolves to, exactly as a dec: token is, so another decoder's `checksum` is a different name. It is opaque to the format: it names a record and asserts no tree. Session End declares input_extents, so the coverage guarantee is checkable from this file alone -- four spans, [0,16), meeting the declared extent exactly.",
+      "spec_section": "Typing a decoded record -- a type is not a name",
+      "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
       "name": "passthrough-transport",
       "tier": "accept",
       "violations": 0,

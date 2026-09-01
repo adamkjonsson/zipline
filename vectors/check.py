@@ -197,9 +197,18 @@ RULES = {
         "isolate-hole-against-capture",
     ),
     "content-type-transport-advisory": (
-        "content_type at the transport layer is a MUST NOT whose violation is ADVISORY: "
-        "a reader reports it, ignores the label, and accepts the file",
+        "a label at the transport layer -- content_type since 0.16, role since 0.17 -- "
+        "is a MUST NOT whose violation is ADVISORY: a reader reports it, ignores the "
+        "label, and accepts the file",
         "advisory-transport-content-type",
+    ),
+    # 0.17's option. The id is covered mechanically by the registry parse; what
+    # is not is the SCOPING, which is the whole of what makes role more than a
+    # comment and is stated in prose no table sees.
+    "role-decoder-scoped": (
+        "a record MAY carry its type and its name at once; role names the record in a "
+        "vocabulary scoped to its decoder's name, as a dec: token is, and asserts no tree",
+        "decoded-field-roles",
     ),
     # 0.17's floor. Like 0.16's four, a MUST the syntax already let you break --
     # and the second MUST NOT whose violation is advisory rather than isolating.

@@ -454,6 +454,10 @@ def o_content_type(v: str) -> Opt:
     return option(0x0091, s(v), "content_type")
 
 
+def o_role(v: str) -> Opt:
+    return option(0x0092, s(v), "role")
+
+
 def o_reason(v: str) -> Opt:
     return option(0x00A0, s(v), "reason")
 
@@ -694,6 +698,178 @@ vector(
             "input_extents": [
                 {"source_id": 1, "session_id": 7, "pid": 0, "extent": 18},
                 {"source_id": 1, "session_id": 7, "pid": 1, "extent": 139},
+            ],
+        },
+        {"type": "end"},
+    ],
+    violations=0,
+)
+
+vector(
+    "decoded-field-roles",
+    "accept",
+    "One record per protocol FIELD, each named by 0.17's role. The case #107 "
+    "was filed for, and deliberately the case with none of the confounders: "
+    "four u32 fields, contiguous, non-overlapping, in stored order, each a "
+    "token in the closed prim: vocabulary with payload_len binding exactly, "
+    "and the decoded stream is a well-defined 16 bytes. "
+    "WHAT ROLE ADDS: before it, this file could carry the TYPE or the NAME and "
+    "not both. content_type = prim:u32 leaves a generic reader able to read "
+    "every value and unable to tell which field is the checksum; dec:checksum "
+    "names it and throws away the normative typing, and makes dec:checksum and "
+    "dec:seq_no two distinct types that happen both to be u32. Position is not "
+    "a contract either -- an optional field the decoder later emits renumbers "
+    "everything after it. The two options are INDEPENDENT, and every record "
+    "here carries both. "
+    "SCOPE: role is read in the namespace of the decoder name that decoder_id "
+    "resolves to, exactly as a dec: token is, so another decoder's `checksum` "
+    "is a different name. It is opaque to the format: it names a record and "
+    "asserts no tree. "
+    "Session End declares input_extents, so the coverage guarantee is "
+    "checkable from this file alone -- four spans, [0,16), meeting the "
+    "declared extent exactly.",
+    "Typing a decoded record -- a type is not a name",
+    [
+        file_header(options=[o_produced_by("zpf-fielddecode 0.1"), o_produced_at(1719800000)]),
+        source(1, 1, [o_uri("frames.zpf"), o_digest("sha256:5e7a")]),
+        decoder(1, [o_dec_name("acme-hdr"), o_dec_version("2.0")]),
+        session(31, [o_proto("acme")]),
+        participant(31, 0, [o_endpoint("10.0.0.1:9000")]),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 1),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 0, 4)]),
+                o_content_type("prim:u32"),
+                o_role("version"),
+            ],
+        ),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 16),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 4, 8)]),
+                o_content_type("prim:u32"),
+                o_role("length"),
+            ],
+        ),
+        # The record the whole issue is about: without a role, nothing in the
+        # file says THIS is the checksum -- and its type says only prim:u32,
+        # which is also what the other three say.
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 0xDEADBEEF),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 8, 12)]),
+                o_content_type("prim:u32"),
+                o_role("checksum"),
+            ],
+        ),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<I", 42),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 30, 12, 16)]),
+                o_content_type("prim:u32"),
+                o_role("seq_no"),
+            ],
+        ),
+        session_end(31, [o_input_extents([(1, 0, 30, 16)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-fielddecode 0.1",
+            "produced_at": 1719800000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "frames.zpf",
+            "digest": "sha256:5e7a",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "acme-hdr",
+            "version": "2.0",
+        },
+        {"type": "session", "session_id": 31, "proto": "acme"},
+        {"type": "participant", "session_id": 31, "pid": 0, "endpoint": ["10.0.0.1:9000"]},
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 1)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 0, "off_end": 4}],
+            "content_type": "prim:u32",
+            "role": "version",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 16)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 4, "off_end": 8}],
+            "content_type": "prim:u32",
+            "role": "length",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 0xDEADBEEF)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 8, "off_end": 12}],
+            "content_type": "prim:u32",
+            "role": "checksum",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<I", 42)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 12, "off_end": 16}],
+            "content_type": "prim:u32",
+            "role": "seq_no",
+        },
+        {
+            "type": "session_end",
+            "session_id": 31,
+            "input_extents": [
+                {"source_id": 1, "session_id": 30, "pid": 0, "extent": 16},
             ],
         },
         {"type": "end"},

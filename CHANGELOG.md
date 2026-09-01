@@ -82,6 +82,69 @@ add a name a decoded record can carry, a canonical word for content that was
 removed rather than withheld, and answers to questions the document had left
 silent.
 
+### Added
+
+- **`role` (`0x0092`): a decoded record may carry its type and its name at once.**
+  ([#107](https://github.com/adamkjonsson/zipline/issues/107)) A string on Record,
+  decoded layer only, advisory, saying what the record **is** within a vocabulary
+  scoped to its decoder's `name`.
+
+  The gap it closes is total rather than partial. A decoder emitting one record
+  per protocol field produces four `u32` fields as four records typed
+  `prim:u32` — contiguous, non-overlapping, `payload_len` binding exactly, a
+  conformant and well-formed decoded stream in which **nothing says which one is
+  the checksum**. Position is not a contract: an optional field the decoder later
+  emits renumbers everything after it. The first implementation to decode at field
+  granularity reported 176 of 176 DNS records distinguishable only by `comment`.
+
+  The two spellings available before this each destroyed the other's information.
+  `content_type = prim:u32` leaves the value readable by a generic reader and says
+  nothing about which field it is; `dec:checksum` names the field, discards the
+  normative typing, and makes `dec:checksum` and `dec:seq_no` two distinct types
+  that happen both to be `u32`; `comment` is defined as a free-text human note, so
+  a consumer parsing it relies on something this document says means nothing.
+  `role` is **independent** of `content_type` — a record may carry both, either or
+  neither — which is the whole of the change.
+
+  Three constraints keep it small, each borrowed from a mechanism already here.
+  It is **name-scoped to the record's decoder**, exactly as a `dec:` token is, so
+  two decoders may both use `checksum` without colliding — and that declared scope
+  is what makes it more than a `comment`, not any ability to verify the meaning,
+  which this format has for neither. It is **opaque to the format**: it names a
+  record and asserts no tree, so `dns.flags.qr` is a convention this document does
+  not parse. And it is **advisory, decoded layer only** — the transport-layer bar
+  and its advisory strength are now stated once for both labels, since the reason
+  is the same for each: a reassembly record's boundaries are wherever the
+  reassembler chunked, so a label on it asserts a unit where there is a slice.
+
+  Whether a **nested** decomposition is a well-formed decoded stream at all is a
+  separate question, deliberately not answered here
+  ([#106](https://github.com/adamkjonsson/zipline/issues/106)); `role` is
+  compatible with any answer to it, which is why it did not wait for one.
+
+  New vector: `decoded-field-roles`.
+
+### Clarified
+
+- **`prim:` types storage, not the wire: a sub-byte field's width is not
+  recoverable, and that is a decision.**
+  ([#105](https://github.com/adamkjonsson/zipline/issues/105)) A field narrower or
+  wider than 8/16/32/64 — a 4-bit flag, a 24-bit length — has no `prim:` token,
+  and the conformant move is to widen to the smallest that holds it. The value
+  stays readable by any reader, which is what the width-binding rule is for; the
+  true width is gone, and `spans` do not recover it, since a sub-byte field names
+  the byte containing it and several fields name the same byte.
+
+  Nothing about a file changes. What changes is that the silence is now a stated
+  answer: `prim:` types **storage**, exactly as it already does for byte order,
+  where a big-endian wire value is byte-swapped by the emitting decoder and never
+  by the reader. A field's true width is the decoder's business, read from what
+  the decoder documents. The alternatives are recorded as weighed and declined — a
+  significant-bits option would add a field no reader can act on, and opening the
+  vocabulary would break the width-binding rule that is the only thing making
+  `prim:` checkable. A producer could not previously tell the omission from the
+  decision, and picked the widening in the dark.
+
 ### Changed
 
 - **The stream origin is a floor: a record's `seq_start` MUST NOT precede it.**

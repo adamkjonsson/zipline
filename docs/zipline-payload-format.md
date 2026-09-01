@@ -1010,11 +1010,51 @@ truth — the label never replaces them.
 An unknown scheme is treated as opaque. This lets the decoder say *what each unit
 is* without the format having to parse it.
 
-**A record at the transport layer MUST NOT carry a `content_type`**, including one
-emitted by a reassembly decoder, where `prim:bytes` is now mechanically legal and
-is the obvious wrong answer. `content_type` types a *value* — what this unit **is**
-— and a reassembly record's boundaries are wherever the reassembler happened to
-chunk the stream. Two conformant reassemblers chunk one stream differently and both
+**A type is not a name, and a record needs both.** `content_type` says what a
+record's bytes *are*. It does not say *which* record this is, and for a decoder
+emitting one record per protocol field the difference is total: four `u32` fields
+decode to four records typed `prim:u32`, contiguous, non-overlapping, each with
+`payload_len` binding exactly — a conformant, well-formed decoded stream in which
+nothing says which one is the checksum. Position is not a contract, since a
+decoder that later emits an optional field, or omits one it could not parse,
+renumbers everything after it.
+
+Before `0.17` the two available spellings each destroyed the other's information.
+`dec:checksum` names the field and discards the normative typing that let a
+generic reader read the value — and it types a *value*, so `dec:checksum` and
+`dec:seq_no` become two distinct types that happen both to be `u64`, with nothing
+left saying they share one. `comment` is defined as a free-text human note, so a
+consumer parsing it relies on something this document says means nothing.
+
+**`role`** is the name: a string saying what this record **is**, within its
+decoder's vocabulary. It is independent of `content_type` — a record may carry
+both, either, or neither — which is the whole point: the type and the name stop
+competing for one field. Three properties, each borrowed from a mechanism already
+here:
+
+- **Name-scoped to the record's decoder**, exactly as a `dec:` token is: the
+  namespace is the Decoder `name` that `decoder_id` resolves to, so two decoders
+  may both use `checksum` without colliding. This is the whole of what makes it
+  more than a `comment` — not that a reader can verify the meaning, since it
+  cannot verify a `dec:` token either, but that the **scope is declared**, so a
+  consumer knows exactly how far the name travels.
+- **Opaque to the format.** It names a record; it does **not** assert a tree. A
+  producer writing `dns.flags.qr` is using a convention this document does not
+  parse, the same way a `dec:` value is unparsed. Whether a **nested**
+  decomposition — a record naming bytes a record before it already emitted — is a
+  well-formed decoded stream at all is a separate question this version does not
+  settle
+  ([#106](https://github.com/adamkjonsson/zipline/issues/106)); `role` is
+  compatible with any answer to it, which is why it did not wait for one.
+- **Advisory, and decoded layer only** — the treatment `content_type` gets, below,
+  and for the same reasons.
+
+**A record at the transport layer MUST NOT carry a `content_type`, and MUST NOT
+carry a `role`**, including one emitted by a reassembly decoder, where
+`prim:bytes` is now mechanically legal and is the obvious wrong answer. Both are
+labels on a *unit* — one saying what it is, one saying which it is — and a
+reassembly record's boundaries are wherever the reassembler happened to chunk the
+stream. Two conformant reassemblers chunk one stream differently and both
 are right, which is exactly the property the
 [logical offset space](#referencing-the-source-by-stream-offset) exists to
 neutralise; labelling an arbitrary window `prim:bytes` asserts it is a unit when it
@@ -1791,8 +1831,9 @@ layer, told apart by the referenced source's `kind`. (A pass-through preserving 
 *decoded* layer re-emits decoded records, `decoder_id`s included — see
 [Conformance](#conformance).)
 A record at the decoded layer MAY also carry a `content_type` labelling what its
-`payload` is (see [Typing a decoded record](#typing-a-decoded-record)); a record
-at the transport layer carries none, whether or not it has a decoder, for the
+`payload` is, and a `role` naming what the record is within its decoder's
+vocabulary (see [Typing a decoded record](#typing-a-decoded-record)); a record at
+the transport layer carries neither, whether or not it has a decoder, for the
 reason given there.
 Because the frame `length` (u32) bounds the whole block, `payload_len` is in
 practice capped a little below 4 GiB (it must share the block with the body and
@@ -2361,6 +2402,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes **correspond to** — the input the unit was computed from, not necessarily a copy of it (see below) |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded        | which **decoder** produced or declined this record or region — not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it). The decoder's [`output_layer`](#decoder-descriptor-0x03) then gives the layer, which may be transport |
 | `0x0091` | content_type     | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
+| `0x0092` | role             | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what this record **is**, in a vocabulary scoped to its decoder's `name`; opaque to the format, and independent of `content_type` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
 | `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical four, and MUST agree with the class if it accompanies one of them |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
@@ -2500,6 +2542,27 @@ constraint (any `payload_len`, including 0). A writer MUST NOT emit a fixed-widt
 mismatch MUST treat the `content_type` as unknown (opaque payload, falling back to
 the decoder `name`), exactly as for an unknown scheme, and MUST NOT pad, truncate,
 or reinterpret — the bytes remain the source of truth.
+
+**`prim:` types storage, not the wire, and this is a decision rather than an
+omission.** A protocol field narrower or wider than 8/16/32/64 — a 4-bit flag, a
+24-bit length — has **no token**, and the conformant move is to widen to the
+smallest that holds it: a 4-bit field is `prim:u8`, a 24-bit one `prim:u32`. The
+*value* stays readable by any reader, which is what the width-binding rule above
+is for, and the field's true width is then **not recoverable from the file**.
+`spans` do not recover it either — a sub-byte field names the byte containing it,
+and several such fields name the same byte.
+
+That is the same answer this document already gives for byte order, a few lines
+above: a fixed-width `prim:` payload is stored little-endian, and a big-endian
+wire value is byte-swapped by the emitting decoder, never by the reader. A field's
+true width is likewise the decoder's business, and a consumer that needs it reads
+what the decoder documents, exactly
+as it does for a `dec:` token or a [`role`](#typing-a-decoded-record). The
+alternatives were weighed and declined: a significant-bits option would add a
+field no reader can act on, and opening the vocabulary would break the
+width-binding rule that is the only thing making `prim:` checkable at all. The
+vocabulary stays closed
+([#105](https://github.com/adamkjonsson/zipline/issues/105)).
 
 ### Identifiers & ordering
 
