@@ -83,6 +83,40 @@ behaviour: the restriction `dropped` places on an otherwise open vocabulary, and
 the rule for where an unplaceable record sits. One *loosens* — a handshake record
 above the origin was isolatable under `0.17` and is advisory under `0.18`.
 
+### Changed
+
+- **One placement rule covers every unplaceable record, and it is a running
+  maximum.** ([#114](https://github.com/adamkjonsson/zipline/issues/114)) `0.17`
+  put a below-origin record at "the offset the preceding record ended at, or `0`
+  where there is none". That clause is unreachable in a conformant file — the
+  ordering MUST stores a below-origin record first, so only the `0` branch is
+  ever taken — and where a file breaks that MUST it disagrees with the obvious
+  alternative, because records within a participant may overlap and the record
+  stored last is not always the one that reached furthest.
+
+  A record is now **unplaceable** when the offset space cannot say where it
+  belongs, which covers two shapes: `seq_start` below the origin, and **no
+  `seq_start` at all** on a stream whose other records carry one. `0.17` stated a
+  rule for the rare shape and left the common one silent — `partially-hinted-
+  sequenced` has shipped an instance since `0.12` — so both are now one sentence:
+  a zero-width range at the **highest `off_end` any earlier record of that
+  participant reached**, `0` where there is none.
+
+- **The `syn` MUST has one strength across its whole domain.**
+  ([#116](https://github.com/adamkjonsson/zipline/issues/116)) `0.17` made
+  `seq_start = isn + 1` a MUST and gave a reader rule for records *below* the
+  origin only. A `syn` at `isn + 7` violated the same MUST with no specific rule,
+  so it fell to the general licence to isolate — meaning a reader could discard a
+  session over a zero-length record six bytes up, while the shape that wrecks the
+  entire offset space was accept-and-report. The strengths were inverted relative
+  to the damage. Violating the handshake MUST is now advisory wherever the record
+  sits.
+
+  Two shapes the MUST left open are named with it: a `syn`-flagged record with no
+  `seq_start` is unplaceable like any other, and the zero length is part of the
+  shape being described — a writer with data on the SYN (TCP Fast Open) emits it
+  as an ordinary record at the origin, which is exactly where such data starts.
+
 ### Clarified
 
 - **The per-participant ordering MUST is non-descending: two records MAY share a
@@ -118,6 +152,33 @@ above the origin was isolatable under `0.17` and is advisory under `0.18`.
   origin — and it also carries the responder's SYN-ACK as its own zero-length
   `syn` record with an `ack`, which the specification describes and nothing else
   exercised.
+
+### Fixed
+
+- **A stated rule for a violation *displaces* the isolate licence rather than
+  being an instance of it.**
+  ([#113](https://github.com/adamkjonsson/zipline/issues/113)) §Conformance listed
+  the origin floor among rules that are "an instance of this tier" — a tier headed
+  *the reader MAY isolate* — while §Referencing says the floor binds *instead of*
+  that licence and its vector says isolating is not conformant. Two sections gave
+  opposite instructions to a harness that routes on the tier. The clause now says
+  displacement, and notes that some such rules are **weaker** than isolation: the
+  `prim:` width-mismatch rule and the origin floor both keep the record, ignore
+  the part that is wrong, and report. The `prim:` rule had the same imprecision
+  and is fixed by the same sentence.
+
+- **The origin floor says where it is vacuous, and what it costs when it is not.**
+  ([#115](https://github.com/adamkjonsson/zipline/issues/115)) Without an `isn`
+  the origin *is* the first record's `seq_start` and the ordering MUST stores that
+  record first, so the floor cannot be violated there — stated, so an implementer
+  whose check never fires on an unanchored stream knows the rule is unreachable by
+  construction rather than misread. And the advisory argument, which `0.17` costed
+  as "one record is unplaceable and every other byte is exactly where it was", now
+  says what a *payload-carrying* below-origin record costs: those bytes are
+  excluded from the extent and from every coverage answer the file supports. The
+  bytes are kept and only their placement is refused; "data must never vanish
+  silently" is discharged by the SHOULD-report, not by pretending they were
+  placed. New vector: `advisory-below-origin-payload`.
 
 ---
 

@@ -2865,7 +2865,12 @@ vector(
     "A SEQUENCED session where ONE record carries seq_start and the rest carry "
     "no hints at all. Under 0.12's definition a single hint anywhere means the "
     "session is not hint-less, so no sequenced_basis is required -- even though "
-    "most of the order rests on timestamps. This vector pins that answer.",
+    "most of the order rests on timestamps. This vector pins that answer. "
+    "Since 0.18 it also carries the OTHER unplaceable shape: pid 0's second "
+    "record has no seq_start on a stream whose first record has one, so the "
+    "offset space cannot say where it belongs. 0.17 stated a placement rule for "
+    "a below-origin record and left this shape silent, and it is the commoner "
+    "of the two.",
     "Merge algorithm -- hint-less",
     [
         file_header(),
@@ -2911,6 +2916,15 @@ vector(
         },
         {"type": "end"},
     ],
+    expect="Accept. The .jsonl file is the expected projection. On placement: "
+    "pid 0's first record is at [0,6) and its second carries no seq_start "
+    "on a stream whose first record has one, so it is UNPLACEABLE -- a "
+    "zero-width range at the highest off_end reached, offset 6, "
+    "contributing nothing, so the extent stays 6 and those six bytes are "
+    "in no offset at all. A reader that appended them at [6,12) is "
+    "reading an offset the file does not state. pid 1 is NOT this rule's "
+    "case: no record of that participant carries a seq_start, so its "
+    "stream is not sequence-anchored to begin with.",
     violations=0,
 )
 
@@ -3674,6 +3688,94 @@ vector(
     "Referencing the source by stream offset. The record is not deleted -- "
     "its timestamp, flags and payload stay readable, and only its "
     "PLACEMENT is refused.",
+    violations=1,
+    advisory=True,
+)
+
+vector(
+    "advisory-below-origin-payload",
+    "accept",
+    "A below-origin record CARRYING PAYLOAD, which is the shape whose cost the "
+    "rule has to state out loud. advisory-seq-start-below-origin's offending "
+    "record is a zero-length syn, so placing it at zero width loses nothing and "
+    "a reader that instead DROPPED it would give the same answers. Here it has "
+    "eight bytes, and the two readings stop agreeing: under the rule the record "
+    "is unplaceable, occupies a zero-width range at offset 0, and its eight "
+    "bytes are outside the offset space -- excluded from the extent and from "
+    "every coverage answer this file supports -- while the record itself stays "
+    "readable, its timestamp, flags and payload intact. "
+    "THE COST IS DELIBERATE, and this vector is where a reader can see it: the "
+    "alternative is to trust the wrapped offset, which puts those bytes near "
+    "2**32 and corrupts the extent for every other record too. The shape is what "
+    "a converter with an off-by-one on isn produces for its first record.",
+    "Referencing the source by stream offset -- unplaceable records",
+    [
+        file_header(),
+        source(1, 0, [o_uri("offbyone.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
+        # THE VIOLATION: one below the origin, and carrying payload -- so the
+        # zero-width placement costs eight bytes rather than nothing.
+        record(7, 0, 1, 1000, b"LOSTBYTE", flags=0x0001, options=[o_seq_start(1000)]),
+        record(7, 0, 1, 2000, b"AAAABBBB", flags=0x0001, options=[o_seq_start(1001)]),
+        record(7, 0, 1, 3000, b"CCCCDDDD", flags=0x0001, options=[o_seq_start(1009)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "offbyone.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["psh"],
+            "payload": b64(b"LOSTBYTE"),
+            "seq_start": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAABBBB"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCCDDDD"),
+            "seq_start": 1009,
+        },
+        {"type": "end"},
+    ],
+    expect="ACCEPT, and REPORT. The first record is unplaceable: zero-width at "
+    "offset 0, contributing nothing to the extent and covering no byte, so "
+    "the participant's stream is [0,16) -- the two later records -- and the "
+    "eight bytes of the first are in no offset at all. It is NOT deleted: "
+    "a reader still lists it, still reports its timestamp and payload, and "
+    "a consumer indexing by anything but offset still sees it. Two wrong "
+    "readings diverge visibly here and not on "
+    "advisory-seq-start-below-origin: one places the record at 4294967295 "
+    "and reports an extent to match, the other drops it and reports two "
+    "records where the file has three. Rejecting or isolating is NOT "
+    "conformant.",
     violations=1,
     advisory=True,
 )

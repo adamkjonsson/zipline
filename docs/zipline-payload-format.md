@@ -816,11 +816,32 @@ instead: one zero-length record at `isn` rather than `isn + 1` puts that record 
 offset 4294967295 and makes the stream measure 4294967295 bytes, whatever its data
 actually spans.
 
-**A reader that meets one MUST treat that record as unplaceable.** It occupies a
-**zero-width range at the stream's current position** — the offset the preceding
-record ended at, or `0` where there is none — contributes nothing to the extent,
-and covers no byte of the stream. A reader **MUST NOT** place it at the wrapped
-offset the arithmetic yields.
+**The floor binds meaningfully only on an `isn`-anchored participant.** Without an
+`isn` the origin *is* the first record's `seq_start`, and the ordering MUST stores
+that record first, so nothing can precede it and the rule cannot be violated. It
+is stated for both cases anyway, because the rule is about the origin rather than
+about `isn` — but an implementer who writes the check and cannot make it fire on
+an unanchored stream should know the rule is unreachable there by construction,
+not that they have misread the origin.
+
+**Unplaceable records, and where they go.** A record is **unplaceable** when this
+offset space cannot say where it belongs. Two shapes are: one whose `seq_start`
+precedes the origin, and one carrying **no `seq_start`** on a stream whose other
+records carry them. A reader **MUST** treat an unplaceable record as occupying a
+**zero-width range at the highest `off_end` any earlier record of that participant
+reached** — `0` where there is none — contributing nothing to the extent and
+covering no byte of the stream. A reader **MUST NOT** place a below-origin record
+at the wrapped offset the arithmetic yields.
+
+The position is a **running maximum** rather than "where the previous record
+ended", and the two differ: records within a participant may overlap — the
+favor-old policy exists for exactly that — so the record stored last is not always
+the one that reached furthest. Stating the weaker of the two would leave an
+unplaceable record inside a range already covered, and two readers taking the two
+readings would disagree about the offset space, which is the disagreement this
+rule exists to end. A run of unplaceable records is well defined by the same
+sentence: each contributes nothing, so each sits where the last placed record
+left off.
 
 **Violating the floor is advisory, not isolating**, the treatment
 [`content_type` at the transport layer](#typing-a-decoded-record) gets: the reader
@@ -838,6 +859,17 @@ is one whose bytes it cannot attribute to any offset, and a zero-width range is
 the only claim that stays true whatever the writer meant. Note that it is not
 *deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
 consumer indexing by anything other than offset still sees it.
+
+**Where such a record carries payload, this costs bytes, and the cost is
+deliberate.** A handshake record written one below the origin is zero-length and
+loses nothing. A converter with an off-by-one on `isn` instead produces a
+below-origin record *with a payload*, and those bytes are then excluded from the
+extent and from every coverage answer the file supports: they are not in the
+offset space at all. The alternative is to trust the wrapped offset, which places
+them near 2³² and corrupts the extent for every other record too — so the bytes
+are kept and only their **placement** is refused. "Data must never vanish
+silently" is discharged by the SHOULD-report and by the record remaining readable,
+not by pretending it was placed.
 
 **The floor is decidable only within the serial-arithmetic half-space.** The
 comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
@@ -1898,7 +1930,28 @@ it says so). Recording the handshake is the writer's choice; where it does, this
 record's shape. `isn` itself is one below the origin, and a record there breaks
 the [floor rule](#referencing-the-source-by-stream-offset) — the SYN consumes a
 sequence number but delivers no byte, which is exactly why the origin is `isn + 1`
-and not `isn`. The responder's SYN-ACK is its own zero-length `syn` record, and MAY
+and not `isn`.
+
+**Violating this is advisory wherever the record sits**, which is one strength for
+the whole MUST rather than one for each side of it. *Below* the origin the record
+is unplaceable and the floor rule places it. *Above* the origin — `isn + 7`, say —
+it is placeable and ordinary arithmetic places it: a zero-length record a few bytes
+up, covering nothing. Either way a reader **accepts the file**, places the record,
+and SHOULD report; what it loses is the handshake's timing and nothing else, and
+the origin it might have been tempted to re-derive is fixed by `isn` rather than by
+this record. Isolating over a misplaced zero-length record would be the strength
+inverted — discarding a session for the mild shape while the shape that wrecks the
+whole offset space is accepted and repaired.
+
+Two neighbouring shapes follow from the same reasoning. A `syn`-flagged record
+carrying **no** `seq_start` is unplaceable like any other and placed by the same
+rule. And the **zero length is part of the shape described here**, not an
+incidental detail: the flag marks a handshake-*timing* record. A writer with data
+on the SYN (TCP Fast Open) emits that data as an ordinary record at the origin,
+where it belongs, and leaves the timing record empty; nothing is lost, because the
+origin is `isn + 1` and that is exactly where such data starts.
+
+The responder's SYN-ACK is its own zero-length `syn` record, and MAY
 carry an `ack` like any record. This is how session-establishment *timing* is
 carried; the handshake's identity already lives on the participant (`isn`,
 `tcp_role`).
@@ -2955,8 +3008,12 @@ readers in two tiers, split by what the violation poisons:
   meant. Where this document states a specific rule for a violation (the
   per-participant [ordering rule](#identifiers--ordering), the `prim:`
   [width-mismatch rule](#enums), the
-  [origin floor](#referencing-the-source-by-stream-offset)), that rule is an
-  instance of this tier and takes precedence.
+  [origin floor](#referencing-the-source-by-stream-offset)), that rule
+  **displaces this licence**: a reader applies the stated rule instead, whether it
+  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and the
+  origin floor both keep the record, ignore the part that is wrong, and report —
+  so reading them as instances of a tier headed *the reader MAY isolate* gets them
+  backwards.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**

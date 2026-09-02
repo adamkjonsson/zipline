@@ -357,6 +357,36 @@ the two wrong implementations — wrap, or drop the record — diverge visibly. 
 it if Phase 2 confirms the path really is different in a reader; skip it if it
 only re-tests the same arithmetic.
 
+***Done. The conditional vector was taken, and the seq_start-less half found a
+home that already existed.***
+
+***The path really is different, so `advisory-below-origin-payload` ships.*** With
+a zero-length record, placing it at zero width and dropping it entirely give the
+same answers — nothing is in the offset space either way, and the two wrong
+implementations are indistinguishable. With eight bytes they separate: the extent
+is 16 under the rule, the record is still listed, and a reader that drops it
+reports two records where the file has three while one that trusts the arithmetic
+reports an offset of 4294967295. Read back rather than asserted.
+
+***#114's `seq_start`-less half needed no new vector, because the suite has
+carried an instance since `0.12`.*** `partially-hinted-sequenced`'s pid 0 has a
+record with `seq_start` followed by one without — exactly the shape — and nothing
+had ever said where the second one goes. Its `expect` now says: unplaceable, zero
+width at offset 6, extent stays 6, and pid 1 is *not* this rule's case because no
+record of that participant carries a `seq_start` at all, so that stream is not
+sequence-anchored to begin with. Writing a new vector for a shape already shipped
+would have been the more visible answer and the worse one.
+
+***#116 turned up a question the issue did not ask, and the answer kept the
+release corrective.*** The issue notes the MUST's wording leaves open whether a
+`syn`-flagged record may carry payload. It may not — the flag marks a
+handshake-*timing* record and the flag table has said "zero-length" since it was
+written — but TCP Fast Open puts data on a real SYN, so saying "not zero-length is
+a violation" and stopping there would have been wrong about real traffic. The
+paragraph says instead where that data goes: an ordinary record at the origin,
+which is exactly where it starts, since the origin is `isn + 1`. Nothing is lost
+and no permission is added, which is what this release is for.
+
 ### Phase 3 — #98's split, unpropagated (#122, #119, #117)
 
 - **#122** — split the join table's row 3. The `skipped` side joins and belongs

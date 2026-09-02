@@ -212,6 +212,15 @@ RULES = {
         "vocabulary scoped to its decoder's name, as a dec: token is, and asserts no tree",
         "decoded-field-roles",
     ),
+    # 0.18's placement rule. The below-origin half has a vector that shows the
+    # cost (bytes excluded from the space); the seq_start-less half is the
+    # commoner shape and rides on a vector that has carried it since 0.12
+    # without anyone saying where the record goes.
+    "unplaceable-record-placement": (
+        "an unplaceable record sits at a zero-width range at the highest off_end "
+        "reached, contributing nothing -- below the origin, or with no seq_start",
+        "advisory-below-origin-payload",
+    ),
     # 0.18's one rule with a vector. The ordering MUST has never said whether
     # two records may share a seq_start; 0.17's handshake MUST makes the tie
     # mandatory in every file recording a handshake, and no vector carried one.
