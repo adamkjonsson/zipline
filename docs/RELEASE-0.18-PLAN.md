@@ -239,6 +239,61 @@ Stamp first. Every later phase regenerates the tree.
 window: no vector is wrong today, and the two new ones are additions. If
 `check.py` goes red, something is broken rather than pending.
 
+***Done. Three findings, and two of them change what this phase shipped.***
+
+***#111 as filed does not work, and Phase 0 measured that before building it.***
+Widening the scan to the suite catches nothing on its own, because the suite
+**paraphrases**. Where the specification said "it is the only MUST NOT in this
+document with that strength", `build.py` said "the only one in the format whose
+violation is ADVISORY" and the README said "the only one whose violation is
+advisory" — three wordings of one claim. A pattern is always written against the
+sentence being deleted, since that is why the entry exists, so it matches none of
+the copies. Run against `v0.16`, `0.17`'s three entries reported the three
+specification sites and **nothing** in the suite.
+
+What shipped instead: an entry carries a **tuple of spellings**, and the author
+who greps the tree while retiring a claim records what they found. Backfilled with
+`0.17`'s paraphrases, the scan reproduces all five suite copies from `v0.16` —
+`build.py` once, `manifest.json` twice, `README.md` twice — which is the
+reproduction this phase owed. It adds **no detection power and is not meant to**:
+still a ratchet, and the paraphrase nobody noticed is still invisible. What it
+adds is that a spelling someone *did* find cannot quietly return.
+
+One mechanical detail worth the comment it got: `build.py` splits long summaries
+across source lines, so a spelling spanning the break sits either side of a quote
+pair and does not match there. `manifest.json` holds the assembled string, and one
+of the five copies is visible only in the generated file — which is also the file
+an implementation's harness reads. Both are scanned, and that is why.
+
+***The completeness check the plan specified was measured and declined; a
+different one shipped.*** Scope decision 5 proposed term groups — a unit naming
+one member of `{content_type, role}` or `{skipped, dropped}` must name all. The
+numbers: **19** units across the two sets, of which **6** are real, so thirteen
+allowlist entries. Filtered to units carrying `MUST`/`SHOULD`/`MAY` it reports
+**8** and catches only **3** of the 6 — missing the join table and the filter
+instruction, the two sharpest. Two thirds allowlist, or half the defects that
+motivated it. The cap in scope decision 5 says that is a defer, and the co-mention
+shape is deferred permanently rather than to `0.19`: it is the wrong instrument.
+
+`ENUMERATIONS` ships in its place, and it is narrower than the plan imagined
+because Phase 0 found the two sets are **not the same problem**. The label set is
+a completeness failure: every site enumerating it owes every member, and adding a
+third label must fail the build at each. The vocabulary split is not — a filter's
+instruction owes `dropped` **alone**, and the join table's rows owe one word each.
+That is a *wrong* member, not a missing one, which is `RETIRED_CLAIMS`' shape, and
+#119 and #122 are entered there in Phase 3 instead.
+
+So sites are **declared**, the way `RULES` declares a rule with no id to derive: a
+locator phrase and the members it owes. Zero false positives by construction. Six
+sites, and the check is exercised in both directions from the start — the two
+`0.17` got right pass, the four it missed fail.
+
+***Which means this release does open a red window, and the plan said it would
+not.*** `check.py` exits 1 from here until Phase 4 on exactly those four sites.
+The signal for Phases 1–3 is that the failure list holds those four and nothing
+else. Better than the alternative: the failure list *is* the remaining work in
+#120 and #121, enumerated by the tool rather than by a human reading the plan.
+
 ### Phase 1 — the ordering tie (#124, #123)
 
 The release's highest-severity item, and the one a third implementation cannot
@@ -355,8 +410,10 @@ Draft `Changed` from the entries written in Phases 2 and 3, not from memory.
 - [ ] `RETIRED_CLAIMS` scans the suite as well as the specification, with the
       changelog and the release plans excluded by construction, and reproduces
       `0.17`'s two hand-fixed copies against `v0.16`.
-- [ ] Either a completeness check ships, or it is on `0.19` with its noise floor
-      recorded.
+- [x] Either a completeness check ships, or it is on `0.19` with its noise floor
+      recorded. *`ENUMERATIONS` ships; the term-group shape the plan specified was
+      measured (19 hits / 6 real, or 8 hits / 3 of 6 filtered) and declined as the
+      wrong instrument rather than deferred.*
 - [ ] `python3 vectors/check.py` green; every vector stamps `0.18`. *Estimated 58
       entries.*
 - [ ] `CHANGELOG.md` `[0.18]` complete, with a `Changed` section covering #117 and

@@ -60,6 +60,31 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.18] — unreleased
+
+**A corrective release, like `0.11`, `0.12`, `0.14` and `0.16`.** `0.17` decided
+what a decoded record may say about itself; `0.18` fixes what that release left
+inconsistent, as the reviews `python-zipline` and `zpfwire` returned on it found.
+No new block, no new option, no body-layout change. Scope and reasoning in
+[docs/RELEASE-0.18-PLAN.md](docs/RELEASE-0.18-PLAN.md); every item is an issue on
+the [`0.18` milestone](https://github.com/adamkjonsson/zipline/milestone/6).
+
+**Four of the twelve findings are one failure repeated**, and it is the one worth
+reading first: `0.17` changed two rules and left other statements of them
+standing. The transport-layer bar gained `role` in §Typing and was not updated
+where §Conformance restates it or where a pass-through's carry-forward
+enumerates it; `skipped` split into `skipped`/`dropped` in §Undecoded and was not
+updated in §Referencing's instruction to a filter or in §Discontinuity's join
+table — where it classified a discarded byte-order mark as owing a Discontinuity,
+contradicting an accept vector.
+
+**Expect a small *Changed* section and a large *Fixed* one.** Two entries change
+behaviour: the restriction `dropped` places on an otherwise open vocabulary, and
+the rule for where an unplaceable record sits. One *loosens* — a handshake record
+above the origin was isolatable under `0.17` and is advisory under `0.18`.
+
+---
+
 ## [0.17] — 2026-09-01
 
 **A feature release, and the one that decides what a decoded record may say
@@ -1583,6 +1608,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.18]: https://github.com/adamkjonsson/zipline/compare/v0.17...HEAD
 [0.17]: https://github.com/adamkjonsson/zipline/compare/v0.16...v0.17
 [0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15

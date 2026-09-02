@@ -24,7 +24,9 @@ What it does verify:
     and block types parsed from the specification's own tables, plus the rules
     declared in RULES. What each vector exercises is recorded by build.py, which
     built the bytes -- nothing here parses a block body
-  * no claim the model has retired is still in the specification, per
+  * every site that enumerates a set the model treats as one names every member
+    of it, per ENUMERATIONS -- the failure 0.17 committed four times over
+  * no claim the model has retired is still in the specification or the suite, per
     RETIRED_CLAIMS. This is textual, not semantic: it holds a claim retired once
     from quietly returning, and cannot find one nobody has noticed
   * accept/isolate vectors are well-framed: block walk lands exactly on EOF,
@@ -66,7 +68,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 17
+MAJOR, MINOR = 0, 18
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -251,46 +253,173 @@ RULES = {
 # (#63 in 0.14, #89 and #91 in 0.15).
 #
 # Add an entry whenever a release retires a claim, in the release that retires
-# it. The pattern matches against whitespace-collapsed text, so a copy that
-# happens to wrap differently is still caught -- the 0.14 sweep nearly missed one
-# for exactly that reason.
+# it. Patterns match against whitespace-collapsed text, so a copy that happens to
+# wrap differently is still caught -- the 0.14 sweep nearly missed one for exactly
+# that reason.
+#
+# 0.18 (#111) widened the scan from the specification to SCANNED, because 0.17
+# retired two claims that were also asserted in the suite -- in a vector summary,
+# which reaches manifest.json and therefore an implementation's harness, and in a
+# README row. Both were found by grepping and fixed by hand; nothing would have
+# stopped them coming back.
+#
+# Widening the scan alone would have caught neither, which Phase 0 measured before
+# building this. The suite PARAPHRASES: where the specification said "it is the
+# only MUST NOT in this document with that strength", build.py said "the only one
+# in the format whose violation is ADVISORY" and the README said "the only one
+# whose violation is advisory". A pattern written against the sentence being
+# deleted -- which is how an entry is always written, since the entry exists
+# because that sentence is going -- matches none of them.
+#
+# So an entry carries a TUPLE of spellings, and the author who greps the tree
+# while retiring a claim records what they found. That adds no detection power
+# and is not meant to: it is still a ratchet, and the paraphrase nobody noticed is
+# still invisible. What it adds is that the spellings someone DID find cannot
+# quietly return.
 RETIRED_CLAIMS = {
     "transport-carries-no-undecoded": (
-        r"neither carries Undecoded blocks, because no decoder ran",
+        (r"neither carries Undecoded blocks, because no decoder ran",),
         "0.16",
         89,
         "a transport-layer stream MAY carry Undecoded blocks; the input is the "
         "capture and the stage is the reassembler",
     ),
     "only-advisory-must-not": (
-        r"it is the only MUST NOT in this\s+document with that strength",
+        (
+            r"it is the only MUST NOT in this\s+document with that strength",
+            # build.py, and so manifest.json
+            r"the only one in the format whose violation is ADVISORY",
+            # vectors/README.md
+            r"the only one whose violation is advisory",
+        ),
         "0.17",
         108,
         "the origin floor is a second advisory MUST NOT; the document gives that "
         "strength wherever it can say exactly what a reader does instead",
     ),
     "derived-file-is-not-a-mix": (
-        r"exactly one of a \*decode stage\* or a \*pass-through transform\*, never a\s+mix",
+        # No suite spelling: mixed-derivation's summary quotes this claim
+        # deliberately, as history ("Before 0.15 a derived file was ..."), and a
+        # spelling loose enough to catch a stale copy would catch that too.
+        (r"exactly one of a \*decode stage\* or a \*pass-through transform\*, never a\s+mix",),
         "0.17",
         103,
         "the discriminator binds per participant, not per file; one file MAY hold a "
         "created stream beside a preserved one (mixed-derivation)",
     ),
     "only-holes-are-decidable": (
-        r"One case is decidable from a single file",
+        (
+            r"One case is decidable from a single file",
+            # build.py, and so manifest.json
+            r"is the one shape of the duty that is decidable",
+            # vectors/README.md
+            r"is the one shape of the duty decidable",
+        ),
         "0.17",
         98,
         "two cases are: a hole-class region between two adjacent units, and a "
         "bytes-class region carrying reason = dropped",
     ),
     "byte-run-has-no-decoder-id": (
-        r"A byte run carries none",
+        (r"A byte run carries none",),
         "0.16",
         91,
         "a reassembly record is a byte run AND carries a decoder_id; the "
         "distinction is the layer, not the presence of the field",
     ),
 }
+
+
+# Sites that ENUMERATE the members of a set the model treats as one, and the
+# members each must name.
+#
+# 0.17 added `role` beside `content_type` and stated the transport-layer bar once,
+# for both. Four other sites enumerate that bar or the labels a stage carries
+# forward, and none was updated: two in Conformance (#120), the pass-through
+# carry-forward bullet and the annotator worked example (#121). Nothing was
+# RETIRED there -- every sentence was true before `role` existed and merely
+# incomplete after -- so RETIRED_CLAIMS is structurally blind to it, and a
+# release adding a third label would stale them all again.
+#
+# Phase 0 measured the obvious detector first and it does not work. "A unit naming
+# one member of a set must name them all" reports 19 units across the two sets,
+# of which 6 are real; filtered to units carrying MUST/SHOULD/MAY it reports 8 and
+# catches only 3 of the 6, missing the join table and the filter instruction --
+# the two sharpest. A check whose output is two thirds allowlist teaches nothing,
+# and one that misses the defects that motivated it is worse.
+#
+# So the sites are DECLARED, the way RULES declares a rule with no id to derive:
+# a locator phrase identifying the paragraph or table row, and the members it owes.
+# Zero false positives by construction, and adding a member to a set fails the
+# build at every site until each is updated -- which is the whole point, and is
+# what nobody did in 0.17.
+#
+# Choose a locator the FIX will not touch. "Two further requirements" is not one:
+# correcting the site changes the count. A phrase that survives the edit is.
+#
+# NOT here, deliberately: the `skipped`/`dropped` split (#119, #122). Those sites
+# do not owe every member -- a filter's instruction owes `dropped` ALONE, and the
+# join table's rows owe one word each. That is a wrong member, not a missing one,
+# so it is RETIRED_CLAIMS' shape and it is entered there instead.
+ENUMERATIONS = {
+    "transport-layer labels": (
+        ("content_type", "role"),
+        (
+            # Conformance -- what binds on the layer (#120)
+            "are stated in full elsewhere",
+            # Conformance -- the sessionization-stage bullet (#120)
+            "since a hole is expressible without one",
+            # Conformance -- what a pass-through preserving a decoded layer owes (#121)
+            "re-emit every Undecoded block",
+            # Annotating a decoded file -- the worked example an annotator is
+            # written from (#121)
+            "provenance is the participants' `origin`",
+            # The two that were already right when 0.18 opened, so the check is
+            # exercised in both directions from the start.
+            "including one emitted by a reassembly decoder",
+            "whether or not it has a decoder",
+        ),
+    ),
+}
+
+
+def spec_units() -> list[str]:
+    """Split the specification into paragraphs, plus each table row on its own.
+
+    A row is a unit because an enumeration can be one: the join table states the
+    origination duty a row at a time.
+    """
+    text = read_text(SPEC)
+    units = re.split(r"\n\s*\n", text)
+    units += [line for line in text.splitlines() if line.startswith("|")]
+    return [re.sub(r"\s+", " ", u) for u in units]
+
+
+def check_enumerations() -> list[str]:
+    """Every declared enumeration site names every member of its set."""
+    units = spec_units()
+    out = []
+    for label, (members, locators) in sorted(ENUMERATIONS.items()):
+        for locator in locators:
+            found = [u for u in units if locator in u]
+            if len(found) != 1:
+                out.append(
+                    f"enumeration '{label}': locator {locator!r} matches "
+                    f"{len(found)} units, not 1 -- the site moved or the phrase "
+                    f"was not stable; re-anchor it on text the fix does not touch"
+                )
+                continue
+            missing = [m for m in members if f"`{m}`" not in found[0]]
+            if missing:
+                out.append(
+                    f"enumeration '{label}': the site at {locator!r} names "
+                    f"{', '.join(m for m in members if m not in missing)} but not "
+                    f"{', '.join(missing)} -- an enumeration of this set owes every member"
+                )
+    if not out:
+        sites = sum(len(v[1]) for v in ENUMERATIONS.values())
+        print(f"  enumerations: {len(ENUMERATIONS)} sets, {sites} sites -- all complete")
+    return out
 
 
 # Keys the projection defines structurally. Neither the option registry nor a
@@ -459,23 +588,59 @@ def check_jsonl_keys() -> list[str]:
     return out
 
 
+# Where a retired claim is looked for. The specification states the rules; the
+# suite illustrates them, and a summary here reaches manifest.json and so an
+# implementation's harness.
+#
+# CHANGELOG.md and the release plans are excluded BY CONSTRUCTION rather than by
+# an exception, because a retired claim belongs in both: the changelog records
+# what a release fixed, by quoting it, and a plan records what it decided. Two
+# entries match the changelog today, correctly. Scanning them would mean an
+# allowlist whose every line says "this one is history", which is the whole file.
+#
+# manifest.json is scanned as well as build.py, and not redundantly: build.py
+# breaks a long summary across source lines, so a spelling spanning the break sits
+# either side of a quote pair and does not match there. manifest.json holds the
+# assembled string. One of the five copies reproduced from v0.16 is visible only
+# in the generated file, which is also the file an implementation's harness reads.
+SCANNED = (
+    SPEC,
+    os.path.join(HERE, "build.py"),
+    os.path.join(HERE, "manifest.json"),
+    os.path.join(HERE, "README.md"),
+)
+
+
 def check_retired_claims() -> list[str]:
-    """No claim the model has retired may appear in the specification.
+    """No claim the model has retired may appear in the specification or the suite.
 
     Whitespace is collapsed before matching so a line-wrapped copy is still
     found; the 0.14 sweep nearly missed a third statement of the coverage
     guarantee because the phrase spanned a line break.
+
+    Each spelling is reported against the file it is found in, because the fix
+    differs: in the specification a stale claim is a rule to rewrite, and in the
+    suite it is a summary describing a vector in the words of a model that has
+    moved on.
     """
-    flat = re.sub(r"\s+", " ", read_text(SPEC))
     out = []
-    for name, (pattern, retired_in, issue, instead) in sorted(RETIRED_CLAIMS.items()):
-        if re.search(pattern, flat):
-            out.append(
-                f"retired claim '{name}' is still in the specification "
-                f"(retired in {retired_in}, #{issue}) -- {instead}"
-            )
+    for path in SCANNED:
+        flat = re.sub(r"\s+", " ", read_text(path))
+        label = os.path.relpath(path, os.path.dirname(HERE))
+        for name, (spellings, retired_in, issue, instead) in sorted(RETIRED_CLAIMS.items()):
+            for pattern in spellings:
+                if re.search(pattern, flat):
+                    out.append(
+                        f"{label}: retired claim '{name}' is still asserted "
+                        f"(retired in {retired_in}, #{issue}) -- {instead}"
+                    )
+                    break
     if not out:
-        print(f"  retired claims: {len(RETIRED_CLAIMS)} -- none present")
+        spellings = sum(len(v[0]) for v in RETIRED_CLAIMS.values())
+        print(
+            f"  retired claims: {len(RETIRED_CLAIMS)} claims, {spellings} spellings, "
+            f"{len(SCANNED)} files -- none present"
+        )
     return out
 
 
@@ -926,6 +1091,7 @@ def main() -> int:
     failures += check_capability_coverage(manifest)
     failures += check_jsonl_keys()
     failures += check_retired_claims()
+    failures += check_enumerations()
 
     if failures:
         print("\nFAILURES:")

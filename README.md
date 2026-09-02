@@ -51,7 +51,7 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 0.17 — a design in progress. Not ready for production.**
+**Version 0.18 — a design in progress. Not ready for production.**
 
 `0.x` means what it says: any minor release may change anything, including in
 ways that break existing readers. A reader must reject a `version_minor` it does
@@ -60,7 +60,7 @@ not implement.
 A release was designated `1.0` in July 2026, before any implementation existed.
 That was premature — the first implementation found enough to force a breaking
 revision — so it is retroactively designated `0.9`, and the work since is `0.10`
-through `0.17`. (`0.17` follows `0.9`; the components are integers, not decimals.) `1.0` is
+through `0.18`. (`0.18` follows `0.9`; the components are integers, not decimals.) `1.0` is
 reserved for a specification that has survived implementation. More `0.x` rounds
 are expected.
 

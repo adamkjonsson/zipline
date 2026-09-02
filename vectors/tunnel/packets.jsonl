@@ -1,5 +1,5 @@
-{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,"produced_by":"zpf-wg 0.3","produced_at":1719700000}
-{"type":"source","source_id":1,"kind":"zpf-input","uri":"outer.zpf","digest":"sha256:48d8d2910c4d01c915e9bcc464e5479c0849be892993e211164828292d682e8b"}
+{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,"produced_by":"zpf-wg 0.3","produced_at":1719700000}
+{"type":"source","source_id":1,"kind":"zpf-input","uri":"outer.zpf","digest":"sha256:781575da054d54eaa135ac44cab0c102fe6e261959c3db13def2e076fd8a397f"}
 {"type":"decoder","decoder_id":1,"output_layer":"decoded","name":"wireguard-decrypt","version":"0.3","params_digest":"sha256:aa10"}
 {"type":"session","session_id":5,"proto":"ip"}
 {"type":"participant","session_id":5,"pid":0,"endpoint":["10.8.0.2"]}
