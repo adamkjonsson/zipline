@@ -83,6 +83,42 @@ behaviour: the restriction `dropped` places on an otherwise open vocabulary, and
 the rule for where an unplaceable record sits. One *loosens* — a handshake record
 above the origin was isolatable under `0.17` and is advisory under `0.18`.
 
+### Clarified
+
+- **The per-participant ordering MUST is non-descending: two records MAY share a
+  `seq_start`.** ([#124](https://github.com/adamkjonsson/zipline/issues/124)) The
+  rule said "in `seq_start` order" and never said whether that was strict. Before
+  `0.17` the question was a corner; `0.17` made the tie **mandatory** in every
+  file that records a handshake, because the SYN sits at the stream origin and
+  the first data record starts at the same origin by definition — the handshake
+  paragraph's own parenthetical relies on it, resolving the two by stored order.
+
+  A reader that reads an unqualified "in order" strictly — which is what a `<`
+  comparison produces without anyone deciding anything — **rejects or isolates
+  every conformant capture whose handshake was observed**, and the licence in the
+  same paragraph makes that a conformant thing for it to do. The evidence that
+  this is a live fork rather than a theoretical one: two implementations in one
+  family read it opposite ways, and the one that read it strictly is why the file
+  behind [#108](https://github.com/adamkjonsson/zipline/issues/108) was written
+  with its handshake below the origin.
+
+  Where two records share a `seq_start`, **stored order decides which comes
+  first**. §Merge algorithm's cost argument is corrected with it — the
+  per-participant streams are sorted by `seq_start` and then by stored order,
+  which is a total order because stored order is; "always totally ordered" was
+  true of `seq_start` alone only while ties were undecided. Neither review named
+  that site; it was found while scoping, and leaving it would have repeated the
+  failure this release exists to fix.
+
+  New vector: `handshake-at-origin`, the mandated shape in both directions.
+  **No vector in the suite carried a `seq_start` tie before this**
+  ([#123](https://github.com/adamkjonsson/zipline/issues/123)), so a reader
+  comparing with `<` passed all 56 and failed on real traffic. It is the positive
+  twin of `advisory-seq-start-below-origin` — the same record, one below the
+  origin — and it also carries the responder's SYN-ACK as its own zero-length
+  `syn` record with an `ack`, which the specification describes and nothing else
+  exercised.
+
 ---
 
 ## [0.17] — 2026-09-01

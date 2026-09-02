@@ -3450,12 +3450,136 @@ vector(
 )
 
 vector(
+    "handshake-at-origin",
+    "accept",
+    "The mandated shape of a recorded TCP handshake, both directions, and the "
+    "TIE it necessarily produces. Each SYN sits at isn + 1 -- the stream origin, "
+    "which is where 0.17 made it a MUST -- and the first data record of that "
+    "direction starts at the same origin, because that is what the origin IS. So "
+    "each participant here has TWO records at one seq_start, ordered by nothing "
+    "but stored order. "
+    "WHY THIS FILE EXISTS: the per-participant ordering MUST is non-descending, "
+    "and a reader that reads `in seq_start order` as strictly ascending -- which "
+    "is what a `<` comparison produces without anyone deciding anything -- "
+    "rejects or isolates this file, and with it every conformant capture whose "
+    "handshake was observed. Until 0.18 no vector in the suite carried a "
+    "seq_start tie at all, so that reader passed the whole suite and failed on "
+    "real traffic. It is the positive twin of advisory-seq-start-below-origin, "
+    "which is the same record written one below the origin. "
+    "It also carries the responder's SYN-ACK as its own zero-length syn record "
+    "with an ack, which the specification describes and nothing else exercises.",
+    "Record (0x20) -- handshake records",
+    [
+        file_header(),
+        source(1, 0, [o_uri("tcp.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(1)]),
+        # The client's SYN, at the origin. Zero length, so its computed end
+        # equals its seq_start and every causal edge works unchanged.
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
+        # The responder's SYN-ACK: its own zero-length syn record, acking the
+        # client's SYN, whose end is 1001.
+        record(7, 1, 1, 1100, b"", flags=0x0008, options=[o_seq_start(5001), o_ack(1001)]),
+        # THE TIE: the same seq_start as the SYN above it, in each direction.
+        # Stored order is what puts the handshake record first.
+        record(7, 0, 1, 1200, GET, flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]),
+        record(
+            7,
+            1,
+            1,
+            1300,
+            b"HTTP/1.1 200 OK\r\n\r\n",
+            flags=0x0001,
+            options=[o_seq_start(5001), o_ack(1019)],
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "tcp.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+            "tcp_role": "responder",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1100,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "flags": ["psh"],
+            "payload": b64(GET),
+            "seq_start": 1001,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1300,
+            "flags": ["psh"],
+            "payload": b64(b"HTTP/1.1 200 OK\r\n\r\n"),
+            "seq_start": 5001,
+            "ack": 1019,
+        },
+        {"type": "end"},
+    ],
+    expect="ACCEPT. The two records of each participant share a seq_start and "
+    "that is conformant: the ordering MUST is NON-DESCENDING, and stored "
+    "order decides which comes first. A reader that treats equal seq_start "
+    "as out-of-order and rejects or isolates is NOT conformant, and is the "
+    "reader this vector exists to catch -- it would reject most real "
+    "captures. Offsets: each SYN is zero-length at offset 0 and covers no "
+    "byte, so pid 0's stream is [0,18) and pid 1's is [0,19). The merge "
+    "needs no sort: step 1 takes each participant's records in file order.",
+    violations=0,
+)
+
+vector(
     "advisory-seq-start-below-origin",
     "accept",
     "A zero-length syn record whose seq_start is the isn rather than isn + 1, "
     "which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit "
-    "below it. This is the shape found in the wild -- a converter writing the "
-    "handshake at the isn -- and it is worth seeing what it costs, because the "
+    "below it. handshake-at-origin is the same record written correctly, and the "
+    "two are one story read from either end. This is the shape found in the wild "
+    "-- a converter writing the handshake at the isn -- and it is worth seeing "
+    "what it costs, because the "
     "arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) "
     "is modular, so the syn record lands at offset 4294967295 and the stream "
     "measures 4294967295 bytes where its data ends at 12. Every coverage check "

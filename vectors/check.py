@@ -212,6 +212,14 @@ RULES = {
         "vocabulary scoped to its decoder's name, as a dec: token is, and asserts no tree",
         "decoded-field-roles",
     ),
+    # 0.18's one rule with a vector. The ordering MUST has never said whether
+    # two records may share a seq_start; 0.17's handshake MUST makes the tie
+    # mandatory in every file recording a handshake, and no vector carried one.
+    "seq-start-order-non-descending": (
+        "two records MAY share a seq_start and stored order decides which comes first; "
+        "a reader comparing with < rejects every capture that records a handshake",
+        "handshake-at-origin",
+    ),
     # 0.17's second decidable case. The hole-class one has had a vector since
     # 0.15 (isolate-unmarked-break); this is the bytes-class half, which could
     # not be tested at all while one word did both jobs.

@@ -315,6 +315,25 @@ Nothing in the suite has ever carried a `seq_start` tie; verified across all 56
 vectors while scoping. A reader implementing `<` passes the whole suite today and
 fails on real traffic.
 
+***Done, and the third site was the half worth the phase.*** #124 and #123 landed
+as planned. What is worth recording is that §Merge algorithm's "always totally
+ordered" **was** load-bearing rather than decorative: it is the sentence a reader
+builds its k-way merge from, and it stops being true of `seq_start` alone the
+moment ties are admitted. Corrected to "sorted by `seq_start`, and by stored order
+where two records share one — a total order, since stored order is". The merge's
+own steps needed nothing: step 1 takes each participant's records in file order
+and never sorts, and the section already says the merge never reorders one
+participant's records against each other. The claim in the cost argument was the
+only place the strict reading was doing work.
+
+***The vector carries more than the issue asked for, deliberately.*** #123
+proposed "a handshake and one data record". It ships with both directions,
+because the responder's SYN-ACK — "its own zero-length `syn` record, and MAY carry
+an `ack`" — is a sentence the specification has carried since `0.13` with nothing
+exercising it, and a one-directional file would have left it that way. Its
+arithmetic was read back rather than asserted: ties in both directions, extents 18
+and 19, every `ack` naming real peer records.
+
 ### Phase 2 — the floor's edges (#113, #114, #116, #115)
 
 - **#113** — reword the §Conformance clause to displacement: a stated rule for a

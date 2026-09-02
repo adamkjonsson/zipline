@@ -410,7 +410,9 @@ topological sort. Two things tame it, and a reader should rely on both:
 - **Sorted inputs (guaranteed).** Because a writer **MUST** store each
   participant's records in `seq_start` order (see
   [Identifiers & ordering](#identifiers--ordering)), the per-participant streams
-  are always totally ordered. Step 1 is always a no-op and the merge *is* a
+  arrive sorted: by `seq_start`, and by **stored order** where two records share
+  one — which is a total order on the pair, since stored order is total. Step 1 is
+  always a no-op and the merge *is* a
   **streaming k-way merge**: hold one frontier per participant and release a
   stream's next record once every peer record it acks (end ≤ `ack`) has been
   emitted — a single-watermark, O(1)-amortised check. Total work is ~O(N) and
@@ -1891,7 +1893,8 @@ zero-length record carrying the `syn` flag: `timestamp` is the SYN packet's
 capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin, so
 its computed end equals it and every causal edge and ordering rule works unchanged
 (it precedes the data that starts at the same origin simply by being produced
-first). Recording the handshake is the writer's choice; where it does, this is the
+first — the tie the [ordering rule](#identifiers--ordering) admits, and the reason
+it says so). Recording the handshake is the writer's choice; where it does, this is the
 record's shape. `isn` itself is one below the origin, and a record there breaks
 the [floor rule](#referencing-the-source-by-stream-offset) — the SYN consumes a
 sequence number but delivers no byte, which is exactly why the origin is `isn + 1`
@@ -2627,7 +2630,14 @@ vocabulary stays closed
   ordering **MUST** that keeps reading cheap: within a given
   `(session_id, participant_id)`, a writer **MUST** emit that participant's
   records in `seq_start` order (logical stream order for non-TCP streams that
-  have no sequence numbers) — the order in which it already produced them. This
+  have no sequence numbers) — the order in which it already produced them.
+  **Non-descending**, not strictly ascending: two records MAY share a `seq_start`,
+  and where they do, **stored order decides which comes first**. That is not a
+  corner — a [handshake record](#record-0x20) sits at the stream origin and the
+  first data record starts there too, so every file recording an observed
+  handshake carries the tie. A reader comparing with `<` rather than `≤` rejects
+  most real captures, which is why this says so rather than leaving "in order" to
+  be read either way. This
   costs the writer nothing — each participant's byte stream is monotonic by
   construction — and is what lets the cross-participant
   [merge](#merge-algorithm) be a **streaming k-way merge** over already-sorted

@@ -1415,6 +1415,33 @@
       "has_jsonl": true
     },
     {
+      "name": "handshake-at-origin",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 436,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0063",
+        "0x0070",
+        "0x0072"
+      ],
+      "summary": "The mandated shape of a recorded TCP handshake, both directions, and the TIE it necessarily produces. Each SYN sits at isn + 1 -- the stream origin, which is where 0.17 made it a MUST -- and the first data record of that direction starts at the same origin, because that is what the origin IS. So each participant here has TWO records at one seq_start, ordered by nothing but stored order. WHY THIS FILE EXISTS: the per-participant ordering MUST is non-descending, and a reader that reads `in seq_start order` as strictly ascending -- which is what a `<` comparison produces without anyone deciding anything -- rejects or isolates this file, and with it every conformant capture whose handshake was observed. Until 0.18 no vector in the suite carried a seq_start tie at all, so that reader passed the whole suite and failed on real traffic. It is the positive twin of advisory-seq-start-below-origin, which is the same record written one below the origin. It also carries the responder's SYN-ACK as its own zero-length syn record with an ack, which the specification describes and nothing else exercises.",
+      "spec_section": "Record (0x20) -- handshake records",
+      "expect": "ACCEPT. The two records of each participant share a seq_start and that is conformant: the ordering MUST is NON-DESCENDING, and stored order decides which comes first. A reader that treats equal seq_start as out-of-order and rejects or isolates is NOT conformant, and is the reader this vector exists to catch -- it would reject most real captures. Offsets: each SYN is zero-length at offset 0 and covers no byte, so pid 0's stream is [0,18) and pid 1's is [0,19). The merge needs no sort: step 1 takes each participant's records in file order.",
+      "has_jsonl": true
+    },
+    {
       "name": "advisory-seq-start-below-origin",
       "tier": "accept",
       "violations": 1,
@@ -1436,7 +1463,7 @@
         "0x0063",
         "0x0070"
       ],
-      "summary": "A zero-length syn record whose seq_start is the isn rather than isn + 1, which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit below it. This is the shape found in the wild -- a converter writing the handshake at the isn -- and it is worth seeing what it costs, because the arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) is modular, so the syn record lands at offset 4294967295 and the stream measures 4294967295 bytes where its data ends at 12. Every coverage check against this participant then fails for a file that is otherwise correct. WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other byte is exactly where it was, so the damage is bounded and the document can say precisely what to do instead -- the record occupies a ZERO-WIDTH range at the stream's current position (here 0, it being first), covers no byte, and contributes nothing to the extent. Isolating the session would discard a whole capture to fix one offset. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier.",
+      "summary": "A zero-length syn record whose seq_start is the isn rather than isn + 1, which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit below it. handshake-at-origin is the same record written correctly, and the two are one story read from either end. This is the shape found in the wild -- a converter writing the handshake at the isn -- and it is worth seeing what it costs, because the arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) is modular, so the syn record lands at offset 4294967295 and the stream measures 4294967295 bytes where its data ends at 12. Every coverage check against this participant then fails for a file that is otherwise correct. WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other byte is exactly where it was, so the damage is bounded and the document can say precisely what to do instead -- the record occupies a ZERO-WIDTH range at the stream's current position (here 0, it being first), covers no byte, and contributes nothing to the extent. Isolating the session would discard a whole capture to fix one offset. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier.",
       "spec_section": "Referencing the source by stream offset -- the origin is a floor",
       "expect": "ACCEPT, and REPORT. Place the syn record at zero width at the stream's current position -- offset 0 here -- so the participant's extent is 12, the length of its data. A reader that instead computes (1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent to match; that is the defect this vector exists to catch, and it is the number a real converter produced. Rejecting or isolating this file is NOT conformant: the advisory strength is stated in Referencing the source by stream offset. The record is not deleted -- its timestamp, flags and payload stay readable, and only its PLACEMENT is refused.",
       "has_jsonl": true
