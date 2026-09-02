@@ -401,6 +401,32 @@ and no permission is added, which is what this release is for.
   copied into an implementation.
 - **#117** — state the restriction on the open vocabulary at the predicate.
 
+***Done. #117 grew a MUST, and the MUST turned out to be one no vector can
+carry.***
+
+***Stating the restriction was not enough; it had to bind.*** The plan said "say
+out loud that content-removed is expressible only as `reason = dropped`". Written
+as a description, that leaves a producer free to write `filtered` with
+`reason_class: bytes` and be entirely conformant while escaping the only
+single-file test of the duty — which is the state #117 reports, not a fix for it.
+So it is a **MUST**, which makes it a `Changed` rather than a `Clarified`: a file
+that spelled removed content some other way was conformant under `0.17` and is not
+under `0.18`.
+
+***And it can have no vector, for the reason #94 could not in `0.16`.*** A region
+carrying `filtered` for removed content and one carrying it for anything else are
+byte-identical — that is the whole reason the rule is needed. Recorded as a
+deliberate absence in `check.py`'s `RULES` comment beside #94's, rather than
+omitted silently, because a MUST with no vector otherwise reads as a gap in the
+suite.
+
+***The restriction is stated twice, deliberately, and that is not the failure this
+release is about.*** It is at the predicate, with the argument, and pointed to
+from the openness paragraph two sections earlier — because that paragraph promises
+the opposite, and a producer reads the promise there. A pointer naming the word
+and the site is not a second statement of the rule; #120 is about enumerations
+that go stale, and a cross-reference cannot.
+
 ### Phase 4 — `role`, unpropagated (#120, #121, #118)
 
 - **#120** — both §Conformance sites. Prefer "no label (`content_type` or `role`)"

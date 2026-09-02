@@ -102,6 +102,27 @@ above the origin was isolatable under `0.17` and is advisory under `0.18`.
   a zero-width range at the **highest `off_end` any earlier record of that
   participant reached**, `0` where there is none.
 
+- **Content-removed is expressible only as `reason = dropped`.**
+  ([#117](https://github.com/adamkjonsson/zipline/issues/117)) The seam
+  predicate's two arms are not symmetric: `hole` tests a **class**, so it reaches
+  the whole open vocabulary — `gap`, `truncated` and any producer-specific hole
+  word all carry or imply `reason_class: hole`. Content-removed has no class of
+  its own, because bytes-exist is the wrong set: `skipped` is the case that joins
+  and `undecodable` decides nothing. So the second arm tests a **word**, and a
+  producer taking the document up on its invitation to be more specific —
+  `{"reason": "filtered", "reason_class": "bytes"}` — says something true and
+  escapes the only single-file test of the origination duty on the bytes side.
+
+  A stage that removed content of the stream now **MUST** write `reason =
+  dropped`, with any specificity in `comment`. That is a real qualification of an
+  openness the document promises two sections earlier, so it is stated in both
+  places: at the predicate, with the reason, and as a pointer where the openness
+  is offered. Like the transport-layer withholding rule, this MUST **can have no
+  vector** — a file writing `filtered` for removed content and one writing it for
+  anything else are byte-identical, which is the whole reason the rule is needed —
+  and that absence is recorded in `check.py` rather than left to look like an
+  oversight.
+
 - **The `syn` MUST has one strength across its whole domain.**
   ([#116](https://github.com/adamkjonsson/zipline/issues/116)) `0.17` made
   `seq_start = isn + 1` a MUST and gave a reader rule for records *below* the
@@ -154,6 +175,36 @@ above the origin was isolatable under `0.17` and is advisory under `0.18`.
   exercised.
 
 ### Fixed
+
+- **The join table tells the two sides of `0.17`'s split apart.**
+  ([#122](https://github.com/adamkjonsson/zipline/issues/122)) §Discontinuity's
+  table is the one place the origination duty is stated in terms of *what the
+  stage did* rather than what word it wrote, which is why it is the part a
+  producer follows — and it was the one place `0.17`'s split was not applied. Row
+  3 read "declined **or** dropped content that was present", which a discarded
+  byte-order mark matches exactly: it declined, and the bytes were present. Its
+  verdict is *no join, block required*, while §Undecoded says the text either side
+  of a BOM runs continuously and `undecoded-skipped` is an accept vector carrying
+  no Discontinuity. Row 1 did not rescue it — a BOM is not framing, not a record
+  header, not a nonce and not a tag.
+
+  Row 3 is now split. Declining data that carries no content of the stream joins
+  row 1, where §Undecoded's reasoning puts it; removing content that was present
+  stands alone. Each row names the `reason` a region of that shape carries, so the
+  table and the predicate can be read against each other — with the caveat that
+  the words do not *decide* the rows, since the question remains what the stage
+  did.
+
+- **§Referencing tells a filter to write `dropped`, not `skipped`.**
+  ([#119](https://github.com/adamkjonsson/zipline/issues/119)) The section an
+  implementer reads to learn what a filtering stage *is* still instructed it to
+  mark every removed region `reason = skipped` — and closed with "which is exactly
+  what that reason is for", which `0.17` made precisely false. A filter written
+  from that paragraph produced a conformant-looking file that the seam predicate
+  could not check, which is the capability `0.17` shipped. The trailing clause now
+  says why the Discontinuity obligation *follows* from the removal rather than
+  being an additional rule. Entered in `RETIRED_CLAIMS`, since it named a
+  canonical word in a normative instruction.
 
 - **A stated rule for a violation *displaces* the isolate licence rather than
   being an instance of it.**

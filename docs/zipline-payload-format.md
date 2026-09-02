@@ -939,11 +939,13 @@ pass-through (see [Conformance](#conformance)).
 one decoded record shifts every later offset in that participant's space, so the
 output cannot claim to preserve it. Such a transform instead *creates* a layer:
 its records carry `spans` naming the input ranges they came from, and every
-region it dropped is marked [Undecoded](#undecoded-0x21) with
-`reason = skipped` — a deliberate decision not to carry data forward, which is
-exactly what that reason is for. The coverage guarantee then applies as it does
-to any decode stage, and the filter is answerable for the whole input. Dropped
-content also means the surviving records either side of it no longer join, which
+region it removed is marked [Undecoded](#undecoded-0x21) with
+`reason = dropped` — content of the stream that was present and did not reach the
+output, which is what that word is for and what tells it from `skipped`, the
+deliberate decline that withholds no content. The coverage guarantee then applies
+as it does to any decode stage, and the filter is answerable for the whole input.
+It follows, rather than being an additional rule, that the surviving records
+either side no longer join — which
 [Discontinuity](#discontinuity-0x22) obliges the filter to declare.
 
 **`decoder_id` names a layer, not a stage**, so such a transform does *not*
@@ -2087,7 +2089,9 @@ unparsed bytes should not have deliberate skips folded into the total.
 more specific than the five canonical words; `reason_class` is what keeps that
 freedom from costing the consumer its one actionable fact. The canonical five
 imply their class and need no `reason_class`; if one carries it anyway, it MUST
-agree with the table above.
+agree with the table above. **One thing the openness does not extend to** is
+content-removed, which is checkable only under the canonical `dropped` — see the
+[seam predicate](#discontinuity-0x22), which says why and makes it a MUST.
 
 **An unrecognised `reason` with no `reason_class`** is a writer error, and its
 recoverability is **unknown**. A consumer MUST NOT guess a class — in particular
@@ -2240,10 +2244,16 @@ only the producer knows what it did with the input:
 
 | The stage… | Do they join? | Block |
 |---|---|---|
-| left framing between two units undecoded — a record header, a nonce, a tag | **yes**, the content runs straight on | no |
+| left framing between two units undecoded, or declined data carrying no content of the stream — a record header, a nonce, a tag, a byte-order mark ([`skipped`](#undecoded-0x21)) | **yes**, the content runs straight on | no |
 | found no bytes to decode there: a [`hole`](#undecoded-0x21)-class region (`gap`, `truncated`) | no | **yes** |
-| declined or dropped content that was present — a filter's dropped record, a message it would not parse | no | **yes** |
+| **removed content that was present** — a filter's dropped record, a message it would not parse ([`dropped`](#undecoded-0x21)) | no | **yes** |
 | **reordered** its input's units, so these two were never neighbours | no | **yes** |
+
+The words in brackets are the `reason` a region of that shape carries, so this
+table and the [predicate](#discontinuity-0x22) below can be read against each
+other. They do not *decide* the rows — the question is still what the stage did
+with the input, and only the producer knows — but a stage that answers this table
+honestly and then writes the other word has contradicted itself.
 
 Note what the test does **not** key on. Not input coverage: a decryptor leaves
 every record header, nonce and tag accounted for without decoding them, and its
@@ -2301,6 +2311,26 @@ because the two decidable cases are one predicate: a checker that tested only th
 class would pass the filter that is this rule's own title case, and one that
 tested only the word would miss the lost segment.
 
+**One arm tests a class and the other tests a word, and that is a real
+restriction on an otherwise open vocabulary.** `hole` generalises: `gap`,
+`truncated` and any producer-specific hole word all carry or imply
+`reason_class: hole`, so the class test reaches the whole vocabulary. Content-
+removed has no class of its own — bytes-exist is the wrong set, since `skipped`
+is the case that joins and `undecodable` decides nothing — so it is expressible
+**only** as `reason = dropped`. A stage that removed content of the stream
+**MUST** write `reason = dropped` and put any specificity in `comment`; one that
+writes `filtered` with `reason_class: bytes` has said something true, and no
+checker will raise the Discontinuity it owes.
+
+Like the [withholding rule](#conformance) at the transport layer, this MUST can
+have no vector: a file writing `filtered` for removed content and one writing it
+for something else are byte-identical, which is the whole reason the rule is
+needed.
+
+That is the one place the openness above is qualified, and it is qualified rather
+than contradicted: the vocabulary stays open for saying *more*, and closed for
+saying **this**. It is stated here rather than left to be discovered while writing
+a checker, which is where it was found.
 **Satisfying this predicate is not satisfying the duty.** It is the minimum a
 checker owes, not the rule a producer follows: it is deliberately conservative,
 and every pair it declines to test may still be one where the duty binds. A

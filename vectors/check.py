@@ -244,6 +244,12 @@ RULES = {
         "ADVISORY and the record is unplaceable, zero-width at the current position",
         "advisory-seq-start-below-origin",
     ),
+    # Also NOT in this table, and for the same reason as #94 below: 0.18's rule
+    # that a stage removing content MUST write `reason = dropped` rather than a
+    # more specific word (#117). A file writing `filtered` for removed content and
+    # one writing it for anything else are byte-identical, so no vector can
+    # express it. Recorded here rather than omitted silently.
+    #
     # NOT in this table, deliberately: "a stage emitting a transport layer MUST
     # NOT withhold content from a stream whose offsets are not sequence-anchored"
     # (#94). It is a writer obligation with no file-visible signature -- a stream
@@ -323,6 +329,18 @@ RETIRED_CLAIMS = {
         103,
         "the discriminator binds per participant, not per file; one file MAY hold a "
         "created stream beside a preserved one (mixed-derivation)",
+    ),
+    "filter-writes-skipped": (
+        # No suite spelling: filtered-decoded moved onto `dropped` in 0.17 and
+        # its summary describes the move rather than asserting the old rule.
+        (
+            r"region it dropped is marked \[Undecoded\]\(#undecoded-0x21\)"
+            r" with\s+`reason = skipped`",
+        ),
+        "0.18",
+        119,
+        "a filter writes reason = dropped; `skipped` is the deliberate decline "
+        "that withholds no content, and the survivors join",
     ),
     "only-holes-are-decidable": (
         (
