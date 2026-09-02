@@ -60,7 +60,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.18] — unreleased
+## [0.18] — 2026-09-02
 
 **A corrective release, like `0.11`, `0.12`, `0.14` and `0.16`.** `0.17` decided
 what a decoded record may say about itself; `0.18` fixes what that release left
@@ -1784,7 +1784,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
-[0.18]: https://github.com/adamkjonsson/zipline/compare/v0.17...HEAD
+[0.18]: https://github.com/adamkjonsson/zipline/compare/v0.17...v0.18
 [0.17]: https://github.com/adamkjonsson/zipline/compare/v0.16...v0.17
 [0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15
