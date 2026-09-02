@@ -239,6 +239,61 @@ Stamp first. Every later phase regenerates the tree.
 window: no vector is wrong today, and the two new ones are additions. If
 `check.py` goes red, something is broken rather than pending.
 
+***Done. Three findings, and two of them change what this phase shipped.***
+
+***#111 as filed does not work, and Phase 0 measured that before building it.***
+Widening the scan to the suite catches nothing on its own, because the suite
+**paraphrases**. Where the specification said "it is the only MUST NOT in this
+document with that strength", `build.py` said "the only one in the format whose
+violation is ADVISORY" and the README said "the only one whose violation is
+advisory" — three wordings of one claim. A pattern is always written against the
+sentence being deleted, since that is why the entry exists, so it matches none of
+the copies. Run against `v0.16`, `0.17`'s three entries reported the three
+specification sites and **nothing** in the suite.
+
+What shipped instead: an entry carries a **tuple of spellings**, and the author
+who greps the tree while retiring a claim records what they found. Backfilled with
+`0.17`'s paraphrases, the scan reproduces all five suite copies from `v0.16` —
+`build.py` once, `manifest.json` twice, `README.md` twice — which is the
+reproduction this phase owed. It adds **no detection power and is not meant to**:
+still a ratchet, and the paraphrase nobody noticed is still invisible. What it
+adds is that a spelling someone *did* find cannot quietly return.
+
+One mechanical detail worth the comment it got: `build.py` splits long summaries
+across source lines, so a spelling spanning the break sits either side of a quote
+pair and does not match there. `manifest.json` holds the assembled string, and one
+of the five copies is visible only in the generated file — which is also the file
+an implementation's harness reads. Both are scanned, and that is why.
+
+***The completeness check the plan specified was measured and declined; a
+different one shipped.*** Scope decision 5 proposed term groups — a unit naming
+one member of `{content_type, role}` or `{skipped, dropped}` must name all. The
+numbers: **19** units across the two sets, of which **6** are real, so thirteen
+allowlist entries. Filtered to units carrying `MUST`/`SHOULD`/`MAY` it reports
+**8** and catches only **3** of the 6 — missing the join table and the filter
+instruction, the two sharpest. Two thirds allowlist, or half the defects that
+motivated it. The cap in scope decision 5 says that is a defer, and the co-mention
+shape is deferred permanently rather than to `0.19`: it is the wrong instrument.
+
+`ENUMERATIONS` ships in its place, and it is narrower than the plan imagined
+because Phase 0 found the two sets are **not the same problem**. The label set is
+a completeness failure: every site enumerating it owes every member, and adding a
+third label must fail the build at each. The vocabulary split is not — a filter's
+instruction owes `dropped` **alone**, and the join table's rows owe one word each.
+That is a *wrong* member, not a missing one, which is `RETIRED_CLAIMS`' shape, and
+#119 and #122 are entered there in Phase 3 instead.
+
+So sites are **declared**, the way `RULES` declares a rule with no id to derive: a
+locator phrase and the members it owes. Zero false positives by construction. Six
+sites, and the check is exercised in both directions from the start — the two
+`0.17` got right pass, the four it missed fail.
+
+***Which means this release does open a red window, and the plan said it would
+not.*** `check.py` exits 1 from here until Phase 4 on exactly those four sites.
+The signal for Phases 1–3 is that the failure list holds those four and nothing
+else. Better than the alternative: the failure list *is* the remaining work in
+#120 and #121, enumerated by the tool rather than by a human reading the plan.
+
 ### Phase 1 — the ordering tie (#124, #123)
 
 The release's highest-severity item, and the one a third implementation cannot
@@ -259,6 +314,25 @@ arrive at on its own.
 Nothing in the suite has ever carried a `seq_start` tie; verified across all 56
 vectors while scoping. A reader implementing `<` passes the whole suite today and
 fails on real traffic.
+
+***Done, and the third site was the half worth the phase.*** #124 and #123 landed
+as planned. What is worth recording is that §Merge algorithm's "always totally
+ordered" **was** load-bearing rather than decorative: it is the sentence a reader
+builds its k-way merge from, and it stops being true of `seq_start` alone the
+moment ties are admitted. Corrected to "sorted by `seq_start`, and by stored order
+where two records share one — a total order, since stored order is". The merge's
+own steps needed nothing: step 1 takes each participant's records in file order
+and never sorts, and the section already says the merge never reorders one
+participant's records against each other. The claim in the cost argument was the
+only place the strict reading was doing work.
+
+***The vector carries more than the issue asked for, deliberately.*** #123
+proposed "a handshake and one data record". It ships with both directions,
+because the responder's SYN-ACK — "its own zero-length `syn` record, and MAY carry
+an `ack`" — is a sentence the specification has carried since `0.13` with nothing
+exercising it, and a one-directional file would have left it that way. Its
+arithmetic was read back rather than asserted: ties in both directions, extents 18
+and 19, every `ack` naming real peer records.
 
 ### Phase 2 — the floor's edges (#113, #114, #116, #115)
 
@@ -283,6 +357,36 @@ the two wrong implementations — wrap, or drop the record — diverge visibly. 
 it if Phase 2 confirms the path really is different in a reader; skip it if it
 only re-tests the same arithmetic.
 
+***Done. The conditional vector was taken, and the seq_start-less half found a
+home that already existed.***
+
+***The path really is different, so `advisory-below-origin-payload` ships.*** With
+a zero-length record, placing it at zero width and dropping it entirely give the
+same answers — nothing is in the offset space either way, and the two wrong
+implementations are indistinguishable. With eight bytes they separate: the extent
+is 16 under the rule, the record is still listed, and a reader that drops it
+reports two records where the file has three while one that trusts the arithmetic
+reports an offset of 4294967295. Read back rather than asserted.
+
+***#114's `seq_start`-less half needed no new vector, because the suite has
+carried an instance since `0.12`.*** `partially-hinted-sequenced`'s pid 0 has a
+record with `seq_start` followed by one without — exactly the shape — and nothing
+had ever said where the second one goes. Its `expect` now says: unplaceable, zero
+width at offset 6, extent stays 6, and pid 1 is *not* this rule's case because no
+record of that participant carries a `seq_start` at all, so that stream is not
+sequence-anchored to begin with. Writing a new vector for a shape already shipped
+would have been the more visible answer and the worse one.
+
+***#116 turned up a question the issue did not ask, and the answer kept the
+release corrective.*** The issue notes the MUST's wording leaves open whether a
+`syn`-flagged record may carry payload. It may not — the flag marks a
+handshake-*timing* record and the flag table has said "zero-length" since it was
+written — but TCP Fast Open puts data on a real SYN, so saying "not zero-length is
+a violation" and stopping there would have been wrong about real traffic. The
+paragraph says instead where that data goes: an ordinary record at the origin,
+which is exactly where it starts, since the origin is `isn + 1`. Nothing is lost
+and no permission is added, which is what this release is for.
+
 ### Phase 3 — #98's split, unpropagated (#122, #119, #117)
 
 - **#122** — split the join table's row 3. The `skipped` side joins and belongs
@@ -297,6 +401,32 @@ only re-tests the same arithmetic.
   copied into an implementation.
 - **#117** — state the restriction on the open vocabulary at the predicate.
 
+***Done. #117 grew a MUST, and the MUST turned out to be one no vector can
+carry.***
+
+***Stating the restriction was not enough; it had to bind.*** The plan said "say
+out loud that content-removed is expressible only as `reason = dropped`". Written
+as a description, that leaves a producer free to write `filtered` with
+`reason_class: bytes` and be entirely conformant while escaping the only
+single-file test of the duty — which is the state #117 reports, not a fix for it.
+So it is a **MUST**, which makes it a `Changed` rather than a `Clarified`: a file
+that spelled removed content some other way was conformant under `0.17` and is not
+under `0.18`.
+
+***And it can have no vector, for the reason #94 could not in `0.16`.*** A region
+carrying `filtered` for removed content and one carrying it for anything else are
+byte-identical — that is the whole reason the rule is needed. Recorded as a
+deliberate absence in `check.py`'s `RULES` comment beside #94's, rather than
+omitted silently, because a MUST with no vector otherwise reads as a gap in the
+suite.
+
+***The restriction is stated twice, deliberately, and that is not the failure this
+release is about.*** It is at the predicate, with the argument, and pointed to
+from the openness paragraph two sections earlier — because that paragraph promises
+the opposite, and a producer reads the promise there. A pointer naming the word
+and the site is not a second statement of the rule; #120 is about enumerations
+that go stale, and a cross-reference cannot.
+
 ### Phase 4 — `role`, unpropagated (#120, #121, #118)
 
 - **#120** — both §Conformance sites. Prefer "no label (`content_type` or `role`)"
@@ -310,6 +440,29 @@ only re-tests the same arithmetic.
   label is ignored, reported, round-trips, and that rejecting or isolating is not
   conformant. Two vectors rather than one file carrying both labels, so each
   isolates one rule.
+
+***Done, and the suite is green: the red window opened in Phase 0 closed here, as
+planned.***
+
+***The collective formulation was declined, and the reason is a collision `0.17`
+already navigated.*** #120 offers "such a record carries no label, in the sense
+§Typing gives that word" as the version that cannot go stale, and it would be the
+better sentence but for one thing: `label` **is an option name** — `0x00B0`, on
+Name/Identity Resolution — and §Typing already uses "the label" informally for
+`content_type` alone. Defining it as a collective for `{content_type, role}` would
+manufacture exactly the ambiguity `0.17`'s Phase 0 avoided when it declined to
+call the record option `label`. So the sites enumerate, and `ENUMERATIONS` guards
+them. What *was* taken from the issue is the other half: the **count** is gone,
+since a number that must be maintained alongside the content is a second thing to
+get wrong.
+
+***The enumeration check caught the phase's own mistake, which is the best
+evidence it works.*** Correcting the "two further requirements" sentence changed
+"and **both are** stated in full elsewhere" to "and each **is**" — and the locator
+anchored on that clause stopped matching, so the check reported the site as moved
+rather than silently passing. Re-anchored on the other requirement in the same
+paragraph. The lesson generalises and is now in the code comment: **a locator
+inside the clause being corrected is not a locator.**
 
 ### Phase 5 — changelog, conformance sweep, release
 
@@ -336,30 +489,102 @@ Draft `Changed` from the entries written in Phases 2 and 3, not from memory.
 
 ## Definition of done
 
-- [ ] All thirteen in-scope issues closed, each in the commit that finishes it.
-- [ ] The ordering MUST says whether two records may share a `seq_start`, at
-      **both** sites that depend on it, and a vector carries the tie.
-- [ ] One placement rule covers both unplaceable shapes — below the origin, and
+- [x] All thirteen in-scope issues closed, each in the commit that finishes it.
+      *Four commits carry more than one, grouped as the phases were: the floor's
+      four edges edit one section, and each other group is one rule's sites.*
+- [x] The ordering MUST says whether two records may share a `seq_start`, at
+      **both** sites that depend on it, and a vector carries the tie. *Three
+      sites: the rule, the handshake paragraph's cross-reference, and §Merge
+      algorithm's "always totally ordered", which neither review named.*
+- [x] One placement rule covers both unplaceable shapes — below the origin, and
       no `seq_start` on a hinted stream — without reference to "the preceding
-      record".
-- [ ] The whole of the handshake MUST has one stated strength, and §Conformance
+      record". *The second shape needed no new vector:
+      `partially-hinted-sequenced` has carried it since `0.12` and now states it.*
+- [x] The whole of the handshake MUST has one stated strength, and §Conformance
       describes the two advisory MUST NOTs by displacement rather than membership.
-- [ ] The floor's vacuous half says it is vacuous, and the non-empty case is
-      costed honestly.
-- [ ] No section instructs a filter to write `reason = skipped`, and the join
+- [x] The floor's vacuous half says it is vacuous, and the non-empty case is
+      costed honestly. *With `advisory-below-origin-payload`, taken because the
+      reader path really does differ from the zero-length case.*
+- [x] No section instructs a filter to write `reason = skipped`, and the join
       table tells the two sides of #98's split apart.
-- [ ] The restriction `dropped` places on the open `reason` vocabulary is stated
-      where the predicate uses it.
-- [ ] No statement of the transport-layer bar or of a pass-through's carry-forward
+- [x] The restriction `dropped` places on the open `reason` vocabulary is stated
+      where the predicate uses it. *And made a **MUST**, which the plan did not
+      anticipate — stating it as a description would have left the gap open.*
+- [x] No statement of the transport-layer bar or of a pass-through's carry-forward
       names `content_type` without `role`, and `advisory-transport-role` exists.
-- [ ] `RETIRED_CLAIMS` scans the suite as well as the specification, with the
+      *Enforced from here on, not merely fixed: `ENUMERATIONS` fails the build if
+      a declared site drops a member.*
+- [x] `RETIRED_CLAIMS` scans the suite as well as the specification, with the
       changelog and the release plans excluded by construction, and reproduces
-      `0.17`'s two hand-fixed copies against `v0.16`.
-- [ ] Either a completeness check ships, or it is on `0.19` with its noise floor
-      recorded.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.18`. *Estimated 58
-      entries.*
-- [ ] `CHANGELOG.md` `[0.18]` complete, with a `Changed` section covering #117 and
-      #114.
-- [ ] #106 and #80 are on `0.19`, #80 with its pre-`1.0` deadline restated.
-- [ ] `ruff check` and `ruff format` clean.
+      `0.17`'s two hand-fixed copies against `v0.16`. *Five copies across three
+      files, and only after Phase 0 found that widening the scan alone reproduces
+      none of them.*
+- [x] Either a completeness check ships, or it is on `0.19` with its noise floor
+      recorded. *`ENUMERATIONS` ships; the term-group shape the plan specified was
+      measured (19 hits / 6 real, or 8 hits / 3 of 6 filtered) and declined as the
+      wrong instrument rather than deferred.*
+- [x] `python3 vectors/check.py` green; every vector stamps `0.18`. ~~*Estimated
+      58 entries.*~~ **59** — the estimate missed `advisory-below-origin-payload`,
+      which the plan made conditional and Phase 2 took. 38 accept (four of them
+      advisory), 16 isolate, 5 reject, three of the 59 being multi-file fixtures.
+      38 options, 12 blocks, 28 rules, all exercised.
+- [x] `CHANGELOG.md` `[0.18]` complete, with a `Changed` section covering #117 and
+      #114. *And #116, which loosens rather than tightens.*
+- [x] #106 and #80 are on `0.19`, #80 with its pre-`1.0` deadline restated.
+      *Joined by #125, #117's option 2, filed so the promise made when closing
+      #117 is true.*
+- [x] `ruff check` and `ruff format` clean.
+- [x] **Each `RETIRED_CLAIMS` entry reproduces against the tagged release before
+      the one that retired it, and is absent now**, as `0.17` established. All six
+      do. **And the same discipline applied to the new mechanism**: run against
+      `v0.17`, `ENUMERATIONS` reports the four sites this release fixed and passes
+      on the two `0.17` got right — the asymmetry that proves a check is testing
+      something.
+
+## What execution changed
+
+Recorded because a plan only ever read forwards teaches nothing. Six things this
+document or the issues behind it got wrong:
+
+- **Two guards in a row were proposed in a form that does not work, and both were
+  measured before being built.** `0.17`'s #104 asked for a check that passes clean
+  on its own defect. `0.18`'s #111 asked for a scan that reproduces none of the
+  copies it was filed about, because the suite *paraphrases* and a pattern is
+  always written against the sentence being deleted. Neither issue was wrong about
+  the defect; both were one level off about the instrument. **The lesson is now a
+  habit rather than an observation: build the guard, run it against the tagged
+  release that contained the defect, and only then believe it.** Every guard this
+  release touched was validated that way, including the one it invented.
+- **The completeness check the plan specified was the wrong instrument**, and the
+  numbers said so before any of it was written: 19 hits for 6 real defects, or 8
+  hits catching 3 of 6 with a normative-keyword filter. `ENUMERATIONS` replaced it
+  — declared sites rather than inferred ones, zero false positives by
+  construction — and is narrower than the plan imagined, because Phase 0 found the
+  two sets are not the same problem. A missing member is a completeness failure; a
+  *wrong* member after a split is `RETIRED_CLAIMS`' shape.
+- **`ENUMERATIONS` caught this release's own mistake within one phase of
+  shipping.** Phase 4's fix to the "two further requirements" sentence moved the
+  clause its locator was anchored on, and the check reported the site as moved
+  rather than passing. That is the failure mode a declared-site check must have,
+  and it had it. The rule it taught is in the code: a locator inside the clause
+  being corrected is not a locator.
+- **#117 needed a MUST, not a sentence.** The plan said "state the restriction out
+  loud". Written as a description it leaves a producer free to write `filtered`
+  with `reason_class: bytes`, be conformant, and escape the only single-file test
+  of the duty — which is the state the issue reports, not a fix for it. It also
+  turned out to be a MUST no vector can carry, for the reason `0.16`'s #94 could
+  not, and that absence is recorded rather than left looking like a gap.
+- **The plan said this release opens no red window, and it opened one
+  deliberately.** Declaring the four broken enumeration sites in Phase 0 made
+  `check.py` exit 1 until Phase 4 — which was worth it, because the failure list
+  *was* the remaining work in #120 and #121, enumerated by the tool rather than by
+  a human reading the plan. Third release running where a red window was the right
+  state; it is time to stop treating it as an exception.
+- **Two issues asked for something the release declined, and both refusals cost a
+  paragraph to justify.** #113's suggestion to name the advisory MUST NOTs
+  together would manufacture the duplicate #120 reports, in the release fixing
+  #120. #120's own preferred collective — "carries no label" — collides with the
+  option named `label` at `0x00B0`, which is the ambiguity `0.17` avoided when it
+  named the record option `role`. Both are recorded where the decision was made,
+  because a refusal with no reason attached is indistinguishable from an oversight
+  next time.

@@ -60,6 +60,207 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.18] — 2026-09-02
+
+**A corrective release, like `0.11`, `0.12`, `0.14` and `0.16`.** `0.17` decided
+what a decoded record may say about itself; `0.18` fixes what that release left
+inconsistent, as the reviews `python-zipline` and `zpfwire` returned on it found.
+No new block, no new option, no body-layout change. Scope and reasoning in
+[docs/RELEASE-0.18-PLAN.md](docs/RELEASE-0.18-PLAN.md); every item is an issue on
+the [`0.18` milestone](https://github.com/adamkjonsson/zipline/milestone/6).
+
+**Four of the twelve findings are one failure repeated**, and it is the one worth
+reading first: `0.17` changed two rules and left other statements of them
+standing. The transport-layer bar gained `role` in §Typing and was not updated
+where §Conformance restates it or where a pass-through's carry-forward
+enumerates it; `skipped` split into `skipped`/`dropped` in §Undecoded and was not
+updated in §Referencing's instruction to a filter or in §Discontinuity's join
+table — where it classified a discarded byte-order mark as owing a Discontinuity,
+contradicting an accept vector.
+
+**Expect a small *Changed* section and a large *Fixed* one.** Two entries change
+behaviour: the restriction `dropped` places on an otherwise open vocabulary, and
+the rule for where an unplaceable record sits. One *loosens* — a handshake record
+above the origin was isolatable under `0.17` and is advisory under `0.18`.
+
+### Changed
+
+- **One placement rule covers every unplaceable record, and it is a running
+  maximum.** ([#114](https://github.com/adamkjonsson/zipline/issues/114)) `0.17`
+  put a below-origin record at "the offset the preceding record ended at, or `0`
+  where there is none". That clause is unreachable in a conformant file — the
+  ordering MUST stores a below-origin record first, so only the `0` branch is
+  ever taken — and where a file breaks that MUST it disagrees with the obvious
+  alternative, because records within a participant may overlap and the record
+  stored last is not always the one that reached furthest.
+
+  A record is now **unplaceable** when the offset space cannot say where it
+  belongs, which covers two shapes: `seq_start` below the origin, and **no
+  `seq_start` at all** on a stream whose other records carry one. `0.17` stated a
+  rule for the rare shape and left the common one silent — `partially-hinted-
+  sequenced` has shipped an instance since `0.12` — so both are now one sentence:
+  a zero-width range at the **highest `off_end` any earlier record of that
+  participant reached**, `0` where there is none.
+
+- **Content-removed is expressible only as `reason = dropped`.**
+  ([#117](https://github.com/adamkjonsson/zipline/issues/117)) The seam
+  predicate's two arms are not symmetric: `hole` tests a **class**, so it reaches
+  the whole open vocabulary — `gap`, `truncated` and any producer-specific hole
+  word all carry or imply `reason_class: hole`. Content-removed has no class of
+  its own, because bytes-exist is the wrong set: `skipped` is the case that joins
+  and `undecodable` decides nothing. So the second arm tests a **word**, and a
+  producer taking the document up on its invitation to be more specific —
+  `{"reason": "filtered", "reason_class": "bytes"}` — says something true and
+  escapes the only single-file test of the origination duty on the bytes side.
+
+  A stage that removed content of the stream now **MUST** write `reason =
+  dropped`, with any specificity in `comment`. That is a real qualification of an
+  openness the document promises two sections earlier, so it is stated in both
+  places: at the predicate, with the reason, and as a pointer where the openness
+  is offered. Like the transport-layer withholding rule, this MUST **can have no
+  vector** — a file writing `filtered` for removed content and one writing it for
+  anything else are byte-identical, which is the whole reason the rule is needed —
+  and that absence is recorded in `check.py` rather than left to look like an
+  oversight.
+
+- **The `syn` MUST has one strength across its whole domain.**
+  ([#116](https://github.com/adamkjonsson/zipline/issues/116)) `0.17` made
+  `seq_start = isn + 1` a MUST and gave a reader rule for records *below* the
+  origin only. A `syn` at `isn + 7` violated the same MUST with no specific rule,
+  so it fell to the general licence to isolate — meaning a reader could discard a
+  session over a zero-length record six bytes up, while the shape that wrecks the
+  entire offset space was accept-and-report. The strengths were inverted relative
+  to the damage. Violating the handshake MUST is now advisory wherever the record
+  sits.
+
+  Two shapes the MUST left open are named with it: a `syn`-flagged record with no
+  `seq_start` is unplaceable like any other, and the zero length is part of the
+  shape being described — a writer with data on the SYN (TCP Fast Open) emits it
+  as an ordinary record at the origin, which is exactly where such data starts.
+
+### Clarified
+
+- **The per-participant ordering MUST is non-descending: two records MAY share a
+  `seq_start`.** ([#124](https://github.com/adamkjonsson/zipline/issues/124)) The
+  rule said "in `seq_start` order" and never said whether that was strict. Before
+  `0.17` the question was a corner; `0.17` made the tie **mandatory** in every
+  file that records a handshake, because the SYN sits at the stream origin and
+  the first data record starts at the same origin by definition — the handshake
+  paragraph's own parenthetical relies on it, resolving the two by stored order.
+
+  A reader that reads an unqualified "in order" strictly — which is what a `<`
+  comparison produces without anyone deciding anything — **rejects or isolates
+  every conformant capture whose handshake was observed**, and the licence in the
+  same paragraph makes that a conformant thing for it to do. The evidence that
+  this is a live fork rather than a theoretical one: two implementations in one
+  family read it opposite ways, and the one that read it strictly is why the file
+  behind [#108](https://github.com/adamkjonsson/zipline/issues/108) was written
+  with its handshake below the origin.
+
+  Where two records share a `seq_start`, **stored order decides which comes
+  first**. §Merge algorithm's cost argument is corrected with it — the
+  per-participant streams are sorted by `seq_start` and then by stored order,
+  which is a total order because stored order is; "always totally ordered" was
+  true of `seq_start` alone only while ties were undecided. Neither review named
+  that site; it was found while scoping, and leaving it would have repeated the
+  failure this release exists to fix.
+
+  New vector: `handshake-at-origin`, the mandated shape in both directions.
+  **No vector in the suite carried a `seq_start` tie before this**
+  ([#123](https://github.com/adamkjonsson/zipline/issues/123)), so a reader
+  comparing with `<` passed all 56 and failed on real traffic. It is the positive
+  twin of `advisory-seq-start-below-origin` — the same record, one below the
+  origin — and it also carries the responder's SYN-ACK as its own zero-length
+  `syn` record with an `ack`, which the specification describes and nothing else
+  exercised.
+
+### Fixed
+
+- **The join table tells the two sides of `0.17`'s split apart.**
+  ([#122](https://github.com/adamkjonsson/zipline/issues/122)) §Discontinuity's
+  table is the one place the origination duty is stated in terms of *what the
+  stage did* rather than what word it wrote, which is why it is the part a
+  producer follows — and it was the one place `0.17`'s split was not applied. Row
+  3 read "declined **or** dropped content that was present", which a discarded
+  byte-order mark matches exactly: it declined, and the bytes were present. Its
+  verdict is *no join, block required*, while §Undecoded says the text either side
+  of a BOM runs continuously and `undecoded-skipped` is an accept vector carrying
+  no Discontinuity. Row 1 did not rescue it — a BOM is not framing, not a record
+  header, not a nonce and not a tag.
+
+  Row 3 is now split. Declining data that carries no content of the stream joins
+  row 1, where §Undecoded's reasoning puts it; removing content that was present
+  stands alone. Each row names the `reason` a region of that shape carries, so the
+  table and the predicate can be read against each other — with the caveat that
+  the words do not *decide* the rows, since the question remains what the stage
+  did.
+
+- **§Referencing tells a filter to write `dropped`, not `skipped`.**
+  ([#119](https://github.com/adamkjonsson/zipline/issues/119)) The section an
+  implementer reads to learn what a filtering stage *is* still instructed it to
+  mark every removed region `reason = skipped` — and closed with "which is exactly
+  what that reason is for", which `0.17` made precisely false. A filter written
+  from that paragraph produced a conformant-looking file that the seam predicate
+  could not check, which is the capability `0.17` shipped. The trailing clause now
+  says why the Discontinuity obligation *follows* from the removal rather than
+  being an additional rule. Entered in `RETIRED_CLAIMS`, since it named a
+  canonical word in a normative instruction.
+
+- **Every statement of the transport-layer bar names both labels, and the one
+  that counted its members no longer counts.**
+  ([#120](https://github.com/adamkjonsson/zipline/issues/120)) `0.17` stated the
+  bar once, for `content_type` and `role` together, and updated §Record to match.
+  Two §Conformance sites were not: the paragraph announcing what binds on the
+  layer — which said there were **two** such requirements, so the number went
+  stale with the content — and the sessionization-stage bullet, which is the list
+  a reassembler is written from. That is the single most tempting place to write a
+  `role`, and `role`'s open vocabulary makes it worse than `prim:bytes` was: there
+  is no wrong-looking value to notice, since `role: "segment"` reads as helpful.
+  The count is now deliberately absent, with a note saying why.
+
+- **A pass-through preserving a decoded layer carries `role` forward.**
+  ([#121](https://github.com/adamkjonsson/zipline/issues/121)) The carry-forward
+  obligation named `content_type` alone, in a sentence that enumerates what
+  "additionally" means, and the annotator worked example — the one such a tool is
+  written from — said the same. A lost `content_type` degrades to something the
+  document defines: opaque payload, fall back to the decoder `name`. A lost
+  `role` leaves records typed `prim:u32` with nothing saying which is the
+  checksum, which is the state `role` was added to end, reintroduced by a stage
+  whose whole purpose is to change nothing — and because the option is advisory,
+  no reader can detect that it happened.
+
+- **`advisory-transport-role`**, the vector for the half of the bar that shipped
+  without one. ([#118](https://github.com/adamkjonsson/zipline/issues/118))
+  `advisory-transport-content-type` exists because the advisory strength is a
+  coin-flip a suite should settle, and every argument for it applies to `role`.
+
+- **A stated rule for a violation *displaces* the isolate licence rather than
+  being an instance of it.**
+  ([#113](https://github.com/adamkjonsson/zipline/issues/113)) §Conformance listed
+  the origin floor among rules that are "an instance of this tier" — a tier headed
+  *the reader MAY isolate* — while §Referencing says the floor binds *instead of*
+  that licence and its vector says isolating is not conformant. Two sections gave
+  opposite instructions to a harness that routes on the tier. The clause now says
+  displacement, and notes that some such rules are **weaker** than isolation: the
+  `prim:` width-mismatch rule and the origin floor both keep the record, ignore
+  the part that is wrong, and report. The `prim:` rule had the same imprecision
+  and is fixed by the same sentence.
+
+- **The origin floor says where it is vacuous, and what it costs when it is not.**
+  ([#115](https://github.com/adamkjonsson/zipline/issues/115)) Without an `isn`
+  the origin *is* the first record's `seq_start` and the ordering MUST stores that
+  record first, so the floor cannot be violated there — stated, so an implementer
+  whose check never fires on an unanchored stream knows the rule is unreachable by
+  construction rather than misread. And the advisory argument, which `0.17` costed
+  as "one record is unplaceable and every other byte is exactly where it was", now
+  says what a *payload-carrying* below-origin record costs: those bytes are
+  excluded from the extent and from every coverage answer the file supports. The
+  bytes are kept and only their placement is refused; "data must never vanish
+  silently" is discharged by the SHOULD-report, not by pretending they were
+  placed. New vector: `advisory-below-origin-payload`.
+
+---
+
 ## [0.17] — 2026-09-01
 
 **A feature release, and the one that decides what a decoded record may say
@@ -1583,6 +1784,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.18]: https://github.com/adamkjonsson/zipline/compare/v0.17...v0.18
 [0.17]: https://github.com/adamkjonsson/zipline/compare/v0.16...v0.17
 [0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16
 [0.15]: https://github.com/adamkjonsson/zipline/compare/v0.14...v0.15

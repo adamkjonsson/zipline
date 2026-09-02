@@ -1,21 +1,21 @@
-# Zipline Payload Format (v0.17)
+# Zipline Payload Format (v0.18)
 
-> Status: **version 0.17** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.18** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
 > `0.10` was the first revision informed by a real implementation; `0.11`,
-> `0.12`, `0.14` and `0.16` corrected what successive reviews of them found;
-> `0.13` was the first since `0.9` to *add* capability rather than only correct,
-> `0.15` is the first to change what already-written files mean, and `0.17` the
-> first driven by an implementation decoding at field granularity. More are
-> expected.
+> `0.12`, `0.14`, `0.16` and `0.18` corrected what successive reviews of them
+> found; `0.13` was the first since `0.9` to *add* capability rather than only
+> correct, `0.15` is the first to change what already-written files mean, and
+> `0.17` the first driven by an implementation decoding at field granularity.
+> More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` through `0.17`
-> followed. Note `0.17` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.18`
+> followed. Note `0.18` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -261,7 +261,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -410,7 +410,9 @@ topological sort. Two things tame it, and a reader should rely on both:
 - **Sorted inputs (guaranteed).** Because a writer **MUST** store each
   participant's records in `seq_start` order (see
   [Identifiers & ordering](#identifiers--ordering)), the per-participant streams
-  are always totally ordered. Step 1 is always a no-op and the merge *is* a
+  arrive sorted: by `seq_start`, and by **stored order** where two records share
+  one — which is a total order on the pair, since stored order is total. Step 1 is
+  always a no-op and the merge *is* a
   **streaming k-way merge**: hold one frontier per participant and release a
   stream's next record once every peer record it acks (end ≤ `ack`) has been
   emitted — a single-watermark, O(1)-amortised check. Total work is ~O(N) and
@@ -463,7 +465,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -550,7 +552,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -814,11 +816,32 @@ instead: one zero-length record at `isn` rather than `isn + 1` puts that record 
 offset 4294967295 and makes the stream measure 4294967295 bytes, whatever its data
 actually spans.
 
-**A reader that meets one MUST treat that record as unplaceable.** It occupies a
-**zero-width range at the stream's current position** — the offset the preceding
-record ended at, or `0` where there is none — contributes nothing to the extent,
-and covers no byte of the stream. A reader **MUST NOT** place it at the wrapped
-offset the arithmetic yields.
+**The floor binds meaningfully only on an `isn`-anchored participant.** Without an
+`isn` the origin *is* the first record's `seq_start`, and the ordering MUST stores
+that record first, so nothing can precede it and the rule cannot be violated. It
+is stated for both cases anyway, because the rule is about the origin rather than
+about `isn` — but an implementer who writes the check and cannot make it fire on
+an unanchored stream should know the rule is unreachable there by construction,
+not that they have misread the origin.
+
+**Unplaceable records, and where they go.** A record is **unplaceable** when this
+offset space cannot say where it belongs. Two shapes are: one whose `seq_start`
+precedes the origin, and one carrying **no `seq_start`** on a stream whose other
+records carry them. A reader **MUST** treat an unplaceable record as occupying a
+**zero-width range at the highest `off_end` any earlier record of that participant
+reached** — `0` where there is none — contributing nothing to the extent and
+covering no byte of the stream. A reader **MUST NOT** place a below-origin record
+at the wrapped offset the arithmetic yields.
+
+The position is a **running maximum** rather than "where the previous record
+ended", and the two differ: records within a participant may overlap — the
+favor-old policy exists for exactly that — so the record stored last is not always
+the one that reached furthest. Stating the weaker of the two would leave an
+unplaceable record inside a range already covered, and two readers taking the two
+readings would disagree about the offset space, which is the disagreement this
+rule exists to end. A run of unplaceable records is well defined by the same
+sentence: each contributes nothing, so each sits where the last placed record
+left off.
 
 **Violating the floor is advisory, not isolating**, the treatment
 [`content_type` at the transport layer](#typing-a-decoded-record) gets: the reader
@@ -836,6 +859,17 @@ is one whose bytes it cannot attribute to any offset, and a zero-width range is
 the only claim that stays true whatever the writer meant. Note that it is not
 *deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
 consumer indexing by anything other than offset still sees it.
+
+**Where such a record carries payload, this costs bytes, and the cost is
+deliberate.** A handshake record written one below the origin is zero-length and
+loses nothing. A converter with an off-by-one on `isn` instead produces a
+below-origin record *with a payload*, and those bytes are then excluded from the
+extent and from every coverage answer the file supports: they are not in the
+offset space at all. The alternative is to trust the wrapped offset, which places
+them near 2³² and corrupts the extent for every other record too — so the bytes
+are kept and only their **placement** is refused. "Data must never vanish
+silently" is discharged by the SHOULD-report and by the record remaining readable,
+not by pretending it was placed.
 
 **The floor is decidable only within the serial-arithmetic half-space.** The
 comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
@@ -905,11 +939,13 @@ pass-through (see [Conformance](#conformance)).
 one decoded record shifts every later offset in that participant's space, so the
 output cannot claim to preserve it. Such a transform instead *creates* a layer:
 its records carry `spans` naming the input ranges they came from, and every
-region it dropped is marked [Undecoded](#undecoded-0x21) with
-`reason = skipped` — a deliberate decision not to carry data forward, which is
-exactly what that reason is for. The coverage guarantee then applies as it does
-to any decode stage, and the filter is answerable for the whole input. Dropped
-content also means the surviving records either side of it no longer join, which
+region it removed is marked [Undecoded](#undecoded-0x21) with
+`reason = dropped` — content of the stream that was present and did not reach the
+output, which is what that word is for and what tells it from `skipped`, the
+deliberate decline that withholds no content. The coverage guarantee then applies
+as it does to any decode stage, and the filter is answerable for the whole input.
+It follows, rather than being an additional rule, that the surviving records
+either side no longer join — which
 [Discontinuity](#discontinuity-0x22) obliges the filter to declare.
 
 **`decoder_id` names a layer, not a stage**, so such a transform does *not*
@@ -1127,7 +1163,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1154,9 +1190,9 @@ equal to the output's here — not copying them):
 
 The subtler pass-through: a tool that adds a label to the decoded file above and
 changes nothing else. It is a **pass-through transform preserving a decoded
-layer** — records keep their `decoder_id` and `content_type` but carry no `spans`
-of their own, provenance is the participants' `origin`, and the Undecoded block
-rides along unchanged.
+layer** — records keep their `decoder_id`, `content_type` and `role` but carry no
+`spans` of their own, provenance is the participants' `origin`, and the Undecoded
+block rides along unchanged.
 
 Note the two Sources. `decoded.zpf` is the immediate input, which `origin` names
 and the records reference. `transport.zpf` is declared as well — not as a second input,
@@ -1165,7 +1201,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1260,7 +1296,7 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.17","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
@@ -1396,7 +1432,7 @@ MUST be the first block in the file. Body:
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `0` for this document                                        |
-| `version_minor` | u16  | `17` for this document                                       |
+| `version_minor` | u16  | `18` for this document                                       |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -1410,7 +1446,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.17` is the seventeenth minor and is **greater** than `0.9`. A writer stamps
+number: `0.18` is the eighteenth minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -1891,11 +1927,33 @@ zero-length record carrying the `syn` flag: `timestamp` is the SYN packet's
 capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin, so
 its computed end equals it and every causal edge and ordering rule works unchanged
 (it precedes the data that starts at the same origin simply by being produced
-first). Recording the handshake is the writer's choice; where it does, this is the
+first — the tie the [ordering rule](#identifiers--ordering) admits, and the reason
+it says so). Recording the handshake is the writer's choice; where it does, this is the
 record's shape. `isn` itself is one below the origin, and a record there breaks
 the [floor rule](#referencing-the-source-by-stream-offset) — the SYN consumes a
 sequence number but delivers no byte, which is exactly why the origin is `isn + 1`
-and not `isn`. The responder's SYN-ACK is its own zero-length `syn` record, and MAY
+and not `isn`.
+
+**Violating this is advisory wherever the record sits**, which is one strength for
+the whole MUST rather than one for each side of it. *Below* the origin the record
+is unplaceable and the floor rule places it. *Above* the origin — `isn + 7`, say —
+it is placeable and ordinary arithmetic places it: a zero-length record a few bytes
+up, covering nothing. Either way a reader **accepts the file**, places the record,
+and SHOULD report; what it loses is the handshake's timing and nothing else, and
+the origin it might have been tempted to re-derive is fixed by `isn` rather than by
+this record. Isolating over a misplaced zero-length record would be the strength
+inverted — discarding a session for the mild shape while the shape that wrecks the
+whole offset space is accepted and repaired.
+
+Two neighbouring shapes follow from the same reasoning. A `syn`-flagged record
+carrying **no** `seq_start` is unplaceable like any other and placed by the same
+rule. And the **zero length is part of the shape described here**, not an
+incidental detail: the flag marks a handshake-*timing* record. A writer with data
+on the SYN (TCP Fast Open) emits that data as an ordinary record at the origin,
+where it belongs, and leaves the timing record empty; nothing is lost, because the
+origin is `isn + 1` and that is exactly where such data starts.
+
+The responder's SYN-ACK is its own zero-length `syn` record, and MAY
 carry an `ack` like any record. This is how session-establishment *timing* is
 carried; the handshake's identity already lives on the participant (`isn`,
 `tcp_role`).
@@ -2031,7 +2089,9 @@ unparsed bytes should not have deliberate skips folded into the total.
 more specific than the five canonical words; `reason_class` is what keeps that
 freedom from costing the consumer its one actionable fact. The canonical five
 imply their class and need no `reason_class`; if one carries it anyway, it MUST
-agree with the table above.
+agree with the table above. **One thing the openness does not extend to** is
+content-removed, which is checkable only under the canonical `dropped` — see the
+[seam predicate](#discontinuity-0x22), which says why and makes it a MUST.
 
 **An unrecognised `reason` with no `reason_class`** is a writer error, and its
 recoverability is **unknown**. A consumer MUST NOT guess a class — in particular
@@ -2184,10 +2244,16 @@ only the producer knows what it did with the input:
 
 | The stage… | Do they join? | Block |
 |---|---|---|
-| left framing between two units undecoded — a record header, a nonce, a tag | **yes**, the content runs straight on | no |
+| left framing between two units undecoded, or declined data carrying no content of the stream — a record header, a nonce, a tag, a byte-order mark ([`skipped`](#undecoded-0x21)) | **yes**, the content runs straight on | no |
 | found no bytes to decode there: a [`hole`](#undecoded-0x21)-class region (`gap`, `truncated`) | no | **yes** |
-| declined or dropped content that was present — a filter's dropped record, a message it would not parse | no | **yes** |
+| **removed content that was present** — a filter's dropped record, a message it would not parse ([`dropped`](#undecoded-0x21)) | no | **yes** |
 | **reordered** its input's units, so these two were never neighbours | no | **yes** |
+
+The words in brackets are the `reason` a region of that shape carries, so this
+table and the [predicate](#discontinuity-0x22) below can be read against each
+other. They do not *decide* the rows — the question is still what the stage did
+with the input, and only the producer knows — but a stage that answers this table
+honestly and then writes the other word has contradicted itself.
 
 Note what the test does **not** key on. Not input coverage: a decryptor leaves
 every record header, nonce and tag accounted for without decoding them, and its
@@ -2245,6 +2311,26 @@ because the two decidable cases are one predicate: a checker that tested only th
 class would pass the filter that is this rule's own title case, and one that
 tested only the word would miss the lost segment.
 
+**One arm tests a class and the other tests a word, and that is a real
+restriction on an otherwise open vocabulary.** `hole` generalises: `gap`,
+`truncated` and any producer-specific hole word all carry or imply
+`reason_class: hole`, so the class test reaches the whole vocabulary. Content-
+removed has no class of its own — bytes-exist is the wrong set, since `skipped`
+is the case that joins and `undecodable` decides nothing — so it is expressible
+**only** as `reason = dropped`. A stage that removed content of the stream
+**MUST** write `reason = dropped` and put any specificity in `comment`; one that
+writes `filtered` with `reason_class: bytes` has said something true, and no
+checker will raise the Discontinuity it owes.
+
+Like the [withholding rule](#conformance) at the transport layer, this MUST can
+have no vector: a file writing `filtered` for removed content and one writing it
+for something else are byte-identical, which is the whole reason the rule is
+needed.
+
+That is the one place the openness above is qualified, and it is qualified rather
+than contradicted: the vocabulary stays open for saying *more*, and closed for
+saying **this**. It is stated here rather than left to be discovered while writing
+a checker, which is where it was found.
 **Satisfying this predicate is not satisfying the duty.** It is the minimum a
 checker owes, not the rule a producer follows: it is deliberately conservative,
 and every pair it declines to test may still be one where the duty binds. A
@@ -2627,7 +2713,14 @@ vocabulary stays closed
   ordering **MUST** that keeps reading cheap: within a given
   `(session_id, participant_id)`, a writer **MUST** emit that participant's
   records in `seq_start` order (logical stream order for non-TCP streams that
-  have no sequence numbers) — the order in which it already produced them. This
+  have no sequence numbers) — the order in which it already produced them.
+  **Non-descending**, not strictly ascending: two records MAY share a `seq_start`,
+  and where they do, **stored order decides which comes first**. That is not a
+  corner — a [handshake record](#record-0x20) sits at the stream origin and the
+  first data record starts there too, so every file recording an observed
+  handshake carries the tie. A reader comparing with `<` rather than `≤` rejects
+  most real captures, which is why this says so rather than leaving "in order" to
+  be read either way. This
   costs the writer nothing — each participant's byte stream is monotonic by
   construction — and is what lets the cross-participant
   [merge](#merge-algorithm) be a **streaming k-way merge** over already-sorted
@@ -2752,12 +2845,14 @@ set the `message` flag. A sessionization stage's output is `zpf`-sourced and car
 all three exactly as a capture's does, which is the point of it being a transport
 layer at all.
 
-Two further requirements bind on the layer, and both are stated in full elsewhere:
-such a record carries **no `content_type`** (see
+Further requirements bind on the layer, and each is stated in full elsewhere:
+such a record carries **no `content_type`** and **no `role`** (see
 [Typing a decoded record](#typing-a-decoded-record)), and a stage emitting this
 layer **MUST NOT withhold content** from a stream whose offsets are not
 sequence-anchored, having no way to express the break (see
-[Discontinuity](#discontinuity-0x22)).
+[Discontinuity](#discontinuity-0x22)). The count is deliberately not given: `0.17`
+added the second label to a sentence that announced there were two of these, and
+the number went stale with the content.
 
 - A **capture-sourced** record references a `capture` Source. It carries a
   `decoder_id` exactly when its stream has a decoder — which for a head-of-pipeline
@@ -2780,8 +2875,8 @@ sequence-anchored, having no way to express the break (see
   declaring `output_layer = transport`. Its records carry `spans` and `decoder_id`
   like any decode stage's, and everything else about it is a transport stream —
   `isn`-anchored, hole-inclusive offsets, `seq_start` on records, no
-  `content_type`, and no [Discontinuity](#discontinuity-0x22), since a hole is
-  expressible without one. It is the same operation as the head-of-pipeline
+  `content_type` and no `role`, and no [Discontinuity](#discontinuity-0x22), since
+  a hole is expressible without one. It is the same operation as the head-of-pipeline
   reassembler with a different input kind, and giving it a Decoder is what gives its
   overlap policy, buffer depth and timeout somewhere to be recorded.
 - A **decoded** record carries a `decoder_id` whose Decoder declares
@@ -2833,7 +2928,7 @@ sequence-anchored, having no way to express the break (see
   one thing a pass-through exists not to do.
 
   Preserving a **decoded** layer, it MUST additionally carry each record's
-  `content_type` forward and
+  `content_type` and `role` forward and
   re-emit every Undecoded block — which is what makes the input's coverage
   guarantee hold of the output too, without the output having any `spans` of its
   own. An inherited Undecoded block names a stream in a file *further up* the
@@ -2945,8 +3040,12 @@ readers in two tiers, split by what the violation poisons:
   meant. Where this document states a specific rule for a violation (the
   per-participant [ordering rule](#identifiers--ordering), the `prim:`
   [width-mismatch rule](#enums), the
-  [origin floor](#referencing-the-source-by-stream-offset)), that rule is an
-  instance of this tier and takes precedence.
+  [origin floor](#referencing-the-source-by-stream-offset)), that rule
+  **displaces this licence**: a reader applies the stated rule instead, whether it
+  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and the
+  origin floor both keep the record, ignore the part that is wrong, and report —
+  so reading them as instances of a tier headed *the reader MAY isolate* gets them
+  backwards.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**
@@ -3184,7 +3283,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  11 00                    version_minor = 17   (0.17, little-endian)
+000E  12 00                    version_minor = 18   (0.18, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
