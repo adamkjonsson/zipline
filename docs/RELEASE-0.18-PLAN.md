@@ -441,6 +441,29 @@ that go stale, and a cross-reference cannot.
   conformant. Two vectors rather than one file carrying both labels, so each
   isolates one rule.
 
+***Done, and the suite is green: the red window opened in Phase 0 closed here, as
+planned.***
+
+***The collective formulation was declined, and the reason is a collision `0.17`
+already navigated.*** #120 offers "such a record carries no label, in the sense
+§Typing gives that word" as the version that cannot go stale, and it would be the
+better sentence but for one thing: `label` **is an option name** — `0x00B0`, on
+Name/Identity Resolution — and §Typing already uses "the label" informally for
+`content_type` alone. Defining it as a collective for `{content_type, role}` would
+manufacture exactly the ambiguity `0.17`'s Phase 0 avoided when it declined to
+call the record option `label`. So the sites enumerate, and `ENUMERATIONS` guards
+them. What *was* taken from the issue is the other half: the **count** is gone,
+since a number that must be maintained alongside the content is a second thing to
+get wrong.
+
+***The enumeration check caught the phase's own mistake, which is the best
+evidence it works.*** Correcting the "two further requirements" sentence changed
+"and **both are** stated in full elsewhere" to "and each **is**" — and the locator
+anchored on that clause stopped matching, so the check reported the site as moved
+rather than silently passing. Re-anchored on the other requirement in the same
+paragraph. The lesson generalises and is now in the code comment: **a locator
+inside the clause being corrected is not a locator.**
+
 ### Phase 5 — changelog, conformance sweep, release
 
 Run `RETIRED_CLAIMS` — extended — over the finished release, and each new entry

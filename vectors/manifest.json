@@ -1469,6 +1469,41 @@
       "has_jsonl": true
     },
     {
+      "name": "advisory-transport-role",
+      "tier": "accept",
+      "violations": 1,
+      "advisory": true,
+      "bytes": 364,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0080",
+        "0x0090",
+        "0x0092"
+      ],
+      "summary": "advisory-transport-content-type's twin, for the other label. A reassembly decoder declaring output_layer = transport labels its record `role: \"segment\"`, which 0.17 makes a MUST NOT alongside content_type and with the same advisory strength. WHY role IS THE MORE TEMPTING MISTAKE: prim:bytes at least LOOKS wrong -- it says `opaque` about a slice. role's vocabulary is open, so a plausible word always exists and `segment` reads as helpful. It is the same error either way: the record's boundaries are wherever the reassembler chunked the stream, so a label asserting a unit where there is a slice types identical bytes differently by provenance. WHY ADVISORY AND NOT ISOLATE: dropping the label loses nothing and the record stays fully readable, so there is no unit a reader could soundly discard. The one thing a reader MUST NOT do is read the label as evidence that the stream is decoded after all, which would put every later offset in this participant into the wrong space. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier.",
+      "spec_section": "Typing a decoded record -- a transport-layer record carries no label",
+      "expect": "ACCEPT, and REPORT. The projection is the .jsonl file -- the label round-trips, because a reader preserves what it does not act on. A reader MUST ignore the label semantically and SHOULD report it, and MUST NOT conclude from it that the stream is decoded. Rejecting or isolating this file is NOT conformant: the advisory strength is stated in Typing a decoded record, and covers both labels in one sentence. Its twin is advisory-transport-content-type; the pair exist because the strength is the part implementations guess wrong.",
+      "has_jsonl": true
+    },
+    {
       "name": "advisory-below-origin-payload",
       "tier": "accept",
       "violations": 1,

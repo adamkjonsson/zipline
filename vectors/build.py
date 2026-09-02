@@ -3693,6 +3693,105 @@ vector(
 )
 
 vector(
+    "advisory-transport-role",
+    "accept",
+    "advisory-transport-content-type's twin, for the other label. A reassembly "
+    "decoder declaring output_layer = transport labels its record `role: "
+    '"segment"`, which 0.17 makes a MUST NOT alongside content_type and with '
+    "the same advisory strength. "
+    "WHY role IS THE MORE TEMPTING MISTAKE: prim:bytes at least LOOKS wrong -- it "
+    "says `opaque` about a slice. role's vocabulary is open, so a plausible word "
+    "always exists and `segment` reads as helpful. It is the same error either "
+    "way: the record's boundaries are wherever the reassembler chunked the "
+    "stream, so a label asserting a unit where there is a slice types identical "
+    "bytes differently by provenance. "
+    "WHY ADVISORY AND NOT ISOLATE: dropping the label loses nothing and the "
+    "record stays fully readable, so there is no unit a reader could soundly "
+    "discard. The one thing a reader MUST NOT do is read the label as evidence "
+    "that the stream is decoded after all, which would put every later offset in "
+    "this participant into the wrong space. "
+    "The manifest marks it advisory: true, so it declares 1 violation on the "
+    "ACCEPT tier.",
+    "Typing a decoded record -- a transport-layer record carries no label",
+    [
+        file_header(options=[o_produced_by("zpf-sessionize 0.2"), o_produced_at(1719660000)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest("sha256:33cc")]),
+        decoder(1, [o_dec_name("tcp-reassembly"), o_dec_version("1.1")], output_layer=1),
+        session(51, [o_proto("tcp")]),
+        participant(51, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        # THE VIOLATION: role at the transport layer.
+        record(
+            51,
+            0,
+            1,
+            1000,
+            b"E" * 40,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 0, 6, 0, 40)]),
+                o_seq_start(1001),
+                o_role("segment"),
+            ],
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-sessionize 0.2",
+            "produced_at": 1719660000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "packets.zpf",
+            "digest": "sha256:33cc",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "transport",
+            "name": "tcp-reassembly",
+            "version": "1.1",
+        },
+        {"type": "session", "session_id": 51, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 51,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 51,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"E" * 40),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 6, "pid": 0, "off_start": 0, "off_end": 40}],
+            "seq_start": 1001,
+            "role": "segment",
+        },
+        {"type": "end"},
+    ],
+    expect="ACCEPT, and REPORT. The projection is the .jsonl file -- the label "
+    "round-trips, because a reader preserves what it does not act on. A "
+    "reader MUST ignore the label semantically and SHOULD report it, and "
+    "MUST NOT conclude from it that the stream is decoded. Rejecting or "
+    "isolating this file is NOT conformant: the advisory strength is "
+    "stated in Typing a decoded record, and covers both labels in one "
+    "sentence. Its twin is advisory-transport-content-type; the pair exist "
+    "because the strength is the part implementations guess wrong.",
+    violations=1,
+    advisory=True,
+)
+
+vector(
     "advisory-below-origin-payload",
     "accept",
     "A below-origin record CARRYING PAYLOAD, which is the shape whose cost the "

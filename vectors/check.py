@@ -198,11 +198,20 @@ RULES = {
         "the transport offsets already carry the gap",
         "isolate-hole-against-capture",
     ),
+    # One MUST NOT, two labels, and a vector for each: 0.17 extended the bar to
+    # `role` in one sentence and shipped a vector for one half (#118). The
+    # strength is the part implementations guess wrong, and role is the likelier
+    # mistake -- its vocabulary is open, so a plausible word always exists where
+    # prim:bytes at least looked wrong on a slice.
     "content-type-transport-advisory": (
-        "a label at the transport layer -- content_type since 0.16, role since 0.17 -- "
-        "is a MUST NOT whose violation is ADVISORY: a reader reports it, ignores the "
-        "label, and accepts the file",
+        "content_type at the transport layer is a MUST NOT whose violation is ADVISORY: "
+        "a reader reports it, ignores the label, and accepts the file",
         "advisory-transport-content-type",
+    ),
+    "role-transport-advisory": (
+        "role at the transport layer is the same MUST NOT with the same ADVISORY "
+        "strength; a label asserting a unit where the reassembler left a slice",
+        "advisory-transport-role",
     ),
     # 0.17's option. The id is covered mechanically by the registry parse; what
     # is not is the SCOPING, which is the whole of what makes role more than a
@@ -400,8 +409,12 @@ ENUMERATIONS = {
     "transport-layer labels": (
         ("content_type", "role"),
         (
-            # Conformance -- what binds on the layer (#120)
-            "are stated in full elsewhere",
+            # Conformance -- what binds on the layer (#120). Anchored on the
+            # OTHER requirement in the paragraph: 0.18's own fix rewrote the
+            # sentence this was first anchored on, and the check caught it, which
+            # is the second-order lesson -- a locator inside the clause being
+            # corrected is not a locator.
+            "having no way to express the break",
             # Conformance -- the sessionization-stage bullet (#120)
             "since a hole is expressible without one",
             # Conformance -- what a pass-through preserving a decoded layer owes (#121)

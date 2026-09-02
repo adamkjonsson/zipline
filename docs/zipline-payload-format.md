@@ -1190,9 +1190,9 @@ equal to the output's here — not copying them):
 
 The subtler pass-through: a tool that adds a label to the decoded file above and
 changes nothing else. It is a **pass-through transform preserving a decoded
-layer** — records keep their `decoder_id` and `content_type` but carry no `spans`
-of their own, provenance is the participants' `origin`, and the Undecoded block
-rides along unchanged.
+layer** — records keep their `decoder_id`, `content_type` and `role` but carry no
+`spans` of their own, provenance is the participants' `origin`, and the Undecoded
+block rides along unchanged.
 
 Note the two Sources. `decoded.zpf` is the immediate input, which `origin` names
 and the records reference. `transport.zpf` is declared as well — not as a second input,
@@ -2845,12 +2845,14 @@ set the `message` flag. A sessionization stage's output is `zpf`-sourced and car
 all three exactly as a capture's does, which is the point of it being a transport
 layer at all.
 
-Two further requirements bind on the layer, and both are stated in full elsewhere:
-such a record carries **no `content_type`** (see
+Further requirements bind on the layer, and each is stated in full elsewhere:
+such a record carries **no `content_type`** and **no `role`** (see
 [Typing a decoded record](#typing-a-decoded-record)), and a stage emitting this
 layer **MUST NOT withhold content** from a stream whose offsets are not
 sequence-anchored, having no way to express the break (see
-[Discontinuity](#discontinuity-0x22)).
+[Discontinuity](#discontinuity-0x22)). The count is deliberately not given: `0.17`
+added the second label to a sentence that announced there were two of these, and
+the number went stale with the content.
 
 - A **capture-sourced** record references a `capture` Source. It carries a
   `decoder_id` exactly when its stream has a decoder — which for a head-of-pipeline
@@ -2873,8 +2875,8 @@ sequence-anchored, having no way to express the break (see
   declaring `output_layer = transport`. Its records carry `spans` and `decoder_id`
   like any decode stage's, and everything else about it is a transport stream —
   `isn`-anchored, hole-inclusive offsets, `seq_start` on records, no
-  `content_type`, and no [Discontinuity](#discontinuity-0x22), since a hole is
-  expressible without one. It is the same operation as the head-of-pipeline
+  `content_type` and no `role`, and no [Discontinuity](#discontinuity-0x22), since
+  a hole is expressible without one. It is the same operation as the head-of-pipeline
   reassembler with a different input kind, and giving it a Decoder is what gives its
   overlap policy, buffer depth and timeout somewhere to be recorded.
 - A **decoded** record carries a `decoder_id` whose Decoder declares
@@ -2926,7 +2928,7 @@ sequence-anchored, having no way to express the break (see
   one thing a pass-through exists not to do.
 
   Preserving a **decoded** layer, it MUST additionally carry each record's
-  `content_type` forward and
+  `content_type` and `role` forward and
   re-emit every Undecoded block — which is what makes the input's coverage
   guarantee hold of the output too, without the output having any `spans` of its
   own. An inherited Undecoded block names a stream in a file *further up* the

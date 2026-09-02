@@ -206,6 +206,34 @@ above the origin was isolatable under `0.17` and is advisory under `0.18`.
   being an additional rule. Entered in `RETIRED_CLAIMS`, since it named a
   canonical word in a normative instruction.
 
+- **Every statement of the transport-layer bar names both labels, and the one
+  that counted its members no longer counts.**
+  ([#120](https://github.com/adamkjonsson/zipline/issues/120)) `0.17` stated the
+  bar once, for `content_type` and `role` together, and updated §Record to match.
+  Two §Conformance sites were not: the paragraph announcing what binds on the
+  layer — which said there were **two** such requirements, so the number went
+  stale with the content — and the sessionization-stage bullet, which is the list
+  a reassembler is written from. That is the single most tempting place to write a
+  `role`, and `role`'s open vocabulary makes it worse than `prim:bytes` was: there
+  is no wrong-looking value to notice, since `role: "segment"` reads as helpful.
+  The count is now deliberately absent, with a note saying why.
+
+- **A pass-through preserving a decoded layer carries `role` forward.**
+  ([#121](https://github.com/adamkjonsson/zipline/issues/121)) The carry-forward
+  obligation named `content_type` alone, in a sentence that enumerates what
+  "additionally" means, and the annotator worked example — the one such a tool is
+  written from — said the same. A lost `content_type` degrades to something the
+  document defines: opaque payload, fall back to the decoder `name`. A lost
+  `role` leaves records typed `prim:u32` with nothing saying which is the
+  checksum, which is the state `role` was added to end, reintroduced by a stage
+  whose whole purpose is to change nothing — and because the option is advisory,
+  no reader can detect that it happened.
+
+- **`advisory-transport-role`**, the vector for the half of the bar that shipped
+  without one. ([#118](https://github.com/adamkjonsson/zipline/issues/118))
+  `advisory-transport-content-type` exists because the advisory strength is a
+  coin-flip a suite should settle, and every argument for it applies to `role`.
+
 - **A stated rule for a violation *displaces* the isolate licence rather than
   being an instance of it.**
   ([#113](https://github.com/adamkjonsson/zipline/issues/113)) §Conformance listed
