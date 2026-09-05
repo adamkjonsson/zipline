@@ -351,6 +351,56 @@ Each commit: move, then run both guards, then read the section back as an
 implementer who has never seen it. The third step is the one that catches a rule
 whose scope left with its justification.
 
+***In progress. Two sections done, and the first number out of them changes what
+this work is worth.***
+
+| Section | Before | After | Moved | Crude estimate said |
+|---|---:|---:|---:|---:|
+| §Undecoded | 195 | 173 | **11%** | 76% |
+| §Discontinuity | 259 | 221 | **15%** | 68% |
+
+***The crude measure over-estimated by a factor of five, and the reason is the
+category the plan already named.*** "Paragraph carries no normative keyword" lumps
+category 2 with category 3, and §Undecoded is the proof: the class table, the
+recoverability semantics, *Correspondence is not proximity*, *Recovering the
+bytes* and the two walk-failure modes all score as non-normative and every one of
+them is **instructional**. An implementer needs them. What actually moved was the
+history of the `0.17` split, why `gap` is the canonical hole word, why `skipped`
+had to exist, and the reasoning behind the capture-source class rule — real
+rationale, and about a ninth of the section.
+
+§Discontinuity moved more only because it holds one unusually dense block: *Each
+clause is load-bearing*, twelve lines explaining a predicate that is stated
+completely without them. That paragraph is now a pointer, and it is the shape to
+look for in the sections still to come.
+
+***So the extraction lands nowhere near 2 000 lines.*** At this rate the
+specification finishes near **2 950**, not the analysis's estimate. That estimate
+was computed from the same crude split this phase has now measured against real
+judgment, and it is wrong in the direction that matters.
+
+***Which reverses part of the argument for doing this first.*** The case made in
+§What this work is — that extraction removes about seventy percent of what each
+reduction package would remove, so the packages must then be argued on capability
+alone — **does not hold**. Extraction removes the rationale; the packages remove
+the rationale *and the instructional text with it*, because deleting a rule
+deletes its examples, its definitions and its consequences too. On these two
+sections extraction takes 11-15% of what Package D would take.
+
+The other two reasons to go first still stand, and they were always the stronger
+pair: reduction-first destroys reasoning that extraction preserves, and this work
+is the one that stresses four spec-parsing mechanisms and 214 links while nothing
+else is changing. **`RELEASE-0.19-PLAN.md` needs its line-count column re-measured
+when this finishes, and the claim that extraction dissolves the packages' case
+struck.** That is on this plan's definition of done and now has a specific reason
+rather than a general one.
+
+***One deviation, recorded rather than tidied away.*** §Undecoded and
+§Discontinuity landed in a single commit instead of one each. Their edits are in
+disjoint line ranges and both were read back, but the plan says one section per
+commit so that a mis-extraction reverts alone, and that property is weaker for
+these two than for the sections that follow.
+
 ### Phase 3 — cross-references and the seams
 
 The 214 links, the companion's links back, and the sentences left with a dangling

@@ -2015,23 +2015,18 @@ non-canonical `reason`), `decoder_id` (u16, which decoder declined the region).
 `hole`-class region — `gap`, `truncated` — MUST NOT be declared there, and needs
 no block: the stream the reassembler produced is a transport layer, whose offsets
 are hole-inclusive, so a missing segment already occupies a range no record covers
-and the sequence numbers already carry its extent. Declaring it again would be a
-second account of the same missing bytes with no rule for which to believe — the
-contradiction that also bars a [Discontinuity](#discontinuity-0x22) from a
-transport stream. What the block adds at that position is the other class: bytes
-that *are* in the capture and did not reach the output, an overlapping retransmit
-the reassembler discarded, which nothing else in the file can express.
+and the sequence numbers already carry its extent. What the block adds at that
+position is the other class: bytes that *are* in the capture and did not reach the
+output, an overlapping retransmit the reassembler discarded, which nothing else in
+the file can express.
 
 **And against a `capture` source it discharges no coverage obligation, nor
 creates one.** The [coverage guarantee](#coverage-honesty-undecoded-blocks) is
-scoped *within each input participant stream*, and a capture has none — so a block
+scoped *within each input participant stream*, and a capture has none, so a block
 naming one is purely declarative: it records what a stage discarded, and no rule
-consumes it. That is why the permission does not need to be keyed on the layer. A
-reassembler declares an overlap it dropped; a decode stage reading a capture
-directly declares a region it could not parse; both are honest, and neither is
-answerable to a guarantee that has nothing to bind to. A
-[decoded stream with no predecessor file](#conformance) carries none for a
-different reason — it read no input at all, so it has nothing to declare.
+consumes it. A [decoded stream with no predecessor file](#conformance) carries
+none for a different reason — it read no input at all, so it has nothing to
+declare.
 
 `reason` says *why* the region is undecoded. The vocabulary is **open**, but
 every value belongs to one of two **recoverability classes**. The class governs
@@ -2051,9 +2046,7 @@ transformed: it yields the input region the record corresponds to, which is the
 provenance of the record's bytes rather than a second copy of them. See
 [Recovering the bytes](#undecoded-0x21) below.
 
-None of these names a transport. A hole is the same object whether it was found
-from TCP sequence numbers, an SCTP TSN, an RTP sequence number, or an application
-protocol's own counter — so the canonical value is plain **`gap`**, and the
+None of these names a transport: the canonical value is plain **`gap`**, and the
 transport is read from the session's `proto` where it matters. A producer wanting
 to say precisely *how* a hole was detected uses the open vocabulary, which is
 what it is for.
@@ -2061,11 +2054,7 @@ what it is for.
 The three bytes-exist values differ in **intent**, not in recoverability.
 `undecodable` means the decoder tried and failed. `skipped` means it declined on
 purpose — data it does not care about, or data carrying no information: a
-byte-order mark, a padding or reserved field. That distinction is needed because
-the [coverage guarantee](#coverage-honesty-undecoded-blocks) leaves a decoder no
-honest third option: without `skipped`, a decoder that ignores a BOM must either
-stretch a record's `spans` across a region no output unit corresponds to, or
-report them `undecodable`, asserting a failure that did not occur.
+byte-order mark, a padding or reserved field.
 
 **`dropped` means content was removed**: the region carried content of the stream
 this stage is producing, and the stage did not carry it forward. A filter that
@@ -2074,10 +2063,6 @@ drops a record writes `dropped`; a decoder that discards a byte-order mark write
 deliberate — but **whether anything of the stream's content went missing with it**.
 A BOM carried none, so the text either side of it still runs continuously. A
 dropped record carried its own, so the records either side of it do not.
-
-That is what `skipped` alone could not say. Before `0.17` both cases wrote the
-same word, and two byte-identical files — one where the survivors join and one
-where they do not — were indistinguishable to every consumer and every checker.
 
 **Correspondence is not proximity**, and this is where the difference bites. A
 discarded byte-order mark corresponds to no output unit — nothing downstream was
@@ -2088,16 +2073,10 @@ the whole ciphertext packet, framing included. Tunnel-stream coverage therefore
 closes with **no** Undecoded blocks at all, not one per packet. The test is
 whether the bytes fed the unit, not whether they sit beside it.
 
-Keeping the two values apart also
-keeps `undecodable` usable as a decoder-quality signal — a consumer counting
-unparsed bytes should not have deliberate skips folded into the total.
-
 **A non-canonical `reason` MUST carry `reason_class`** (string, `hole` or
-`bytes`) naming its class. The vocabulary is open precisely so a producer can be
-more specific than the five canonical words; `reason_class` is what keeps that
-freedom from costing the consumer its one actionable fact. The canonical five
-imply their class and need no `reason_class`; if one carries it anyway, it MUST
-agree with the table above. **One thing the openness does not extend to** is
+`bytes`) naming its class. The canonical five imply their class and need no
+`reason_class`; if one carries it anyway, it MUST agree with the table above.
+**One thing the openness does not extend to** is
 content-removed, which is checkable only under the canonical `dropped` — see the
 [seam predicate](#discontinuity-0x22), which says why and makes it a MUST.
 
@@ -2134,8 +2113,7 @@ identically:
   known about the region's content, and reporting it as empty would assert
   something the consumer did not establish.
 
-Collapsing the second into the first is the exact silent-data-loss the
-[coverage guarantee](#coverage-honesty-undecoded-blocks) exists to prevent. Crossing a **pass-through** file costs nothing extra: its participants'
+Crossing a **pass-through** file costs nothing extra: its participants'
 [`origin`](#participant-descriptor-0x11) options map each stream to the
 corresponding input stream, and offsets are preserved, so the same
 `[off_start, off_end)` range resolves unchanged one level further down.
@@ -2182,24 +2160,9 @@ is the easy mistake.** Every field of an Undecoded block is read against the
 *input* — it is deliberately byte-identical to a packed `spans` entry, and it says
 "there were bytes over there that I did not decode". A Discontinuity says
 "something is missing **here**, in what I produced", and its ids are this file's
-own. That is why it cannot be an Undecoded block with different options, and why
-it must be a block rather than a record option: its meaning is positional, and
-stored order is what defines a decoded stream's offsets, so it has to interleave
-with the records it separates.
-
-**Why the output space needs its own marker at all.** Absent this block, a decode
-stage's output space is just the concatenation of its record payloads (see
-[Layers](#layers-transport-and-decoded-live-in-separate-streams)), so two records either
-side of an input gap are *adjacent* in it — the gap does not survive the layer. Nothing obliges a
-decode stage to re-emit its input's Undecoded blocks (that duty falls on
-pass-throughs), so on the chain `capture → tls-records → http`, one lost TCP segment
-under TLS leaves the HTTP stage free to emit a single message spanning the join,
-covering it completely, with **coverage passing** and no marker anywhere in the
-file the consumer is reading. The information survives only in principle, by
-walking down to the capture-sourced file and noticing a gap between two stage-1
-spans — which
-nothing states as an invariant and no checker tests. This block is what makes the
-break visible where it is read.
+own. It is a block rather than a record option because its meaning is positional,
+and stored order is what defines a decoded stream's offsets, so it has to
+interleave with the records it separates.
 
 **Width, and why an absent one still counts.** A `width` present is a real hole of
 known extent: QUIC gives stream offsets, so the missing bytes can be counted, and
@@ -2211,9 +2174,7 @@ contributes **0**.
 
 Contributing 0 is deliberate. Offsets after such a break stay the payload
 concatenation, so every later record remains addressable and a downstream stage
-can still cite `spans` into this output. The alternative — declaring later offsets
-undefined — would end a chain at its first lost record, and a consumer would lose
-the whole remainder of a stream rather than one hole in it. What the block asserts
+can still cite `spans` into this output. What the block asserts
 is not a length. It asserts that the two sides **do not join**, which is the actual
 defect: a consumer that splices them reads a message that was never sent.
 
@@ -2239,11 +2200,8 @@ that would say so is barred by the layer. `tunnel/outer.zpf` is such a stream �
 UDP, no `isn`, four `message` records.
 
 So a stage emitting a **transport** layer **MUST NOT withhold content** from a
-stream whose offsets are not sequence-anchored. Before `0.15` this cost nothing to
-say, because a transport stream was a capture's reassembled output and nothing
-dropped from it; a stage may now declare `output_layer = transport` and filter,
-which is what makes the rule necessary. It binds the writer and **no reader can
-check it** — a file that withheld and one that did not are byte-identical, which
+stream whose offsets are not sequence-anchored. It binds the writer and **no
+reader can check it** — a file that withheld and one that did not are byte-identical, which
 is precisely the defect. A stage that needs to withhold from such a stream emits a
 decoded layer instead, where the break is expressible.
 
@@ -2288,11 +2246,6 @@ bytes-class **`dropped`**, for a different reason: the bytes existed, and the
 producer has said in as many words that it removed content of the stream. A
 checker may raise either from the file alone.
 
-`dropped` is decidable precisely because it is the producer's own statement, not
-an inference from the reason word. The other bytes-exist values decide nothing —
-`skipped` is the BOM case, where the survivors join, and `undecodable` says a
-parse failed without saying whether anything of the stream went with it.
-
 **The predicate, stated so that two checkers agree.** The sentence above says
 which case; this says how to test it. The layer test comes first, because the
 whole check is inapplicable without it:
@@ -2306,29 +2259,16 @@ whole check is inapplicable without it:
 > `reason = dropped`** intersects `[A, B)`, then a Discontinuity between `r1` and
 > `r2` is **required**. Where `A ≥ B` the pair is not tested.
 
-Each clause is load-bearing. **Decoded-layer only**, because a transport stream
-expresses the same break in its offsets and is forbidden the block — a checker
-without that clause rejects a conformant sessionization stage. **Cited by both**,
-because a unit may span several input streams and fan-out means adjacent units may
-cite different ones; a stream only one of them names says nothing about whether
-they join. **Max and min**, because `spans` may overlap, which has been legal
-since `0.14`. And **`A ≥ B` not tested**, because a stage that reorders or
-overlaps its input produces pairs whose input regions run backwards, where "the
-region between them" names nothing. And **`dropped` beside the class test**,
-because the two decidable cases are one predicate: a checker that tested only the
-class would pass the filter that is this rule's own title case, and one that
-tested only the word would miss the lost segment.
+Every clause of it is load-bearing, and
+[why each one is there](zipline-payload-format-rationale.md#discontinuity-0x22) is
+recorded with the rest of the argument.
 
 **One arm tests a class and the other tests a word, and that is a real
-restriction on an otherwise open vocabulary.** `hole` generalises: `gap`,
-`truncated` and any producer-specific hole word all carry or imply
-`reason_class: hole`, so the class test reaches the whole vocabulary. Content-
-removed has no class of its own — bytes-exist is the wrong set, since `skipped`
-is the case that joins and `undecodable` decides nothing — so it is expressible
-**only** as `reason = dropped`. A stage that removed content of the stream
-**MUST** write `reason = dropped` and put any specificity in `comment`; one that
-writes `filtered` with `reason_class: bytes` has said something true, and no
-checker will raise the Discontinuity it owes.
+restriction on an otherwise open vocabulary.** Content-removed has no class of its
+own, so it is expressible **only** as `reason = dropped`. A stage that removed
+content of the stream **MUST** write `reason = dropped` and put any specificity in
+`comment`; one that writes `filtered` with `reason_class: bytes` has said
+something true, and no checker will raise the Discontinuity it owes.
 
 Like the [withholding rule](#conformance) at the transport layer, this MUST can
 have no vector: a file writing `filtered` for removed content and one writing it
@@ -2337,8 +2277,8 @@ needed.
 
 That is the one place the openness above is qualified, and it is qualified rather
 than contradicted: the vocabulary stays open for saying *more*, and closed for
-saying **this**. It is stated here rather than left to be discovered while writing
-a checker, which is where it was found.
+saying **this**.
+
 **Satisfying this predicate is not satisfying the duty.** It is the minimum a
 checker owes, not the rule a producer follows: it is deliberately conservative,
 and every pair it declines to test may still be one where the duty binds. A

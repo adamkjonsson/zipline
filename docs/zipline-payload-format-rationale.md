@@ -58,6 +58,108 @@ a record, and the history of how provenance and layer came to be independent.*
 *Field-layout decisions: what a body field costs against an option, why packed
 types state their entry size, and where an alignment choice was forced.*
 
+### Undecoded (`0x21`)
+
+**Why a hole may not be declared against a capture.** The rule is that only the
+bytes-exist class is available there. The reason is that declaring the hole again
+would be a second account of the same missing bytes with no rule for which to
+believe — the transport offsets already carry the segment's extent, so the block
+would contradict them. It is the same contradiction that bars a
+[Discontinuity](zipline-payload-format.md#discontinuity-0x22) from a transport
+stream.
+
+**Why the capture-source permission is not keyed on the layer.** A block naming a
+capture is purely declarative, so there is nothing for a layer test to protect. A
+reassembler declares an overlap it dropped; a decode stage reading a capture
+directly declares a region it could not parse. Both are honest, and neither is
+answerable to a guarantee that has nothing to bind to.
+
+**Why the canonical hole word is plain `gap`.** A hole is the same object whether
+it was found from TCP sequence numbers, an SCTP TSN, an RTP sequence number, or an
+application protocol's own counter. Naming the transport in the word would put the
+same fact in two places, and the session's `proto` already carries it.
+
+**Why `skipped` had to exist at all.** The
+[coverage guarantee](zipline-payload-format.md#coverage-honesty-undecoded-blocks)
+leaves a decoder no honest third option. Without `skipped`, a decoder that ignores
+a byte-order mark has to either stretch a record's `spans` across a region no
+output unit corresponds to, or report the region `undecodable` — asserting a
+failure that did not occur.
+
+**Why `dropped` was split out of `skipped` in `0.17`.** Before that release both
+cases wrote the same word, and two byte-identical files — one where the survivors
+join and one where they do not — were indistinguishable to every consumer and
+every checker. Keeping the two apart also keeps `undecodable` usable as a
+decoder-quality signal: a consumer counting unparsed bytes should not have
+deliberate skips folded into the total.
+
+**Why an open vocabulary still owes a class.** The vocabulary is open precisely so
+a producer can be more specific than the five canonical words. Requiring
+`reason_class` alongside a non-canonical word is what keeps that freedom from
+costing the consumer its one actionable fact — whether the bytes can be fetched at
+all.
+
+**Why a broken chain and an empty region must be reported differently.**
+Collapsing the second into the first is the exact silent data loss the coverage
+guarantee exists to prevent: the consumer would assert that nothing was there,
+having established only that it could not look.
+
+### Discontinuity (`0x22`)
+
+**Why the output space needs its own marker at all.** Absent the block, a decode
+stage's output space is just the concatenation of its record payloads, so two
+records either side of an input gap are *adjacent* in it — the gap does not
+survive the layer. Nothing obliges a decode stage to re-emit its input's Undecoded
+blocks, that duty falling on pass-throughs, so on the chain
+`capture → tls-records → http` one lost TCP segment under TLS leaves the HTTP
+stage free to emit a single message spanning the join, covering it completely,
+with coverage passing and no marker anywhere in the file the consumer is reading.
+The information survives only in principle, by walking down to the
+capture-sourced file and noticing a gap between two stage-1 spans — which nothing
+states as an invariant and no checker tests. The block is what makes the break
+visible where it is read.
+
+**Why an absent `width` contributes 0 rather than making later offsets
+undefined.** Declaring them undefined would end a chain at its first lost record,
+and a consumer would lose the whole remainder of a stream rather than one hole in
+it.
+
+**Why the transport-layer withholding rule had to be written down.** Before
+`0.15` it cost nothing to say, because a transport stream was a capture's
+reassembled output and nothing dropped from it. A stage may now declare
+`output_layer = transport` and filter, which is what makes the rule necessary.
+
+**Why `dropped` is decidable and the other bytes-exist words are not.** It is the
+producer's own statement that content was removed, not an inference from the
+reason word. `skipped` is the byte-order-mark case, where the survivors join, and
+`undecodable` says a parse failed without saying whether anything of the stream
+went with it.
+
+**Why each clause of the seam predicate is there.** Read against the predicate as
+the specification states it:
+
+- **Decoded-layer only**, because a transport stream expresses the same break in
+  its offsets and is forbidden the block. A checker without that clause rejects a
+  conformant sessionization stage.
+- **Cited by both**, because a unit may span several input streams, and fan-out
+  means adjacent units may cite different ones. A stream only one of them names
+  says nothing about whether they join.
+- **Max and min**, because spans may overlap, which has been legal since `0.14`.
+- **`A ≥ B` not tested**, because a stage that reorders or overlaps its input
+  produces pairs whose input regions run backwards, where "the region between
+  them" names nothing.
+- **`dropped` beside the class test**, because the two decidable cases are one
+  predicate. A checker testing only the class would pass the filter that is the
+  rule's own title case; one testing only the word would miss the lost segment.
+
+**Why content-removed is expressible only as `dropped`.** `hole` generalises —
+`gap`, `truncated` and any producer-specific hole word all carry or imply
+`reason_class: hole`, so the class test reaches the whole vocabulary. Content-
+removed has no class of its own, because bytes-exist is the wrong set: `skipped`
+is the case that joins and `undecodable` decides nothing. So the restriction falls
+on the single word, and it is stated in the specification rather than left to be
+discovered while writing a checker, which is where it was found.
+
 ## Conformance
 
 *Why the error tiers are three, what the advisory strength is buying, and the
