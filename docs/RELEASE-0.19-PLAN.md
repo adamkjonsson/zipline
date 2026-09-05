@@ -1299,8 +1299,11 @@ Package-independent:
       removals named in `NORMATIVE_REMOVALS`.
 - [x] `ruff check` and `ruff format` clean.
 - [x] The package's own Done list above, complete.
-- [ ] `python-zipline` is told which package landed **before** the tag, not after —
-      its `v0.3.0` plan sequences work that three of the five packages delete.
+- [x] `python-zipline` is told which packages landed **before** the tag, not after
+      — its `v0.3.0` plan sequences work that three of the five packages delete.
+      *[python-zipline#65](https://github.com/adamkjonsson/python-zipline/issues/65),
+      leading with the merge coverage obligation, since that one needs action
+      rather than awareness.*
 - [ ] Tag `v0.19`.
 
 ---
