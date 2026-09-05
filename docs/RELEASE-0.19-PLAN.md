@@ -13,10 +13,21 @@ implementation. This is a working roadmap, not normative text.*
 
 ## What this release is
 
+**Clarification and simplification, in that order.** The plan opened as a purely
+subtractive release. It is not, and the reason is worth stating before the
+packages: the document's terms are not pinned, so a reader spends effort
+reconciling the vocabulary before ever reaching a rule. Deleting text without
+fixing that would remove volume and leave the cost.
+
+So the release does two things, and the first gates the second. It **pins the
+terms** and rewrites the text to use them consistently (§Terminology, Phase 0 and
+Phase 0b). Then it takes **one** reduction package.
+
 **A subtractive release, and the first one.** Every release since `0.9` has added
-or corrected. This one deletes: an option, a rule, a section, the vectors that
-pinned them. Nothing in the repository has been built for that, and §Mechanics of
-a deletion release is the part of this plan with no precedent to copy.
+or corrected. The package half deletes: an option, a rule, a section, the vectors
+that pinned them. Nothing in the repository has been built for that, and
+§Mechanics of a deletion release is the part of this plan with no precedent to
+copy.
 
 **It takes exactly one of the five proposals.** The analysis recommends 3.1–3.3
 as a package and `python-zipline` agrees, but a package is not what this document
@@ -96,6 +107,74 @@ The rest, ranked by what they cost to decide rather than to do:
   `zpfwire` asked for it. The analysis says to take it only if tunnels turn out to
   be rare, which nothing currently measures — and the loss is wider than tunnels
   anyway, since it lands on every chain that decrypts or decompresses hop by hop.
+
+---
+
+## Terminology: what the words mean
+
+**The document defines "decoder" once, in its first forty-five lines, and that
+definition has been wrong since `0.15`.** §Terminology says the decoder is the
+transform "which derives a decoded stream from a transport one". Three things
+elsewhere contradict it:
+
+- **A decoder may produce a transport stream.** A sessionization stage is a decode
+  stage whose decoder is the reassembler, declaring `output_layer = transport`.
+- **A decoder may consume a decoded stream.** `capture → tls-records → http` has
+  the HTTP decoder reading a decoded input.
+- **A decoder may consume no stream in a file at all.** The TLS-proxy case has a
+  decoder with no predecessor `.zpf`.
+
+The same paragraph carries two more artefacts of the pre-`0.15` model. It places
+the **reassembler outside the transform family**, as a separate producer stage,
+when reassembly is now a decoder. And it says **"this spec defines two"**
+transforms — the decoder and the merge — while the document goes on to define the
+pass-through, the annotator, the filter and the sessionization stage. That is a
+stale count in an enumeration, the defect `0.18` spent a phase on, and **this site
+is not one of the six `ENUMERATIONS` declares**.
+
+**No ratchet could have caught it.** `RETIRED_CLAIMS` already holds the pre-`0.15`
+model down: the entry retiring *"a byte run carries none"* exists to stop exactly
+this idea returning. §Terminology asserts the same superseded model in words that
+share no phrase with the pattern — the paraphrase blindness `0.18`'s Phase 0
+measured, on the highest-traffic paragraph in the document.
+
+### The definitions this release pins
+
+Grounded in what the document already says where it says it correctly, not
+invented. §Conformance carries the real definitions at line ~2680; §Terminology
+will **name** the terms and point there, never restate them, because a rule stated
+twice is what #120 is about.
+
+| Term | What it is | Stated at |
+|---|---|---|
+| **decoder** | a named, versioned, parameterised **identity** that a `decoder_id` resolves to, declaring the layer its output is in. Not a stage and not software: a claim about what a stream's units are and what produced them | Decoder Descriptor |
+| **decode stage** | a transform that **creates** a layer: its records carry `spans` and reference a `zpf-input` Source | §Conformance |
+| **pass-through** | a transform that **preserves** the layer its input had: participants carry `origin`, records carry no `spans` | §Conformance |
+| **decoded** | a **layer**, the counterpart to transport. Never a synonym for *derived* | §Layers |
+| **transform** | any file → file stage deriving a new `.zpf` from existing ones. The document defines two kinds, decode stage and pass-through, and the merge, annotator, filter and sessionization stage are instances of one or the other | §Terminology |
+| **reassembler** | a decoder. At the head of a pipeline it reads a capture; over a `.zpf` input it is a decode stage called a sessionization stage | §Conformance |
+
+**Three decisions inside that table, each of which could have gone otherwise:**
+
+1. **`decoder` is an identity, not an operation.** The document already says so —
+   *"`decoder_id` names a layer, not a stage"* — in §Referencing, where nobody
+   looks for a definition. Foregrounding it is what makes a filter's inherited
+   `decoder_id` stop looking like a contradiction.
+2. **"Decode stage" is kept despite being a misnomer.** A filter or a reorderer is
+   a decode stage that decodes nothing; what unites the family is *creating a
+   layer*, not running a decoder. **Rename declined**: the term is in
+   `python-zipline`'s public API (`DecodeStage`), 25 sites use it, and a rename
+   buys a better word at the cost of vocabulary alignment with the only complete
+   implementation. Instead the definition says out loud that **a decode stage need
+   not run a decoder**, which is the one sentence that dissolves the confusion.
+3. **The two vocabularies are collapsed to one.** The document says
+   *decode stage / pass-through* in some places and *created / preserved* in
+   others for the same distinction. Keep both words but bind them once: a decode
+   stage **creates**, a pass-through **preserves**. They stop being two ideas.
+
+**This is corrective, not normative.** §Terminology carries no `MUST`, `SHOULD` or
+`MAY`, so repairing it moves neither guard count — the same property that let the
+extraction ship without a version bump.
 
 ---
 
@@ -274,8 +353,11 @@ sentence, so the reset is mechanical downstream rather than archaeological.
 
 ---
 
-## Phase 0 — shared by every package
+## Phase 0 — terminology, stamp, and the package choice
 
+0. **Pin the terms** per §Terminology, and rewrite §Terminology to name them and
+   point at where each is stated. Nothing else in the document changes in this
+   step, so the diff is one paragraph and the guards stay green.
 1. Choose the package. Everything below depends on it and nothing before it does.
 2. `MAJOR, MINOR = 0, 19` in `vectors/build.py`; `check.py` to match; regenerate;
    the spec's version sites; open `## [0.19] — unreleased` with a `Removed`
@@ -299,6 +381,43 @@ package's last commit, because the capability check hard-fails on an option whos
 vector is gone and vice versa. Third release running where that is the right
 state; `0.18` stopped treating it as an exception and this one should not
 reintroduce the treatment.
+
+---
+
+## Phase 0b — rewrite the text in the pinned terms
+
+Every site using the vocabulary loosely, brought onto the definitions. This is
+the clarification half, and it is larger than Phase 0 by an order of magnitude:
+**176** uses of `decoder`, **225** of `decoded`, **25** of `decode stage`, **52**
+of `pass-through`.
+
+Not a find-and-replace. Each site is one of three cases and only the third is
+work:
+
+- **Already correct.** Most of them. Leave alone.
+- **Loose but unambiguous** — `decoder` where `decode stage` is meant, or
+  `decoded` where `derived` is meant. Correct in place.
+- **Ambiguous, because the sentence was written under the old model.** These are
+  the finds. §Terminology is the first; expect others, and expect each to be a
+  small piece of genuine reasoning rather than an edit.
+
+**Three constraints, learned from the extraction:**
+
+- **Nothing normative is reworded.** The invariance guard holds the counts but
+  would not notice a `MUST` surviving in weaker words. If a rule needs its wording
+  changed to use a pinned term, that is a `Changed` entry with an argument, not a
+  terminology fix.
+- **`ENUMERATIONS` gains the site this phase found.** "This spec defines two"
+  transforms is an undeclared enumeration that went stale exactly as `0.17`'s
+  four did. Declare it — with the members it owes — in the commit that fixes it,
+  so the next transform added fails the build here.
+- **`RETIRED_CLAIMS` gains an entry for the stale definition**, with the
+  paraphrase actually found rather than one written against the sentence being
+  deleted. It reproduces against `v0.18-r2` and is absent after.
+
+**Order: Phase 0b runs before the package.** The package edits the derivation
+vocabulary, and editing it on top of a definition three releases stale is how a
+correction gets built on a misreading.
 
 ---
 
@@ -903,6 +1022,22 @@ learned from this repository rather than from the analysis:
 ---
 
 ## Definition of done
+
+Clarification half:
+
+- [ ] **§Terminology names each term and points at where it is stated**, restating
+      no rule, and no longer says a decoder derives a decoded stream from a
+      transport one.
+- [ ] **A decode stage is defined as creating a layer**, and it says out loud that
+      such a stage need not run a decoder.
+- [ ] The *created/preserved* and *decode stage/pass-through* vocabularies are
+      bound to each other once, not maintained as two.
+- [ ] The transform enumeration is in `ENUMERATIONS` with its members, failing the
+      build if a transform is added without updating it.
+- [ ] `RETIRED_CLAIMS` carries the stale definition, reproducing against
+      `v0.18-r2`.
+- [ ] Normative counts unchanged, or every difference has a `NORMATIVE_REMOVALS`
+      entry. Clarification removes no rule.
 
 Package-independent:
 
