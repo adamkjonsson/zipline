@@ -60,6 +60,116 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.18] — re-issued, from 2026-09-05
+
+**The same format, in two documents instead of one.** About a third of the
+specification explains why a rule exists rather than stating it, and that material
+is moving to a
+[rationale companion](docs/zipline-payload-format-rationale.md). Nothing the
+format means changes: no block, no option, no body layout, no rule, and **not one
+vector byte**. Scope and reasoning in
+[docs/RATIONALE-EXTRACTION-PLAN.md](docs/RATIONALE-EXTRACTION-PLAN.md).
+
+**It is not `0.19`, deliberately.** A version that is not on the wire cannot be
+communicated to a reader, and `0.x` files are disposable — a reader rejects a
+`version_minor` it does not implement. Bumping for a change with no semantic
+content would oblige every implementation to ship a release solely to accept a
+number that says nothing. `0.19` stays reserved for the reduction the
+[simplification analysis](docs/SIMPLIFICATION-ANALYSIS.md) proposes, and this work
+goes first so that each of those proposals is argued on the capability it costs
+rather than on the lines it removes.
+
+**The `v0.18` tag is not moved.** Every release since `0.16` closes by running each
+new `RETIRED_CLAIMS` entry against the tag of the release before the one that
+retired it, so a tag that names two trees breaks the reproduction step that
+validates every guard this repository has. The re-issue is tagged `v0.18-r2` and
+`v0.18` keeps pointing at `ea3ad7d`.
+
+### Added
+
+- **A Goals entry for findability of decoding failures.** The specification has
+  never listed the property that a decode stage's output says where its decoder's
+  model of the protocol broke, in the input's own bytes, so that a tool knowing
+  nothing about the protocol can find each such place and re-derive just those
+  ranges. The mechanisms have been there since `0.9`; the goal they serve was
+  left implicit. It states a property rather than adding a rule, which is why it
+  rides with a re-issue.
+- **`docs/zipline-payload-format-rationale.md`**, structured to mirror the
+  specification's sections so a moved paragraph has one obvious home.
+- **Two guards in `vectors/check.py`, both validated against trees where they must
+  fail** before being believed, as `0.17` and `0.18` established after two guards
+  in a row were proposed in forms that could not work.
+  - *Normative-sentence invariance*: the specification's normative keyword counts
+    must match the `v0.18` baseline (143 `MUST`, 53 `MUST NOT`, 27 `SHOULD`, 54
+    `MAY`), and the companion must carry none at all. A rule leaving with the
+    paragraph that explains it is this work's characteristic failure, and this is
+    what catches it.
+  - *Anchor-link integrity*: every `](#anchor)` in either document resolves
+    against the headings of the document it sits in. The specification carries 214
+    such links across 37 targets; moving a section breaks them in both directions,
+    and a dead anchor is silent in a rendered page.
+- **The companion is scanned for retired claims**, alongside the specification and
+  the suite. Measured before it was taken: of 480 paragraphs, 11 recount a
+  superseded rule and none matches a retired spelling, so the allowlist is empty.
+- **The link guard reads the whole tree**, not just the pair. The suite's README,
+  this changelog and every plan link into the specification by heading, and a
+  moved section breaks those exactly as it breaks an internal link, with the same
+  silence. 39 targets across 2 documents and 27 files linking in. Line anchors
+  (`#L120-L130`) are skipped by rule: the one file carrying them is a historical
+  record pinned to `v1.0` whose links went stale several releases ago, and a
+  line-anchored link into the specification does not survive it being edited.
+- **`NORMATIVE_REMOVALS`**, which is how a normative keyword count may go down.
+  Each entry names the statement removed, the keywords it took and why; the
+  expected counts are derived from the table, so no count can be lowered without
+  naming the sentence, and naming one that is still present fails the check.
+
+### Moved to the rationale companion
+
+Each of these left the specification whole and unedited except for its links.
+Nothing in them binds a reader or a writer.
+
+- **Prior art this borrows from**, **Open questions**, and **Design decisions not
+  taken** — the document's whole tail, 164 lines. The specification now ends with
+  a pointer to the companion, and the two references from its body into *Design
+  decisions not taken* resolve across the two files.
+- **From §Undecoded** (195 → 173 lines): the history of `0.17`'s
+  `skipped`/`dropped` split, why `gap` is the canonical hole word, why `skipped`
+  had to exist at all, why an open vocabulary still owes a class, and the
+  reasoning behind the capture-source class rule. The class table, the
+  recoverability semantics, *Correspondence is not proximity*, *Recovering the
+  bytes* and both walk-failure modes stay: an implementer needs every one.
+- **From §Discontinuity** (259 → 221 lines): why the output space needs its own
+  marker, why an absent `width` contributes 0, why the withholding rule had to be
+  written down, why `dropped` alone is decidable, and the twelve-line gloss on the
+  seam predicate. The predicate is stated completely without the gloss, which is
+  now a pointer.
+
+- **From §Conceptual model**: why provenance and layer were split into two axes in
+  `0.15`, and what the four-cell table's bottom-left corner cost before it.
+- **From §Sequenced files**: why recording the basis is unconditional while
+  soundness may be trivial, the asymmetry between what a producer knows at the
+  Session Descriptor and what a reader knows at Session End, and why the basis is
+  required rather than permitted.
+- **From §Referencing the source by stream offset**: why an unplaceable record
+  sits at a running maximum rather than where the previous record ended, and why
+  zero width is the safe placement.
+
+**Specification 3 526 → 3 284 lines; companion 376.** Length was never the point
+and the totals are close, which is the honest summary: what changed is that a
+reader following a rule no longer steps over the argument for it.
+
+### Changed
+
+- **One restatement became a cross-reference.** *Design decisions not taken*
+  argued against a re-stamp option by restating the File Header's rule that a
+  reader does not gate parsing on `version_minor`. The rule's home is the File
+  Header section and always was; the copy in the moved text now points there
+  instead of asserting it again. This is the only sentence in the re-issue whose
+  wording changed, it removes no rule, and it is recorded in `NORMATIVE_REMOVALS`
+  with the keywords it accounted for — the specification's counts are derived from
+  that table rather than typed, so no count can be lowered without naming the
+  sentence that went.
+
 ## [0.18] — 2026-09-02
 
 **A corrective release, like `0.11`, `0.12`, `0.14` and `0.16`.** `0.17` decided

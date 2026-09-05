@@ -115,13 +115,9 @@ else refers to it.**
   space**, which is the consequence that matters (see
   [Layers](#layers-transport-and-decoded-live-in-separate-streams)).
 
-  Splitting the question is what lets **reassembly be a decoder**. `decoder_id`
-  was doing two jobs — *what produced this and what is it*, and *which offset-space
-  semantics apply* — and a reassembler wants the first while wanting **transport**
-  for the second. One field could not say that, so a sessionization stage was
-  characterised by the *absence* of `decoder_id`, purely because absence was the
-  only way to say "hole-inclusive, `isn`-anchored". Its configuration then had
-  nowhere to live and the layer it created had no name.
+  Splitting the question is what lets **reassembly be a decoder**: a reassembler
+  wants `decoder_id` to say what produced the stream while the stream itself is
+  **transport**, and one field could not say both.
 
 All four combinations occur, and none implies another:
 
@@ -131,9 +127,8 @@ All four combinations occur, and none implies another:
 | **decoded layer**   | a decoder with no predecessor file: a TLS-terminating proxy, an `SSL_write` uprobe, a QUIC library's own stream log | a decode stage's output, or a pass-through preserving one |
 
 Reading the layer off the provenance is the mistake this table exists to prevent,
-and the bottom-left cell is where it bit: a proxy's decoded output has no
-predecessor `.zpf` and never will, so a rule that inferred "decoded" from
-"derived" left it with no honest encoding at all.
+and the bottom-left cell is where it bites: a proxy's decoded output has no
+predecessor `.zpf` and never will.
 
 **The unit is the stream, not the file.** `decoder_id` and `source_id` are
 per-record, so one file MAY hold streams at different positions in that table and
@@ -444,8 +439,8 @@ monotonic sequence position** compared with the serial-number rule, and (b) a
 with `seq_start` (plus the computed record end) and `ack`. SCTP's TSNs — the
 same 32-bit serial-number space — and its cumulative TSN ack meet the identical
 contract, so supporting a new transport means adding option ids (see
-[Design decisions not taken](#design-decisions-not-taken)), never changing the
-algorithm.
+[Design decisions not taken](zipline-payload-format-rationale.md#design-decisions-not-taken)),
+never changing the algorithm.
 
 ### Caveats
 
@@ -639,21 +634,11 @@ requirements and they are easy to conflate. A hint-less `SEQUENCED` session
 always carries `sequenced_basis`, whatever the order rests on; `trivial` is what
 a producer writes when the answer is that there was never anything to get wrong.
 
-Keeping the recording unconditional is what makes the rule decidable at the
-moment it must be applied. `SEQUENCED` is written on the Session Descriptor,
-which [declare-on-first-use](#declaration-order-declare-on-first-use) places
-*before* the session's records — so a streaming producer cannot yet know whether
-only one participant will ever send. It can always know what it is relying on.
 A producer that cannot justify triviality yet simply is not relying on it, and
-records the basis it *is* relying on.
-
-The same asymmetry settles a question the rule otherwise raises. Whether a
-session is [hint-less](#merge-algorithm) is a property of its records, which the
-producer cannot confirm when it writes the descriptor either — but it does not
-need to. It decides by *what it is relying on*: a producer relying on transport
-hints expects them and writes no basis, and one relying on anything else writes
-that. The reader, which cannot see the producer's reasoning, is the side that
-must wait until Session End to conclude the session was hint-less at all.
+records the basis it *is* relying on. A producer relying on transport hints
+expects them and writes no basis; one relying on anything else writes that. The
+reader, which cannot see the producer's reasoning, is the side that must wait
+until Session End to conclude the session was hint-less at all.
 
 The requirement is on the producer, not the consumer: a reader **MUST NOT**
 reject a session for an unrecognised value, and a value it does not know simply
@@ -664,10 +649,7 @@ an explanation kept for when something turns out to be wrong, in the same family
 as `creator`, `produced_by` and `params_digest`. Records in an order that makes
 no sense are a different investigation depending on whether the producer claimed
 `clock` (look at capture skew), `protocol` (look at the producer's protocol
-assumptions) or `external` (look outside the file entirely). Requiring it also
-puts the obligation where the knowledge is: a producer that must name a basis has
-to decide what the basis *is* at the moment it sets the bit, which is the point —
-`SEQUENCED` is a strong assertion, not a default.
+assumptions) or `external` (look outside the file entirely).
 
 There is one mechanical check it enables. A hint-less session claiming
 `basis = clock` in a file that draws on several `capture` Sources and does **not**
@@ -844,10 +826,7 @@ at the wrapped offset the arithmetic yields.
 The position is a **running maximum** rather than "where the previous record
 ended", and the two differ: records within a participant may overlap — the
 favor-old policy exists for exactly that — so the record stored last is not always
-the one that reached furthest. Stating the weaker of the two would leave an
-unplaceable record inside a range already covered, and two readers taking the two
-readings would disagree about the offset space, which is the disagreement this
-rule exists to end. A run of unplaceable records is well defined by the same
+the one that reached furthest. A run of unplaceable records is well defined by the same
 sentence: each contributes nothing, so each sits where the last placed record
 left off.
 
@@ -862,10 +841,7 @@ exactly where it was. A reader that discarded the session over it would lose the
 whole capture to fix one offset, and two readers taking different options would
 disagree about the stream, which is what this rule exists to stop.
 
-Zero width is what makes the rule safe to apply: a record the reader cannot place
-is one whose bytes it cannot attribute to any offset, and a zero-width range is
-the only claim that stays true whatever the writer meant. Note that it is not
-*deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
+Zero width is not *deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
 consumer indexing by anything other than offset still sees it.
 
 **Where such a record carries payload, this costs bytes, and the cost is
@@ -1627,8 +1603,8 @@ stream with no predecessor it is not vacuous.
 > parses this block parses the field. The cost is that a body-layout change is free
 > only while the format is in `0.x` and needs a **major** bump afterwards, which is
 > why it is made now rather than later (see
-> [Design decisions not taken](#design-decisions-not-taken), where the general form
-> of that trade is recorded).
+> [Design decisions not taken](zipline-payload-format-rationale.md#design-decisions-not-taken),
+> where the general form of that trade is recorded).
 
 #### Session Descriptor (`0x10`)
 
@@ -2015,23 +1991,18 @@ non-canonical `reason`), `decoder_id` (u16, which decoder declined the region).
 `hole`-class region — `gap`, `truncated` — MUST NOT be declared there, and needs
 no block: the stream the reassembler produced is a transport layer, whose offsets
 are hole-inclusive, so a missing segment already occupies a range no record covers
-and the sequence numbers already carry its extent. Declaring it again would be a
-second account of the same missing bytes with no rule for which to believe — the
-contradiction that also bars a [Discontinuity](#discontinuity-0x22) from a
-transport stream. What the block adds at that position is the other class: bytes
-that *are* in the capture and did not reach the output, an overlapping retransmit
-the reassembler discarded, which nothing else in the file can express.
+and the sequence numbers already carry its extent. What the block adds at that
+position is the other class: bytes that *are* in the capture and did not reach the
+output, an overlapping retransmit the reassembler discarded, which nothing else in
+the file can express.
 
 **And against a `capture` source it discharges no coverage obligation, nor
 creates one.** The [coverage guarantee](#coverage-honesty-undecoded-blocks) is
-scoped *within each input participant stream*, and a capture has none — so a block
+scoped *within each input participant stream*, and a capture has none, so a block
 naming one is purely declarative: it records what a stage discarded, and no rule
-consumes it. That is why the permission does not need to be keyed on the layer. A
-reassembler declares an overlap it dropped; a decode stage reading a capture
-directly declares a region it could not parse; both are honest, and neither is
-answerable to a guarantee that has nothing to bind to. A
-[decoded stream with no predecessor file](#conformance) carries none for a
-different reason — it read no input at all, so it has nothing to declare.
+consumes it. A [decoded stream with no predecessor file](#conformance) carries
+none for a different reason — it read no input at all, so it has nothing to
+declare.
 
 `reason` says *why* the region is undecoded. The vocabulary is **open**, but
 every value belongs to one of two **recoverability classes**. The class governs
@@ -2051,9 +2022,7 @@ transformed: it yields the input region the record corresponds to, which is the
 provenance of the record's bytes rather than a second copy of them. See
 [Recovering the bytes](#undecoded-0x21) below.
 
-None of these names a transport. A hole is the same object whether it was found
-from TCP sequence numbers, an SCTP TSN, an RTP sequence number, or an application
-protocol's own counter — so the canonical value is plain **`gap`**, and the
+None of these names a transport: the canonical value is plain **`gap`**, and the
 transport is read from the session's `proto` where it matters. A producer wanting
 to say precisely *how* a hole was detected uses the open vocabulary, which is
 what it is for.
@@ -2061,11 +2030,7 @@ what it is for.
 The three bytes-exist values differ in **intent**, not in recoverability.
 `undecodable` means the decoder tried and failed. `skipped` means it declined on
 purpose — data it does not care about, or data carrying no information: a
-byte-order mark, a padding or reserved field. That distinction is needed because
-the [coverage guarantee](#coverage-honesty-undecoded-blocks) leaves a decoder no
-honest third option: without `skipped`, a decoder that ignores a BOM must either
-stretch a record's `spans` across a region no output unit corresponds to, or
-report them `undecodable`, asserting a failure that did not occur.
+byte-order mark, a padding or reserved field.
 
 **`dropped` means content was removed**: the region carried content of the stream
 this stage is producing, and the stage did not carry it forward. A filter that
@@ -2074,10 +2039,6 @@ drops a record writes `dropped`; a decoder that discards a byte-order mark write
 deliberate — but **whether anything of the stream's content went missing with it**.
 A BOM carried none, so the text either side of it still runs continuously. A
 dropped record carried its own, so the records either side of it do not.
-
-That is what `skipped` alone could not say. Before `0.17` both cases wrote the
-same word, and two byte-identical files — one where the survivors join and one
-where they do not — were indistinguishable to every consumer and every checker.
 
 **Correspondence is not proximity**, and this is where the difference bites. A
 discarded byte-order mark corresponds to no output unit — nothing downstream was
@@ -2088,16 +2049,10 @@ the whole ciphertext packet, framing included. Tunnel-stream coverage therefore
 closes with **no** Undecoded blocks at all, not one per packet. The test is
 whether the bytes fed the unit, not whether they sit beside it.
 
-Keeping the two values apart also
-keeps `undecodable` usable as a decoder-quality signal — a consumer counting
-unparsed bytes should not have deliberate skips folded into the total.
-
 **A non-canonical `reason` MUST carry `reason_class`** (string, `hole` or
-`bytes`) naming its class. The vocabulary is open precisely so a producer can be
-more specific than the five canonical words; `reason_class` is what keeps that
-freedom from costing the consumer its one actionable fact. The canonical five
-imply their class and need no `reason_class`; if one carries it anyway, it MUST
-agree with the table above. **One thing the openness does not extend to** is
+`bytes`) naming its class. The canonical five imply their class and need no
+`reason_class`; if one carries it anyway, it MUST agree with the table above.
+**One thing the openness does not extend to** is
 content-removed, which is checkable only under the canonical `dropped` — see the
 [seam predicate](#discontinuity-0x22), which says why and makes it a MUST.
 
@@ -2134,8 +2089,7 @@ identically:
   known about the region's content, and reporting it as empty would assert
   something the consumer did not establish.
 
-Collapsing the second into the first is the exact silent-data-loss the
-[coverage guarantee](#coverage-honesty-undecoded-blocks) exists to prevent. Crossing a **pass-through** file costs nothing extra: its participants'
+Crossing a **pass-through** file costs nothing extra: its participants'
 [`origin`](#participant-descriptor-0x11) options map each stream to the
 corresponding input stream, and offsets are preserved, so the same
 `[off_start, off_end)` range resolves unchanged one level further down.
@@ -2182,24 +2136,9 @@ is the easy mistake.** Every field of an Undecoded block is read against the
 *input* — it is deliberately byte-identical to a packed `spans` entry, and it says
 "there were bytes over there that I did not decode". A Discontinuity says
 "something is missing **here**, in what I produced", and its ids are this file's
-own. That is why it cannot be an Undecoded block with different options, and why
-it must be a block rather than a record option: its meaning is positional, and
-stored order is what defines a decoded stream's offsets, so it has to interleave
-with the records it separates.
-
-**Why the output space needs its own marker at all.** Absent this block, a decode
-stage's output space is just the concatenation of its record payloads (see
-[Layers](#layers-transport-and-decoded-live-in-separate-streams)), so two records either
-side of an input gap are *adjacent* in it — the gap does not survive the layer. Nothing obliges a
-decode stage to re-emit its input's Undecoded blocks (that duty falls on
-pass-throughs), so on the chain `capture → tls-records → http`, one lost TCP segment
-under TLS leaves the HTTP stage free to emit a single message spanning the join,
-covering it completely, with **coverage passing** and no marker anywhere in the
-file the consumer is reading. The information survives only in principle, by
-walking down to the capture-sourced file and noticing a gap between two stage-1
-spans — which
-nothing states as an invariant and no checker tests. This block is what makes the
-break visible where it is read.
+own. It is a block rather than a record option because its meaning is positional,
+and stored order is what defines a decoded stream's offsets, so it has to
+interleave with the records it separates.
 
 **Width, and why an absent one still counts.** A `width` present is a real hole of
 known extent: QUIC gives stream offsets, so the missing bytes can be counted, and
@@ -2211,9 +2150,7 @@ contributes **0**.
 
 Contributing 0 is deliberate. Offsets after such a break stay the payload
 concatenation, so every later record remains addressable and a downstream stage
-can still cite `spans` into this output. The alternative — declaring later offsets
-undefined — would end a chain at its first lost record, and a consumer would lose
-the whole remainder of a stream rather than one hole in it. What the block asserts
+can still cite `spans` into this output. What the block asserts
 is not a length. It asserts that the two sides **do not join**, which is the actual
 defect: a consumer that splices them reads a message that was never sent.
 
@@ -2239,11 +2176,8 @@ that would say so is barred by the layer. `tunnel/outer.zpf` is such a stream �
 UDP, no `isn`, four `message` records.
 
 So a stage emitting a **transport** layer **MUST NOT withhold content** from a
-stream whose offsets are not sequence-anchored. Before `0.15` this cost nothing to
-say, because a transport stream was a capture's reassembled output and nothing
-dropped from it; a stage may now declare `output_layer = transport` and filter,
-which is what makes the rule necessary. It binds the writer and **no reader can
-check it** — a file that withheld and one that did not are byte-identical, which
+stream whose offsets are not sequence-anchored. It binds the writer and **no
+reader can check it** — a file that withheld and one that did not are byte-identical, which
 is precisely the defect. A stage that needs to withhold from such a stream emits a
 decoded layer instead, where the break is expressible.
 
@@ -2288,11 +2222,6 @@ bytes-class **`dropped`**, for a different reason: the bytes existed, and the
 producer has said in as many words that it removed content of the stream. A
 checker may raise either from the file alone.
 
-`dropped` is decidable precisely because it is the producer's own statement, not
-an inference from the reason word. The other bytes-exist values decide nothing —
-`skipped` is the BOM case, where the survivors join, and `undecodable` says a
-parse failed without saying whether anything of the stream went with it.
-
 **The predicate, stated so that two checkers agree.** The sentence above says
 which case; this says how to test it. The layer test comes first, because the
 whole check is inapplicable without it:
@@ -2306,29 +2235,16 @@ whole check is inapplicable without it:
 > `reason = dropped`** intersects `[A, B)`, then a Discontinuity between `r1` and
 > `r2` is **required**. Where `A ≥ B` the pair is not tested.
 
-Each clause is load-bearing. **Decoded-layer only**, because a transport stream
-expresses the same break in its offsets and is forbidden the block — a checker
-without that clause rejects a conformant sessionization stage. **Cited by both**,
-because a unit may span several input streams and fan-out means adjacent units may
-cite different ones; a stream only one of them names says nothing about whether
-they join. **Max and min**, because `spans` may overlap, which has been legal
-since `0.14`. And **`A ≥ B` not tested**, because a stage that reorders or
-overlaps its input produces pairs whose input regions run backwards, where "the
-region between them" names nothing. And **`dropped` beside the class test**,
-because the two decidable cases are one predicate: a checker that tested only the
-class would pass the filter that is this rule's own title case, and one that
-tested only the word would miss the lost segment.
+Every clause of it is load-bearing, and
+[why each one is there](zipline-payload-format-rationale.md#discontinuity-0x22) is
+recorded with the rest of the argument.
 
 **One arm tests a class and the other tests a word, and that is a real
-restriction on an otherwise open vocabulary.** `hole` generalises: `gap`,
-`truncated` and any producer-specific hole word all carry or imply
-`reason_class: hole`, so the class test reaches the whole vocabulary. Content-
-removed has no class of its own — bytes-exist is the wrong set, since `skipped`
-is the case that joins and `undecodable` decides nothing — so it is expressible
-**only** as `reason = dropped`. A stage that removed content of the stream
-**MUST** write `reason = dropped` and put any specificity in `comment`; one that
-writes `filtered` with `reason_class: bytes` has said something true, and no
-checker will raise the Discontinuity it owes.
+restriction on an otherwise open vocabulary.** Content-removed has no class of its
+own, so it is expressible **only** as `reason = dropped`. A stage that removed
+content of the stream **MUST** write `reason = dropped` and put any specificity in
+`comment`; one that writes `filtered` with `reason_class: bytes` has said
+something true, and no checker will raise the Discontinuity it owes.
 
 Like the [withholding rule](#conformance) at the transport layer, this MUST can
 have no vector: a file writing `filtered` for removed content and one writing it
@@ -2337,8 +2253,8 @@ needed.
 
 That is the one place the openness above is qualified, and it is qualified rather
 than contradicted: the vocabulary stays open for saying *more*, and closed for
-saying **this**. It is stated here rather than left to be discovered while writing
-a checker, which is where it was found.
+saying **this**.
+
 **Satisfying this predicate is not satisfying the duty.** It is the minimum a
 checker owes, not the rule a producer follows: it is deliberately conservative,
 and every pair it declines to test may still be one where the duty binds. A
@@ -3360,166 +3276,8 @@ isn 1000 + 1`); and the record references `session_id 7` / `sender_pid 0` /
 `source_id 1`, every one of which was declared by an earlier block — the
 declare-on-first-use contract holding in the byte stream.
 
-## Prior art this borrows from
+---
 
-- **pcapng** — block container with TLV options; multiple sources per file.
-- **WARC (ISO 28500)** — record stream; raw payload + linked derived/metadata
-  records (the model for transport-vs-decoded views).
-- **Matroska/MP4** — N timestamped, interleaved tracks (the multi-participant
-  mental model).
-- **HAR** — the ergonomics target for the optional decoded JSON view (not the
-  storage format).
-
-## Open questions
-
-- Compression: per-record, per-session, or whole-file?
-- Should a `zpf-input` Source reference a whole input file, or also pin a
-  per-session digest, so a single changed session forces re-derivation of only
-  that session?
-
-## Design decisions not taken
-
-Ideas weighed and **rejected**, kept here with the reasoning because each is a
-question that recurs — a reader who wonders why the format does *not* do one of
-these finds the answer where the question arises.
-
-This is not a backlog. Planned work lives in the
-[issue tracker](https://github.com/adamkjonsson/zipline/issues); see
-[Planned, tracked elsewhere](#planned-tracked-elsewhere) below.
-
-- **A File Header option recording that a file's bytes were re-stamped from an
-  earlier version.** So a `0.12` file could be relabelled `0.13` and say honestly
-  that it had been. *Not adopted, and not deferred:* there is no regime in which
-  it is the right tool. **In `0.x`** — now — the format's own position is that a
-  file which still matters is regenerated from its capture, so the option would
-  exist to support the thing the specification says not to do. **In a `1.x`
-  minor** it is unnecessary: a reader MUST NOT gate parsing on `version_minor`,
-  so a `1.1` file already reads under `1.3` and there is nothing to re-stamp.
-  **Across a major bump** it is insufficient: the frame or a block body may
-  change, so the header cannot simply be relabelled — the file is rewritten,
-  which is a genuine transform with genuine provenance and belongs in the
-  pass-through machinery, not in a header flag. What the option really implies is
-  a *transcoding specification*, one rule per version pair, growing without
-  bound. See [Version numbering](#file-header-0x01) for the position it would
-  have contradicted.
-
-- **A marker saying a record's payload is byte-identical to its span.** Since
-  `spans` asserts [correspondence, not identity](#tlv-option-framing--id-registry),
-  a consumer cannot tell from a decoded record whether following its span yields
-  those same bytes or transformed ones — so a flag, or a `transform: none`
-  option, would say. *Not adopted:* the question it answers is not the one a
-  consumer acts on. What decides behaviour is whether the bytes are **fetchable
-  at all**, and the [recoverability class](#undecoded-0x21) already answers that.
-  A consumer that has the bytes in front of it has no use for a second copy, and
-  one walking the chain to re-derive must re-run the stage regardless — the
-  identity case just makes re-running trivial. The marker would also be
-  per-record while the property is per-span-entry (a record may span one region it
-  copied and another it rewrote), so an honest version is a parallel array,
-  which is real weight for a hint. If it is ever wanted, a `content_type` scheme
-  is the cheaper place than a new option.
-
-- **Self-describing repeatability (a `repeatable` id-bit).** Reserve the high bit
-  of a TLV `id` to mark an option as an ordered list, so a schema-less tool could
-  render an unknown option as scalar-vs-array without consulting the registry.
-  *Not adopted:* a reader already preserves every occurrence in order (see
-  [TLV framing](#tlv-option-framing--id-registry)), so generic round-trip is
-  lossless without it; the bit would only buy prettier rendering of unknown
-  single-valued options, at the cost of a permanent framing bit, a per-occurrence
-  consistency rule, and duplicating a fact the registry already holds. If ever
-  wanted, the `id` high bit (dropping ids to a 15-bit space) is the place — *not*
-  the `len` bit, which would halve the 64 KB option-value cap.
-
-- **Promoting frequent options into block bodies.** A TLV costs a 4-byte header
-  plus padding, so an option carried by nearly every block of its type is paying
-  framing for nothing. *Considered and not adopted*, and the reasoning is worth
-  keeping because the question recurs.
-
-  There is no option to promote on correctness grounds: **every mandatory option
-  in this document is *conditionally* mandatory** — `isn` when the handshake was
-  seen, `decoder_id` when a decoder produced the record, `spans` when the file is a decode
-  stage, `origin` when it is a pass-through, `sequenced_basis` on a hint-less
-  `SEQUENCED` session, `reason_class` on a non-canonical reason. A body field is
-  always present, so each would need a sentinel for "absent" — and absence here
-  *carries meaning*: no `isn` means the capture began mid-stream and the origin is
-  unknowable, no `decoder_id` means the record is a byte run, no `tcp_role` means
-  unknown rather than responder. A sentinel would also collide with a legal value
-  (`isn = 0` is a real ISN). The same block type additionally serves several file
-  kinds — `origin` is required in a pass-through and forbidden on a
-  capture-sourced stream — and a body cannot vary by file kind.
-
-  The strongest *efficiency* candidates are therefore not the mandatory options
-  but `seq_start` and `ack`, near-universal in a TCP file and costing 8 bytes each
-  as a TLV against 4 inline. In the [worked example](#worked-example-a-minimal-capture-sourced-file)
-  that is 16 of the record block's 64 bytes spent framing 8 bytes of ordering
-  data; on a pure-ACK record it is 16 bytes of framing in 44. Still not adopted:
-  inlining taxes every UDP, chat and decoded record with 8 unused bytes, needs a
-  sentinel (`seq_start = 0` is legal), and saves around an eighth of a TCP record
-  carrying payload.
-
-  Timing matters if this is ever revisited. Moving an option into a body is a
-  **body-layout change**, so it is free while the format is in `0.x` and costs a
-  major bump afterwards.
-
-- **Transport-neutral ordering hints.** Generic `seq_pos` / `cum_ack` options,
-  letting the [merge](#merge-algorithm) derive causal edges for transports the
-  format does not model. *Not adopted in `0.10`:* the merge needs **both** a
-  monotonic per-sender position and a *cumulative* peer acknowledgement, and the
-  sessions that motivated the request (multi-party UDP, chat) supply neither.
-  RTP-style protocols supply only the first, which yields no cross-participant
-  edges at all. Those cases are served instead by a producer asserting the order
-  and recording `sequenced_basis` (see
-  [Sequenced files](#sequenced-files-precomputed-order)). Worth revisiting for any
-  transport that genuinely carries both — SCTP is the concrete one, and is
-  tracked as an issue.
-
-- **A machine-checkable "annotation" file kind.** A third derived-file kind
-  asserting that a transform changed nothing but metadata, so a consumer could
-  skip re-verifying the payloads. *Not adopted in `0.10`:* the layer-preserving
-  pass-through already covers the case, and the `spans`-versus-`origin`
-  distinction (see [Conformance](#conformance)) already tells mechanically
-  whether a file's own stage built a record or re-emitted it. A third kind would
-  add a permanent branch to a taxonomy whose value is that it has two, to buy a
-  guarantee nobody has yet needed to check.
-
-- **Requiring `sequenced_basis` on every `SEQUENCED` session.** The requirement
-  binds [hint-less](#merge-algorithm) sessions only, and hint-less is
-  all-or-nothing: one record carrying `seq_start` or `ack` among a hundred that
-  carry none makes the session hinted, so no basis is required even though nearly
-  all of its order still rests on timestamps. Requiring the basis unconditionally
-  closes that gap and removes the hint-less dependency from the rule entirely.
-  *Filed as a candidate in `0.12` pending evidence the gap mattered, and not
-  adopted in `0.15` because none arrived* — three releases and one full external
-  implementation later, including a review of `0.14` that returned a single
-  finding, about something else.
-
-  The cost was never in doubt: it puts an option on every sequenced TCP session,
-  reinstates the `transport` vocabulary value that `0.12` deleted on the grounds
-  that it could never legitimately appear, and adds an obligation to files that
-  are conformant today. What it buys is narrower than it first looks. A consumer
-  can already see which records carry no hints, and that the merge leaves those
-  concurrent; what it cannot learn is what the producer relied on for them. The
-  loss is **legibility, not correctness**, and the behaviour is pinned by the
-  `partially-hinted-sequenced` vector, so it cannot drift unnoticed.
-
-  One variant is worth not proposing a third time: splitting the rule, so that a
-  reader checks the hint-less proxy while a producer is obliged to record the
-  basis whenever the order does not follow entirely from causal hints. That
-  obligation is **undecidable for a streaming producer** — the Session Descriptor
-  is written before the session's records, which is the same asymmetry
-  [Recording the basis](#sequenced-files-precomputed-order) resolves by keying on
-  what the producer relies on. It is the defect `0.11` removed from the previous
-  exemption, reproduced inside the fix for it. The full analysis is
-  [#42](https://github.com/adamkjonsson/zipline/issues/42), and reopening it costs
-  nothing.
-
-### Planned, tracked elsewhere
-
-Additions this document once listed here, now in the
-[issue tracker](https://github.com/adamkjonsson/zipline/issues) so they carry
-state and a milestone rather than drifting in prose:
-
-| Extension | Issue |
-|-----------|-------|
-| Per-session integrity counts on Session End | [#43](https://github.com/adamkjonsson/zipline/issues/43) |
-| Random-access index block | [#44](https://github.com/adamkjonsson/zipline/issues/44) |
-| SCTP support | [#45](https://github.com/adamkjonsson/zipline/issues/45) |
+*The argument behind these rules — what was considered and declined, what an
+earlier version got wrong, and what this borrows from — is in the
+[rationale companion](zipline-payload-format-rationale.md).*

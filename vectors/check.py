@@ -92,6 +92,52 @@ ADVISORY_VIOLATIONS = 1
 
 SPEC = os.path.join(HERE, os.pardir, "docs", "zipline-payload-format.md")
 
+# The rationale companion: where the argument that produced a rule lives, so the
+# specification can hold the rule alone. Written during the 0.18 re-issue (see
+# docs/RATIONALE-EXTRACTION-PLAN.md). It is SCANNED, because a claim retired from
+# the specification and reasserted here is still a stale claim in the tree, and an
+# implementer reading the companion for context will believe it. Phase 0 measured
+# the cost of that decision before taking it: of 480 paragraphs, 11 recount a
+# superseded rule and NONE matches a retired spelling, so the allowlist is empty
+# today. If it grows longer than the check is worth, the exit is in the plan.
+RATIONALE = os.path.join(HERE, os.pardir, "docs", "zipline-payload-format-rationale.md")
+
+# What the specification said at v0.18, before a paragraph of it moved.
+#
+# Extraction moves the ARGUMENT and leaves the rule, so every one of these
+# survives the work. A count that drops means a normative sentence went with its
+# justification, which is this work's characteristic failure and the reason the
+# baseline is a constant rather than something regenerated on demand. `MUST`
+# includes the `MUST NOT`s; both are counted so that a MUST silently weakened to a
+# MUST NOT (or the reverse) still moves a number.
+#
+# This dict is frozen: it is what v0.18 said, and it is never edited.
+NORMATIVE_V018 = {"MUST": 143, "MUST NOT": 53, "SHOULD": 27, "MAY": 54}
+
+# Normative statements deliberately removed from the specification, with the
+# keywords each took and why.
+#
+# Phase 1 found the case the count invariant could not have anticipated, and it is
+# the good kind: extraction SURFACES rules stated twice. A sentence that restates a
+# rule whose home is elsewhere reads as ordinary prose until the section around it
+# moves and the duplicate stands alone. Every entry here has that one shape -- a
+# restatement replaced by a cross-reference to where the rule actually lives -- and
+# an entry of any other shape is a normative change wearing extraction's clothes.
+#
+# The expected counts are DERIVED from this table rather than typed, so a count
+# cannot be lowered without naming the sentence that went, and a named sentence
+# still present in the specification fails the check. That is what keeps the
+# baseline from being a knob to turn when the build goes red.
+NORMATIVE_REMOVALS = (
+    (
+        r"a reader MUST NOT gate parsing on `version_minor`",
+        {"MUST": 1, "MUST NOT": 1},
+        "Design decisions not taken restated the File Header's version-gating rule "
+        "while arguing against a re-stamp option; the section moved to the companion "
+        "and the restatement became a cross-reference to the rule's home",
+    ),
+)
+
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
 # Session fan-out shipped in 0.13 as a Clarified item with nothing exercising it,
 # and nobody noticed until an implementation reviewed the release -- so a purely
@@ -653,6 +699,7 @@ def check_jsonl_keys() -> list[str]:
 # in the generated file, which is also the file an implementation's harness reads.
 SCANNED = (
     SPEC,
+    RATIONALE,
     os.path.join(HERE, "build.py"),
     os.path.join(HERE, "manifest.json"),
     os.path.join(HERE, "README.md"),
@@ -672,7 +719,8 @@ def check_retired_claims() -> list[str]:
     moved on.
     """
     out = []
-    for path in SCANNED:
+    scanned = [p for p in SCANNED if os.path.exists(p)]
+    for path in scanned:
         flat = re.sub(r"\s+", " ", read_text(path))
         label = os.path.relpath(path, os.path.dirname(HERE))
         for name, (spellings, retired_in, issue, instead) in sorted(RETIRED_CLAIMS.items()):
@@ -687,7 +735,170 @@ def check_retired_claims() -> list[str]:
         spellings = sum(len(v[0]) for v in RETIRED_CLAIMS.values())
         print(
             f"  retired claims: {len(RETIRED_CLAIMS)} claims, {spellings} spellings, "
-            f"{len(SCANNED)} files -- none present"
+            f"{len(scanned)} files -- none present"
+        )
+    return out
+
+
+# Normative keywords the companion is allowed to carry, as (pattern, why) pairs.
+#
+# Empty, and it should stay that way for as long as it can. The rationale document
+# explains rules; it does not state them. Where history genuinely needs to recount
+# a rule that once bound -- "the older rule REQUIRED a reassembler to ..." -- the
+# first move is to rephrase it in the past tense without the keyword, because a
+# normative word in a non-normative document is what a hurried reader quotes.
+RATIONALE_QUOTES: tuple[tuple[str, str], ...] = ()
+
+
+def _headings(text: str) -> list[str]:
+    """Return a markdown document's ATX headings, skipping fenced code.
+
+    The specification's byte-level worked example carries
+    `# -- File Header (0x01) --` comment lines inside a fence. They are not
+    headings, nothing links to their slugs, and counting them would let a real
+    anchor resolve against a comment.
+    """
+    out, fenced = [], False
+    for line in text.split("\n"):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        m = re.match(r"^#{1,6} +(.+?)\s*$", line)
+        if not fenced and m:
+            out.append(m.group(1))
+    return out
+
+
+def _slug(heading: str) -> str:
+    """Slugify a heading the way GitHub anchors it.
+
+    Lowercase, drop everything that is not a word character, a space or a hyphen,
+    then hyphenate the spaces **one for one**. An `&` leaves a gap that becomes a
+    double hyphen, which is why *TLV option framing & id registry* anchors as
+    `tlv-option-framing--id-registry`. Collapsing runs of whitespace instead
+    mis-resolves three of the specification's own links -- found by writing this
+    the wrong way first.
+    """
+    return re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", heading.lower())).strip("-")
+
+
+def check_anchor_links() -> list[str]:
+    """Every in-document link must resolve to a heading that exists.
+
+    The specification carries 214 anchor links across 37 targets, and moving a
+    section to the companion breaks them in both directions: a link into text that
+    left, and a link out of text that arrived. Hand-checking 214 links is not a
+    plan, and a dead anchor is silent in a rendered page -- it scrolls nowhere and
+    reports nothing.
+
+    A bare `](#x)` resolves against **its own file**. A paragraph that moves to the
+    companion carrying `](#coverage-honesty-undecoded-blocks)` is precisely the
+    defect this catches: valid before the move, dead after it, and unchanged.
+
+    Phase 3 widened it past the two documents. The suite's README, the changelog
+    and every plan link into the specification by heading, and a section that moves
+    breaks those exactly as it breaks an internal one -- with the same silence, and
+    further from the person who moved it. So every tracked `.md` is read for links
+    INTO the pair, while only the pair is read for links out.
+
+    `#L120-L130` line anchors are skipped, and deliberately. The one file carrying
+    them says of itself that it is a historical record pinned to `v1.0`, its links
+    went stale several releases before this work, and repairing them would falsify
+    the record. The lesson is the reason this check resolves headings only: a
+    line-anchored link into the specification does not survive it being edited.
+    """
+    docs = {os.path.basename(p): read_text(p) for p in (SPEC, RATIONALE) if os.path.exists(p)}
+    slugs = {name: {_slug(h) for h in _headings(text)} for name, text in docs.items()}
+
+    root = os.path.dirname(HERE)
+    others = []
+    for base, _dirs, names in os.walk(root):
+        if ".git" in base:
+            continue
+        for n in names:
+            p = os.path.join(base, n)
+            if n.endswith((".md", ".py", ".json")) and os.path.basename(p) not in docs:
+                others.append(p)
+
+    bad, seen = [], set()
+    sources = [(n, t, n) for n, t in sorted(docs.items())]
+    sources += [(os.path.relpath(p, root), read_text(p), None) for p in sorted(others)]
+
+    for label, text, own in sources:
+        for target, anchor in re.findall(r"\]?\(?([\w.-]*\.md)?#([A-Za-z0-9_-]+)\)", text):
+            where = os.path.basename(target) if target else own
+            if (
+                where not in slugs
+                or (where, anchor) in seen
+                or re.fullmatch(r"L\d+(-L\d+)?", anchor)
+            ):
+                continue
+            seen.add((where, anchor))
+            if anchor not in slugs[where]:
+                bad.append(f"{label}: anchor '#{anchor}' does not resolve in {where}")
+
+    if not bad:
+        print(
+            f"  anchor links: {len(seen)} distinct targets, {len(docs)} documents "
+            f"+ {len(others)} files linking in -- all resolve"
+        )
+    return bad
+
+
+def check_normative_split() -> list[str]:
+    """Keep every rule in the specification, and let only the argument move.
+
+    Three parts. The specification's normative keyword counts must match `v0.18`
+    less whatever `NORMATIVE_REMOVALS` accounts for, so a MUST cannot leave with
+    the paragraph that explains it. Every removal it names must genuinely be gone,
+    so the table cannot be padded to absorb a loss it does not describe. And the
+    companion must carry **no** normative keyword at all: a reader who finds a MUST
+    in the rationale document has found one the specification lost.
+
+    Counts rather than a regenerated list of sentences, on purpose. A list you
+    regenerate when it goes red is a record of what happened, not a check on it.
+    """
+    out = []
+    spec = read_text(SPEC)
+
+    for pattern, _kws, why in NORMATIVE_REMOVALS:
+        if re.search(pattern, re.sub(r"\s+", " ", spec)):
+            out.append(
+                f"removal '{pattern[:48]}...' names a sentence still in the specification "
+                f"-- the table accounts for a loss that did not happen ({why[:60]}...)"
+            )
+
+    for kw, base in sorted(NORMATIVE_V018.items()):
+        want = base - sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_REMOVALS)
+        got = len(re.findall(r"\b" + kw.replace(" ", r"\s+") + r"\b", spec))
+        if got != want:
+            verb = "lost" if got < want else "gained"
+            out.append(
+                f"specification {verb} a normative keyword: {kw} is {got}, expected {want} "
+                f"(v0.18 had {base}) -- extraction moves the argument and leaves the rule"
+            )
+
+    if os.path.exists(RATIONALE):
+        allowed = [p for p, _ in RATIONALE_QUOTES]
+        for n, line in enumerate(read_text(RATIONALE).split("\n"), 1):
+            kws = {
+                k for k in NORMATIVE_V018 if re.search(r"\b" + k.replace(" ", r"\s+") + r"\b", line)
+            }
+            if kws and not any(re.search(p, line) for p in allowed):
+                out.append(
+                    f"rationale:{n}: carries {'/'.join(sorted(kws))} -- the companion explains "
+                    f"rules, it does not state them"
+                )
+
+    if not out:
+        counts = ", ".join(
+            f"{k} {v - sum(x.get(k, 0) for _p, x, _w in NORMATIVE_REMOVALS)}"
+            for k, v in sorted(NORMATIVE_V018.items())
+        )
+        home = "companion clean" if os.path.exists(RATIONALE) else "no companion yet"
+        print(
+            f"  normative split: {counts} -- v0.18 less "
+            f"{len(NORMATIVE_REMOVALS)} accounted removal(s), {home}"
         )
     return out
 
@@ -1140,6 +1351,8 @@ def main() -> int:
     failures += check_jsonl_keys()
     failures += check_retired_claims()
     failures += check_enumerations()
+    failures += check_normative_split()
+    failures += check_anchor_links()
 
     if failures:
         print("\nFAILURES:")
