@@ -115,13 +115,9 @@ else refers to it.**
   space**, which is the consequence that matters (see
   [Layers](#layers-transport-and-decoded-live-in-separate-streams)).
 
-  Splitting the question is what lets **reassembly be a decoder**. `decoder_id`
-  was doing two jobs — *what produced this and what is it*, and *which offset-space
-  semantics apply* — and a reassembler wants the first while wanting **transport**
-  for the second. One field could not say that, so a sessionization stage was
-  characterised by the *absence* of `decoder_id`, purely because absence was the
-  only way to say "hole-inclusive, `isn`-anchored". Its configuration then had
-  nowhere to live and the layer it created had no name.
+  Splitting the question is what lets **reassembly be a decoder**: a reassembler
+  wants `decoder_id` to say what produced the stream while the stream itself is
+  **transport**, and one field could not say both.
 
 All four combinations occur, and none implies another:
 
@@ -131,9 +127,8 @@ All four combinations occur, and none implies another:
 | **decoded layer**   | a decoder with no predecessor file: a TLS-terminating proxy, an `SSL_write` uprobe, a QUIC library's own stream log | a decode stage's output, or a pass-through preserving one |
 
 Reading the layer off the provenance is the mistake this table exists to prevent,
-and the bottom-left cell is where it bit: a proxy's decoded output has no
-predecessor `.zpf` and never will, so a rule that inferred "decoded" from
-"derived" left it with no honest encoding at all.
+and the bottom-left cell is where it bites: a proxy's decoded output has no
+predecessor `.zpf` and never will.
 
 **The unit is the stream, not the file.** `decoder_id` and `source_id` are
 per-record, so one file MAY hold streams at different positions in that table and
@@ -639,21 +634,11 @@ requirements and they are easy to conflate. A hint-less `SEQUENCED` session
 always carries `sequenced_basis`, whatever the order rests on; `trivial` is what
 a producer writes when the answer is that there was never anything to get wrong.
 
-Keeping the recording unconditional is what makes the rule decidable at the
-moment it must be applied. `SEQUENCED` is written on the Session Descriptor,
-which [declare-on-first-use](#declaration-order-declare-on-first-use) places
-*before* the session's records — so a streaming producer cannot yet know whether
-only one participant will ever send. It can always know what it is relying on.
 A producer that cannot justify triviality yet simply is not relying on it, and
-records the basis it *is* relying on.
-
-The same asymmetry settles a question the rule otherwise raises. Whether a
-session is [hint-less](#merge-algorithm) is a property of its records, which the
-producer cannot confirm when it writes the descriptor either — but it does not
-need to. It decides by *what it is relying on*: a producer relying on transport
-hints expects them and writes no basis, and one relying on anything else writes
-that. The reader, which cannot see the producer's reasoning, is the side that
-must wait until Session End to conclude the session was hint-less at all.
+records the basis it *is* relying on. A producer relying on transport hints
+expects them and writes no basis; one relying on anything else writes that. The
+reader, which cannot see the producer's reasoning, is the side that must wait
+until Session End to conclude the session was hint-less at all.
 
 The requirement is on the producer, not the consumer: a reader **MUST NOT**
 reject a session for an unrecognised value, and a value it does not know simply
@@ -664,10 +649,7 @@ an explanation kept for when something turns out to be wrong, in the same family
 as `creator`, `produced_by` and `params_digest`. Records in an order that makes
 no sense are a different investigation depending on whether the producer claimed
 `clock` (look at capture skew), `protocol` (look at the producer's protocol
-assumptions) or `external` (look outside the file entirely). Requiring it also
-puts the obligation where the knowledge is: a producer that must name a basis has
-to decide what the basis *is* at the moment it sets the bit, which is the point —
-`SEQUENCED` is a strong assertion, not a default.
+assumptions) or `external` (look outside the file entirely).
 
 There is one mechanical check it enables. A hint-less session claiming
 `basis = clock` in a file that draws on several `capture` Sources and does **not**
@@ -844,10 +826,7 @@ at the wrapped offset the arithmetic yields.
 The position is a **running maximum** rather than "where the previous record
 ended", and the two differ: records within a participant may overlap — the
 favor-old policy exists for exactly that — so the record stored last is not always
-the one that reached furthest. Stating the weaker of the two would leave an
-unplaceable record inside a range already covered, and two readers taking the two
-readings would disagree about the offset space, which is the disagreement this
-rule exists to end. A run of unplaceable records is well defined by the same
+the one that reached furthest. A run of unplaceable records is well defined by the same
 sentence: each contributes nothing, so each sits where the last placed record
 left off.
 
@@ -862,10 +841,7 @@ exactly where it was. A reader that discarded the session over it would lose the
 whole capture to fix one offset, and two readers taking different options would
 disagree about the stream, which is what this rule exists to stop.
 
-Zero width is what makes the rule safe to apply: a record the reader cannot place
-is one whose bytes it cannot attribute to any offset, and a zero-width range is
-the only claim that stays true whatever the writer meant. Note that it is not
-*deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
+Zero width is not *deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
 consumer indexing by anything other than offset still sees it.
 
 **Where such a record carries payload, this costs bytes, and the cost is

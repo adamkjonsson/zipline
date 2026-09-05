@@ -482,6 +482,33 @@ so it carries two constraints the earlier phases did not need:
 Take §Undecoded first, since its numbers are already recorded and it is the
 section most read.
 
+***Declined, on evidence, and the phase this plan invented is the one it should
+not have.*** The metric was sound and the intervention it implied is wrong. Laid
+out paragraph by paragraph, §Undecoded and §Sequenced files are not shuffled —
+they are **topic-ordered**, and each rule sits beside the concept it governs. The
+`reason_class` MUST follows the vocabulary discussion it constrains; the
+hint-less basis MUST NOT follows the paragraph defining what a basis is; the
+capture-source class rule follows the options line that introduces `reason`.
+
+Clustering those rules into one run would put every MUST ahead of the concepts it
+names, and a reader would meet eight obligations before learning what any of them
+is about. **The mode-switch count would fall and the section would get harder**,
+which is the definition of optimising a proxy.
+
+So the honest position, and it revises what this plan claimed two phases ago: the
+cognitive-load win available from *this* work is the one already taken — a reader
+following the rules no longer steps over the argument for them — and it is
+smaller than hoped. The rest of the interleaving is structural to a reference
+document organised by topic, and it is not a defect. §Conformance is where the
+document already collects its rules for a reader who wants them in one run: 22 of
+its 33 paragraphs are normative, with a longest run of 8, against 2 everywhere
+else.
+
+**What is left is not reordering.** Making every normative paragraph scannable by
+a consistent bold lead-in would help, and it is *rewording*, which this phase
+forbids for good reason. It belongs to whoever next revises the prose, not to an
+extraction.
+
 ### Phase 3 — cross-references and the seams
 
 The 214 links, the companion's links back, and the sentences left with a dangling
@@ -579,9 +606,13 @@ What it says, and every word of it is already true:
 
 ## Definition of done
 
-- [ ] **Every section visited reads with its rules together**, and its mode-switch
-      count and longest run of rules are recorded against the Phase 2 baseline.
-      This, not a line count, is what says the work succeeded.
+- [x] **The cognitive-load question is answered rather than assumed.** ~~Every
+      section reads with its rules together.~~ Measured, then declined: the
+      sections are topic-ordered, each rule sits beside the concept it governs,
+      and clustering would lower the metric while making the document harder. The
+      win taken is that a reader following the rules no longer steps over the
+      argument for them. §Conformance remains the document's rules-in-one-run
+      view, at 22 normative paragraphs of 33.
 - [ ] The format is unchanged. *(The "near 2 000 lines" target is struck: it came
       from the crude split, Phase 2 measured the real rate, and the specification
       lands near 2 950. Length was never the goal and the number was misleading in

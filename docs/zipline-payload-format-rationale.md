@@ -34,8 +34,18 @@ argument, or was it never written down?") and a missing one is not.
 
 ## Conceptual model
 
-*Where the model's vocabulary came from, and the readings it was chosen to rule
-out.*
+**Why provenance and layer were split into two axes in `0.15`.** `decoder_id` was
+doing two jobs — *what produced this and what is it*, and *which offset-space
+semantics apply* — and a reassembler wants the first while wanting **transport**
+for the second. One field could not say that, so a sessionization stage was
+characterised by the *absence* of `decoder_id`, purely because absence was the
+only way to say "hole-inclusive, `isn`-anchored". Its configuration then had
+nowhere to live and the layer it created had no name.
+
+**What the four-cell table's bottom-left corner cost before that.** A rule that
+inferred "decoded" from "derived" left a TLS-terminating proxy's output with no
+honest encoding at all: its decoded records have no predecessor `.zpf` and never
+will.
 
 ## Encoding: two faces of one model
 
@@ -44,14 +54,35 @@ encoding, and why the projection is lossy in the direction it is.*
 
 ## Causal ordering from TCP seq/ack
 
-*Why ordering rests on sequence numbers rather than on timestamps, what the merge
-algorithm's cost argument is defending, and what a sequenced file's guarantees
-were reasoned from.*
+**Why recording the sequencing basis is unconditional while soundness may be
+trivial.** Keeping the recording unconditional is what makes the rule decidable at
+the moment it has to be applied. `SEQUENCED` is written on the Session Descriptor,
+which declare-on-first-use places *before* the session's records, so a streaming
+producer cannot yet know whether only one participant will ever send. It can
+always know what it is relying on.
+
+**The same asymmetry settles a question the rule otherwise raises.** Whether a
+session is hint-less is a property of its records, which the producer cannot
+confirm when it writes the descriptor either — and it does not need to, because it
+decides by what it is relying on. Only the reader, which cannot see the producer's
+reasoning, has to wait until Session End.
+
+**Why the basis is required rather than merely permitted.** It puts the obligation
+where the knowledge is: a producer that has to name a basis has to decide what the
+basis *is* at the moment it sets the bit. `SEQUENCED` is a strong assertion, not a
+default.
 
 ## Layers: transport and decoded live in separate streams
 
-*The argument for a decoded view as a separate stream rather than a layer inside
-a record, and the history of how provenance and layer came to be independent.*
+**Why an unplaceable record sits at a running maximum rather than where the
+previous record ended.** Stating the weaker of the two would leave an unplaceable
+record inside a range already covered, and two readers taking the two readings
+would disagree about the offset space — which is the disagreement the rule exists
+to end.
+
+**Why zero width is the safe placement.** A record the reader cannot place is one
+whose bytes it cannot attribute to any offset, and a zero-width range is the only
+claim that stays true whatever the writer meant.
 
 ## Binary encoding (normative reference)
 

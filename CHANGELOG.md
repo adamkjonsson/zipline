@@ -144,10 +144,19 @@ Nothing in them binds a reader or a writer.
   seam predicate. The predicate is stated completely without the gloss, which is
   now a pointer.
 
-**Still inline.** Three sections of twenty have been through this; the rest carry
-their argument as before. Until that finishes, the document is uneven by
-construction — §Undecoded sends you to the companion and §Sequenced files does
-not.
+- **From §Conceptual model**: why provenance and layer were split into two axes in
+  `0.15`, and what the four-cell table's bottom-left corner cost before it.
+- **From §Sequenced files**: why recording the basis is unconditional while
+  soundness may be trivial, the asymmetry between what a producer knows at the
+  Session Descriptor and what a reader knows at Session End, and why the basis is
+  required rather than permitted.
+- **From §Referencing the source by stream offset**: why an unplaceable record
+  sits at a running maximum rather than where the previous record ended, and why
+  zero width is the safe placement.
+
+**Specification 3 526 → 3 284 lines; companion 376.** Length was never the point
+and the totals are close, which is the honest summary: what changed is that a
+reader following a rule no longer steps over the argument for it.
 
 ### Changed
 
