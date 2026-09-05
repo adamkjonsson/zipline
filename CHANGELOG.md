@@ -111,6 +111,17 @@ validates every guard this repository has. The re-issue is tagged `v0.18-r2` and
 - **The companion is scanned for retired claims**, alongside the specification and
   the suite. Measured before it was taken: of 480 paragraphs, 11 recount a
   superseded rule and none matches a retired spelling, so the allowlist is empty.
+- **The link guard reads the whole tree**, not just the pair. The suite's README,
+  this changelog and every plan link into the specification by heading, and a
+  moved section breaks those exactly as it breaks an internal link, with the same
+  silence. 39 targets across 2 documents and 27 files linking in. Line anchors
+  (`#L120-L130`) are skipped by rule: the one file carrying them is a historical
+  record pinned to `v1.0` whose links went stale several releases ago, and a
+  line-anchored link into the specification does not survive it being edited.
+- **`NORMATIVE_REMOVALS`**, which is how a normative keyword count may go down.
+  Each entry names the statement removed, the keywords it took and why; the
+  expected counts are derived from the table, so no count can be lowered without
+  naming the sentence, and naming one that is still present fails the check.
 
 ### Moved to the rationale companion
 
@@ -121,6 +132,22 @@ Nothing in them binds a reader or a writer.
   taken** — the document's whole tail, 164 lines. The specification now ends with
   a pointer to the companion, and the two references from its body into *Design
   decisions not taken* resolve across the two files.
+- **From §Undecoded** (195 → 173 lines): the history of `0.17`'s
+  `skipped`/`dropped` split, why `gap` is the canonical hole word, why `skipped`
+  had to exist at all, why an open vocabulary still owes a class, and the
+  reasoning behind the capture-source class rule. The class table, the
+  recoverability semantics, *Correspondence is not proximity*, *Recovering the
+  bytes* and both walk-failure modes stay: an implementer needs every one.
+- **From §Discontinuity** (259 → 221 lines): why the output space needs its own
+  marker, why an absent `width` contributes 0, why the withholding rule had to be
+  written down, why `dropped` alone is decidable, and the twelve-line gloss on the
+  seam predicate. The predicate is stated completely without the gloss, which is
+  now a pointer.
+
+**Still inline.** Three sections of twenty have been through this; the rest carry
+their argument as before. Until that finishes, the document is uneven by
+construction — §Undecoded sends you to the companion and §Sequenced files does
+not.
 
 ### Changed
 

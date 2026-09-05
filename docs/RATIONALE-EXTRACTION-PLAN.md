@@ -523,6 +523,44 @@ The `[0.18]` second entry, listing what moved rather than what changed, since
 nothing changed. Tag per Phase 0. Tell `python-zipline` that `0.18` was re-issued,
 that the format is unchanged, and that their port target is unaffected.
 
+***Changelog done and current. The tag is held, and the hand-off with it.***
+
+***`v0.18-r2` marks a finished re-issue, and this one is three sections of twenty
+through.*** §Undecoded, §Discontinuity and the tail have been extracted;
+§Sequenced files, §Referencing the source by stream offset, §Conceptual model and
+§Layers have not, and Phase 2b has not started anywhere. Tagging now would fix a
+name to a document that is **uneven by construction** — a reader of §Undecoded is
+sent to the companion for the argument, a reader of §Sequenced files finds it
+inline — and would hand `0.19` a guard baseline pointing at a half-done tree,
+which is the precise failure §Do not delete the `v0.18` tag exists to prevent.
+The changelog entry says the same thing in its own words, so the state is
+recorded rather than merely known.
+
+**Two ways to close, and the choice is a scoping decision rather than a technical
+one:**
+
+- **Finish.** Four sections plus Phase 2b, then Phase 3 again, then tag. This is
+  what the plan assumes and what the definition of done measures.
+- **Scope the re-issue down deliberately.** Declare it as "the tail and the two
+  block sections", tag that, and leave the rest to a later re-issue. Legitimate,
+  and it costs the evenness above until the second one lands. If this is taken it
+  belongs in the changelog entry as a stated scope, not as a silent stopping
+  point.
+
+***The hand-off is drafted and not sent***, because its first line is the tag.
+What it says, and every word of it is already true:
+
+> `0.18` has been re-issued. **The format is unchanged** — no block, no option, no
+> body layout, no rule, and not one vector byte; the suite still stamps `0.18` and
+> still holds 59 vectors. About a third of the specification is argument rather
+> than rule, and that material is moving to a rationale companion beside it.
+> Your port target is unaffected, and `v0.3.0` needs no change on our account.
+> The `v0.18` tag has not moved; the re-issue is `v0.18-r2`, so any guard you
+> validate against a tag still names the tree you meant.
+> `0.19` remains the reduction release, and the goal added here — that a decoding
+> failure is findable in the input's own bytes — is what its coverage package now
+> has to argue against.
+
 ---
 
 ## Risks
