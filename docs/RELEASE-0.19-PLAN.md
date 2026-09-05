@@ -77,6 +77,12 @@ list** partly is.
 | **E** 3.5 | provenance and layer as axes | **yes** — reassembled bytes as the source of truth, and findability across hops |
 | **D** 3.4 | coverage apparatus | **yes** — findability, by name |
 
+> ***Taken: B.*** *Chosen after one question the plan had not asked — whether the
+> property actually wanted is traceability of **where and when** a session was
+> ordered. It is, and `sequenced_basis` never provided it; see §Package B's Done
+> notes. A, C, D and E remain unstarted and their sections stand for the release
+> that takes them.*
+
 **Take B.** It deletes the one thing on this list that serves no stated goal and
 that nothing else in the format keys on: two options, four vectors, **no `RULES`
 entry**, no rule elsewhere depending on it. `python-zipline` supports it and gives
@@ -623,6 +629,52 @@ itself — which is the one real interaction between B and C.
 3. Registry rows and the four vectors, one commit.
 4. Changelog, `RETIRED_CLAIMS` sweep, release.
 
+***Done. Both findings held, and the guard built for the extraction is what made
+the deletion safe.***
+
+***`NORMATIVE_REMOVALS` earned its design on its first real use.*** Eleven
+entries, each naming the sentence that went, with the expected counts derived from
+the table rather than typed — so the drop from **143/53/54** to **132/48/53**
+could not be waved through, and each step of it had to be justified in writing at
+the moment it happened. A subtractive release wants exactly this and had nothing
+like it before `0.18` built it for a different purpose.
+
+***And it caught a real mistake, of the kind this repository keeps making.*** The
+removal entry for the File Header `flags` field's reserved-bits rule matched the
+**Session Descriptor's** identical sentence, which survives — so the table claimed
+a loss that had not happened, and the check said so. Re-anchored on
+`SINGLE_CLOCK`. The lesson is in the code beside the entry: **anchor a removal on
+what is unique to the site, not on the rule being removed**, which is the same
+shape as `ENUMERATIONS`' lesson that a locator inside the clause being corrected
+is not a locator.
+
+***The two rehousings both mattered, and Phase 1 was right to do them first.***
+`time_epoch` survives the package and `file-clock-metadata` was its only vector,
+so the capability check would have hard-failed on the deletion commit. The
+placement shape was subtler: `partially-hinted-sequenced` carried **two** lessons
+and only one was about sequencing, so the deletion would have taken `0.18`'s
+`seq_start`-less placement evidence with it silently — no check covers "a rule
+kept a vector but lost a *shape*". Rehoused as `unplaceable-no-seq-start`, and
+dropping the `SEQUENCED` flag from it makes the point the old vector obscured:
+**placement keys on whether a stream is sequence-anchored, not on the flag.**
+
+***Two `RETIRED_CLAIMS` entries that differ in kind from every earlier one.***
+Every previous entry retires a claim that had become *false*. These two retire
+claims that were **true until this release**. The ratchet's job here is not to
+stop a stale copy returning but to stop a rule the model deliberately dropped
+being reintroduced from an older draft or from an implementation that still
+carries it. Worth naming, because it is a second use for the mechanism and the
+comment now says so.
+
+***The forensic question reshaped the section rather than just emptying it.***
+Asked where a strange order could be traced to, the answer turned out not to be
+the basis word at all: it names a *category* of reasoning, while what a reader
+needs is which run of which tool. §Sequenced files now points at the build
+provenance of the file that set the flag — `produced_by`, `produced_at`,
+`transform_params_digest` where a merge's ordering key lives — reached by walking
+`zpf-input` Sources back. **That is a better answer than the deleted option gave**,
+and it costs no syntax.
+
 ### Risks
 
 | Risk | Likelihood | Mitigation |
@@ -634,13 +686,25 @@ itself — which is the one real interaction between B and C.
 
 ### Done
 
-- [ ] Both options out of the registry, the JSONL mapping, and `zpf info`'s notes.
-- [ ] `SEQUENCED` is stated once, as a bare assertion, with the trust it rests on
-      named in the same sentence.
-- [ ] "Hint-less" appears nowhere, or is defined where it appears.
-- [ ] `time_epoch` and the `seq_start`-less placement case both still have a
-      vector.
-- [ ] `check.py` green; **55** vectors.
+- [x] Both options out of the registry and the JSONL mapping. *36 options, from
+      38.*
+- [x] `SEQUENCED` is stated once, as a bare assertion, with the trust it rests on
+      named in the same sentence — *"the same trust it already extends to the
+      order itself, which it cannot check either."*
+- [x] "Hint-less" appears nowhere, or is defined where it appears. *Defined, and
+      the paragraph now says no rule turns on it: it is a description, not a
+      test.*
+- [x] `time_epoch` and the `seq_start`-less placement case both still have a
+      vector. *`descriptive-metadata` and `unplaceable-no-seq-start`.*
+- [x] Every normative statement removed is named in `NORMATIVE_REMOVALS` with the
+      keywords it took and why. **Eleven**, and the count is derived from the
+      table rather than typed.
+- [x] `RETIRED_CLAIMS` carries the basis rule and the `SINGLE_CLOCK` bit, both
+      reproducing against `v0.18-r2`.
+- [x] The companion keeps the deleted rule's argument, headed as removed, with
+      why it was written *and* why it was dropped.
+- [x] `check.py` green. ~~*55 vectors.*~~ **56** — the estimate did not allow for
+      `unplaceable-no-seq-start`, which the plan's own Phase 1 called for.
 
 ---
 
@@ -1087,31 +1151,70 @@ learned from this repository rather than from the analysis:
 
 Clarification half:
 
-- [ ] **§Terminology names each term and points at where it is stated**, restating
+- [x] **§Terminology names each term and points at where it is stated**, restating
       no rule, and no longer says a decoder derives a decoded stream from a
-      transport one.
-- [ ] **A decode stage is defined as creating a layer**, and it says out loud that
+      transport one. *It is a `## Terminology` section now, so its anchor no
+      longer moves when the version does — the link guard found that at the
+      stamp.*
+- [x] **A decode stage is defined as creating a layer**, and it says out loud that
       such a stage need not run a decoder.
-- [ ] The *created/preserved* and *decode stage/pass-through* vocabularies are
+- [x] The *created/preserved* and *decode stage/pass-through* vocabularies are
       bound to each other once, not maintained as two.
-- [ ] The transform enumeration is in `ENUMERATIONS` with its members, failing the
-      build if a transform is added without updating it.
-- [ ] `RETIRED_CLAIMS` carries the stale definition, reproducing against
+- [x] The transform enumeration is in `ENUMERATIONS` with its members, failing the
+      build if a transform is added without updating it. *Its matcher now accepts
+      **bold** as well as `code`, this being the first set whose members are prose
+      terms rather than identifiers.*
+- [x] `RETIRED_CLAIMS` carries the stale definition, reproducing against
       `v0.18-r2`.
-- [ ] Normative counts unchanged, or every difference has a `NORMATIVE_REMOVALS`
-      entry. Clarification removes no rule.
+- [x] Normative counts unchanged by the clarification. *All eleven differences
+      belong to Package B and each has a `NORMATIVE_REMOVALS` entry.*
 
 Package-independent:
 
-- [ ] Exactly one of A–E is complete; the others are untouched in this file.
-- [ ] `CHANGELOG.md` `[0.19]` has a `Removed` section naming every deleted option,
+- [x] Exactly one of A–E is complete; the others are untouched in this file. *B.*
+- [x] `CHANGELOG.md` `[0.19]` has a `Removed` section naming every deleted option,
       rule and vector, the vectors as a list.
-- [ ] Every `RETIRED_CLAIMS` entry added by the release reproduces against `v0.18`
-      and is absent now.
-- [ ] `ENUMERATIONS` passes, with any dead locator re-anchored rather than
-      deleted quietly.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.19`.
-- [ ] `ruff check` and `ruff format` clean.
-- [ ] The package's own Done list above, complete.
-- [ ] `python-zipline` is told which package landed before the tag, not after —
+- [x] Every `RETIRED_CLAIMS` entry added by the release reproduces against
+      **`v0.18-r2`** and is absent now. *Four entries: two for the clarification,
+      two for Package B.*
+- [x] `ENUMERATIONS` passes, with any dead locator re-anchored rather than
+      deleted quietly. *2 sets, 8 sites.*
+- [x] `python3 vectors/check.py` green; every vector stamps `0.19`, and
+      `reject-unknown-minor` rolled to `0/20` out of its own bytes.
+- [x] `ruff check` and `ruff format` clean.
+- [x] The package's own Done list above, complete.
+- [ ] `python-zipline` is told which package landed **before** the tag, not after —
       its `v0.3.0` plan sequences work that three of the five packages delete.
+- [ ] Tag `v0.19`.
+
+---
+
+## What execution changed
+
+Recorded because a plan only ever read forwards teaches nothing. Five things this
+document got wrong.
+
+- **The release was scoped as purely subtractive and is not.** The terms were
+  never pinned, and one paragraph had defined `decoder` wrongly since `0.15` —
+  found by a question this plan did not think to ask. Clarification became the
+  first half and gated the second, which was the right order: Package B edits the
+  sequencing vocabulary, and editing it on a stale foundation is how a correction
+  gets built on a misreading.
+- **The clarification sweep was budgeted as the large half and was the small
+  one.** Counts of 176 `decoder` and 225 `decoded` suggested a document riddled
+  with loose usage; six sites needed correcting and `decoded` needed none. The
+  defect was concentrated — one stale paragraph, one word doing two jobs — and
+  believing the counts would have justified a far larger and more dangerous edit.
+- **The guard the extraction built for one purpose is what made the deletion
+  safe.** `NORMATIVE_REMOVALS` was designed to catch a rule leaving *by accident*
+  during extraction. Its first real use was a release removing rules *on purpose*,
+  where it forced eleven written justifications and caught one entry that claimed
+  a loss which had not happened.
+- **The vector estimate was low again**, for the fourth release running. Budgeted
+  55, shipped 56: the plan's own Phase 1 called for rehousing the placement shape
+  and the estimate did not count the vector that rehousing needs.
+- **Two guards reported things no human would have found**, both in this release:
+  a link into a section that had moved, and a link into the document's own title
+  after the version stamp changed it. Neither is visible in a rendered page. The
+  second produced a real improvement — Terminology is a section with a stable
+  anchor now, rather than a bold lead-in reachable only through the title.
