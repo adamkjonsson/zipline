@@ -877,59 +877,6 @@ vector(
     violations=0,
 )
 
-vector(
-    "passthrough-transport",
-    "accept",
-    "A pass-through preserving a transport layer: byte-run records with no "
-    "decoder_id, provenance carried by origin on each participant.",
-    "Conformance -- pass-through transform",
-    [
-        file_header(options=[o_produced_by("zpf-merge 1.2"), o_produced_at(1719510000)]),
-        source(1, 1, [o_uri("sideA.zpf"), o_digest("sha256:11aa")]),
-        session(1, [o_proto("tcp"), o_sess_flags(0x0001)]),
-        participant(1, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_origin(1, 0, 7)]),
-        record(1, 0, 1, 1000, GET, flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]),
-        end_block(),
-    ],
-    jsonl=[
-        {
-            "type": "file",
-            "format": FORMAT,
-            "tick_hz": 1000000,
-            "produced_by": "zpf-merge 1.2",
-            "produced_at": 1719510000,
-        },
-        {
-            "type": "source",
-            "source_id": 1,
-            "kind": "zpf-input",
-            "uri": "sideA.zpf",
-            "digest": "sha256:11aa",
-        },
-        {"type": "session", "session_id": 1, "proto": "tcp", "sequenced": True},
-        {
-            "type": "participant",
-            "session_id": 1,
-            "pid": 0,
-            "endpoint": ["10.0.0.1:51000"],
-            "isn": 1000,
-            "origin": {"source_id": 1, "session_id": 7, "pid": 0},
-        },
-        {
-            "type": "record",
-            "session_id": 1,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 1000,
-            "flags": ["psh"],
-            "payload": b64(GET),
-            "seq_start": 1001,
-            "ack": 5001,
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
 
 # --- the four escapes ------------------------------------------------------
 
@@ -1053,214 +1000,6 @@ vector(
 
 # --- 0.10 constructs -------------------------------------------------------
 
-vector(
-    "annotator-decoded",
-    "accept",
-    "A pass-through preserving a DECODED layer -- the 0.10 construct 0.9 could "
-    "not express. Records keep decoder_id and carry no spans; the Undecoded "
-    "block is inherited, so the grandparent source is declared too.",
-    "Annotating a decoded file",
-    [
-        file_header(options=[o_produced_by("zpf-annotate 0.2"), o_produced_at(1719520000)]),
-        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
-        source(2, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
-        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
-        session(7, [o_proto("http")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
-        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_origin(2, 1, 7)]),
-        name_block(7, 1, [o_label("example.com"), o_name_kind("tls-sni")]),
-        record(7, 0, 2, 1000, b"REQ", options=[o_decoder_id(1), o_content_type("dec:request")]),
-        record(7, 1, 2, 995, b"RESP", options=[o_decoder_id(1), o_content_type("dec:response")]),
-        undecoded(1, 1, 7, 100, 139, [o_reason("undecodable"), o_decoder_id(1)]),
-        end_block(),
-    ],
-    jsonl=[
-        {
-            "type": "file",
-            "format": FORMAT,
-            "tick_hz": 1000000,
-            "produced_by": "zpf-annotate 0.2",
-            "produced_at": 1719520000,
-        },
-        {
-            "type": "source",
-            "source_id": 1,
-            "kind": "zpf-input",
-            "uri": "raw.zpf",
-            "digest": "sha256:9f2c",
-        },
-        {
-            "type": "source",
-            "source_id": 2,
-            "kind": "zpf-input",
-            "uri": "decoded.zpf",
-            "digest": "sha256:44dd",
-        },
-        {
-            "type": "decoder",
-            "decoder_id": 1,
-            "output_layer": "decoded",
-            "name": "http/1.1",
-            "version": "0.4",
-        },
-        {"type": "session", "session_id": 7, "proto": "http"},
-        {
-            "type": "participant",
-            "session_id": 7,
-            "pid": 0,
-            "endpoint": ["10.0.0.1:51000"],
-            "origin": {"source_id": 2, "session_id": 7, "pid": 0},
-        },
-        {
-            "type": "participant",
-            "session_id": 7,
-            "pid": 1,
-            "endpoint": ["93.184.216.34:80"],
-            "origin": {"source_id": 2, "session_id": 7, "pid": 1},
-        },
-        {"type": "name", "session_id": 7, "pid": 1, "label": "example.com", "kind": "tls-sni"},
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 2,
-            "ts": 1000,
-            "payload": b64(b"REQ"),
-            "decoder_id": 1,
-            "content_type": "dec:request",
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 1,
-            "source_id": 2,
-            "ts": 995,
-            "payload": b64(b"RESP"),
-            "decoder_id": 1,
-            "content_type": "dec:response",
-        },
-        {
-            "type": "undecoded",
-            "source_id": 1,
-            "session_id": 7,
-            "pid": 1,
-            "off_start": 100,
-            "off_end": 139,
-            "reason": "undecodable",
-            "decoder_id": 1,
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
-
-vector(
-    "passthrough-discontinuity",
-    "accept",
-    "A pass-through preserving a DECODED layer whose input carried a "
-    "Discontinuity. The two re-emission rules sit side by side here: the "
-    "Undecoded block is copied VERBATIM, ids and all, because its statement was "
-    "always about a file further up the chain -- while the Discontinuity is "
-    "RENUMBERED to this file's own ids, because its statement is about the "
-    "stream in the file that carries it. The input's (session 7, pid 0) becomes "
-    "this file's (session 42, pid 1), so a transform that copied the ids "
-    "verbatim produces visibly wrong output rather than accidentally-correct "
-    "output. Note the declared width of 25 is carried forward unchanged: it is "
-    "a term in the positional arithmetic, so dropping it would change the very "
-    "offsets a pass-through exists to preserve.",
-    "Discontinuity (0x22) -- pass-through re-emission",
-    [
-        file_header(options=[o_produced_by("zpf-annotate 0.2"), o_produced_at(1719610000)]),
-        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
-        source(2, 1, [o_uri("tls-records.zpf"), o_digest("sha256:8b3a")]),
-        decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
-        session(42, [o_proto("tls")]),
-        # origin maps this file's 42/1 back to the input's 7/0.
-        participant(42, 1, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
-        record(42, 1, 2, 1000, b"A" * 50, options=[o_decoder_id(1)]),
-        # Inherited: names the GRANDPARENT raw.zpf, copied verbatim.
-        undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
-        # Renumbered: names THIS file's stream, not the input's 7/0.
-        discontinuity(42, 1, [o_width(25), o_disc_reason("tls-record-lost")]),
-        record(42, 1, 2, 1100, b"B" * 30, options=[o_decoder_id(1)]),
-        end_block(),
-    ],
-    jsonl=[
-        {
-            "type": "file",
-            "format": FORMAT,
-            "tick_hz": 1000000,
-            "produced_by": "zpf-annotate 0.2",
-            "produced_at": 1719610000,
-        },
-        {
-            "type": "source",
-            "source_id": 1,
-            "kind": "zpf-input",
-            "uri": "raw.zpf",
-            "digest": "sha256:9f2c",
-        },
-        {
-            "type": "source",
-            "source_id": 2,
-            "kind": "zpf-input",
-            "uri": "tls-records.zpf",
-            "digest": "sha256:8b3a",
-        },
-        {
-            "type": "decoder",
-            "decoder_id": 1,
-            "output_layer": "decoded",
-            "name": "tls-records",
-            "version": "0.2",
-        },
-        {"type": "session", "session_id": 42, "proto": "tls"},
-        {
-            "type": "participant",
-            "session_id": 42,
-            "pid": 1,
-            "endpoint": ["10.0.0.1:51000"],
-            "origin": {"source_id": 2, "session_id": 7, "pid": 0},
-        },
-        {
-            "type": "record",
-            "session_id": 42,
-            "sender_pid": 1,
-            "source_id": 2,
-            "ts": 1000,
-            "payload": b64(b"A" * 50),
-            "decoder_id": 1,
-        },
-        {
-            "type": "undecoded",
-            "source_id": 1,
-            "session_id": 7,
-            "pid": 0,
-            "off_start": 100,
-            "off_end": 139,
-            "reason": "gap",
-            "decoder_id": 1,
-        },
-        {
-            "type": "discontinuity",
-            "session_id": 42,
-            "pid": 1,
-            "width": 25,
-            "reason": "tls-record-lost",
-        },
-        {
-            "type": "record",
-            "session_id": 42,
-            "sender_pid": 1,
-            "source_id": 2,
-            "ts": 1100,
-            "payload": b64(b"B" * 30),
-            "decoder_id": 1,
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
 
 vector(
     "broken-chain",
@@ -2592,11 +2331,21 @@ vector(
             options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 40)]), o_content_type("dec:request")],
         ),
         session_end(10, [o_input_extents([(1, 0, 7, 40)])]),
-        # Preserved: origin, no spans, no decoder_id -- the stage had no
-        # decoder for this protocol and re-emitted it rather than dropping it.
+        # Preserved: an IDENTITY span -- same range in as out -- and no
+        # decoder_id, the stage having had no decoder for this protocol and
+        # re-emitted it rather than dropping it. Since 0.19 that is what tells a
+        # preserved stream from a created one: not which option is present, but
+        # whether the spans are identity.
         session(11, [o_proto("smtp")]),
-        participant(11, 0, [o_endpoint("10.0.0.2:25"), o_isn(4000), o_origin(1, 0, 8)]),
-        record(11, 0, 1, 1100, b"EHLO relay", options=[o_seq_start(4001)]),
+        participant(11, 0, [o_endpoint("10.0.0.2:25"), o_isn(4000)]),
+        record(
+            11,
+            0,
+            1,
+            1100,
+            b"EHLO relay",
+            options=[o_seq_start(4001), o_spans([(1, 8, 0, 0, 10)])],
+        ),
         end_block(),
     ],
     jsonl=[
@@ -2647,7 +2396,6 @@ vector(
             "pid": 0,
             "endpoint": ["10.0.0.2:25"],
             "isn": 4000,
-            "origin": {"source_id": 1, "session_id": 8, "pid": 0},
         },
         {
             "type": "record",
@@ -2657,6 +2405,7 @@ vector(
             "ts": 1100,
             "payload": b64(b"EHLO relay"),
             "seq_start": 4001,
+            "spans": [{"source_id": 1, "session_id": 8, "pid": 0, "off_start": 0, "off_end": 10}],
         },
         {"type": "end"},
     ],
@@ -2717,6 +2466,78 @@ vector(
         },
         {"type": "end"},
     ],
+    violations=0,
+)
+
+vector(
+    "sequenced-session",
+    "accept",
+    "A SEQUENCED session, which nothing else in the suite carries since 0.19 "
+    "removed the four sequencing vectors with the basis rule. A single tap that "
+    "saw both directions emits one directly, so this is capture-sourced and the "
+    "flag is the whole of what it demonstrates. Its point is that SEQUENCED does "
+    "NOT mean sorted by timestamp: pid 1's response is stored at ts 995, AFTER "
+    "pid 0's request at ts 1000 that caused it, because the causal order comes "
+    "from seq/ack and the two taps' clocks are skewed. A reader that re-sorts by "
+    "timestamp, or rejects the inversion, has undone the work the flag "
+    "announces.",
+    "Sequenced files (precomputed order)",
+    [
+        file_header(),
+        source(1, 0, [o_uri("both-directions.pcap")]),
+        session(1, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(1, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        participant(1, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+        record(1, 0, 1, 1000, b"GET /", options=[o_seq_start(1001)]),
+        record(1, 1, 1, 995, b"HTTP/1.1 200", options=[o_seq_start(5001), o_ack(1006)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "both-directions.pcap"},
+        {"type": "session", "session_id": 1, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 1,
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"GET /"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 995,
+            "payload": b64(b"HTTP/1.1 200"),
+            "seq_start": 5001,
+            "ack": 1006,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order without running the "
+    "merge -- that is what SEQUENCED licenses. The timestamps run "
+    "backwards across the two records and that is conformant: the "
+    "response is caused by the request, its ack 1006 acknowledges the "
+    "request's five bytes, and the 5 ms inversion is capture skew "
+    "between two taps. A reader that emits the response first has "
+    "reordered a causal pair.",
     violations=0,
 )
 
@@ -3096,10 +2917,10 @@ vector(
     "DETECTION IS PARTIAL BY DESIGN: the only signal is the Source's uri, so a "
     "reader handed a PATH may compare and isolate, while a reader handed a file "
     "object -- stdin, a socket, a tar member -- cannot and is not obliged to. "
-    "Session 21 carries origin so this file's ONLY violation is the one it is "
-    "named for; through 0.15 it also had a zpf-sourced participant that was "
-    "neither created nor preserved, and a reader could pass the vector by "
-    "isolating for the wrong reason.",
+    "Session 21 carries an identity span so this file's ONLY violation is the "
+    "one it is named for; through 0.15 it also had a zpf-sourced participant "
+    "that cited nothing at all, and a reader could pass the vector by isolating "
+    "for the wrong reason.",
     "Conceptual model -- the unit is the stream, not the file",
     [
         file_header(options=[o_produced_by("zpf-decode 0.4"), o_produced_at(1719620000)]),
@@ -3107,9 +2928,17 @@ vector(
         source(1, 1, [o_uri("isolate-self-derived.zpf"), o_digest("sha256:0000")]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
         session(21, [o_proto("tcp")]),
-        # origin, so session 21 is PRESERVED rather than neither -- #92/#93.
-        participant(21, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_origin(1, 0, 21)]),
-        record(21, 0, 1, 1000, b"GET /", options=[o_seq_start(1001)]),
+        # An identity span, so session 21 is PRESERVED rather than citing
+        # nothing -- #92/#93, restated for 0.19's one-provenance-rule.
+        participant(21, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(
+            21,
+            0,
+            1,
+            1000,
+            b"GET /",
+            options=[o_seq_start(1001), o_spans([(1, 0, 21, 0, 5)])],
+        ),
         session(20, [o_proto("http")]),
         participant(20, 0, [o_endpoint("10.0.0.1:51000")]),
         record(
@@ -4147,19 +3976,45 @@ def build_chain() -> None:
         source(2, 1, [o_uri("decoded.zpf"), o_digest(dec_dg)]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
         session(7, [o_proto("http")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
-        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_origin(2, 1, 7)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
         name_block(7, 1, [o_label("example.com"), o_name_kind("tls-sni")]),
-        record(7, 0, 2, 1000, DEC_REQ, options=[o_decoder_id(1), o_content_type("dec:request")]),
-        record(7, 1, 2, 1100, DEC_RESP, options=[o_decoder_id(1), o_content_type("dec:response")]),
+        # Identity spans: same range in as out, which is what a pass-through's
+        # provenance looks like since 0.19.
+        record(
+            7,
+            0,
+            2,
+            1000,
+            DEC_REQ,
+            options=[
+                o_decoder_id(1),
+                o_spans([(2, 0, 7, 0, len(DEC_REQ))]),
+                o_content_type("dec:request"),
+            ],
+        ),
+        record(
+            7,
+            1,
+            2,
+            1100,
+            DEC_RESP,
+            options=[
+                o_decoder_id(1),
+                o_spans([(2, 1, 7, 0, len(DEC_RESP))]),
+                o_content_type("dec:response"),
+            ],
+        ),
         undecoded(1, 1, 7, 16, 20, [o_reason("undecodable"), o_decoder_id(1)]),
         end_block(),
     ]
     chain_file(
         "annotated",
         "A pass-through preserving decoded.zpf's layer, adding only a "
-        "label. Records carry no spans; the inherited Undecoded block "
-        "still names raw.zpf, so raw.zpf is declared too.",
+        "label. Its records carry IDENTITY spans -- the same range in as out, "
+        "which is how a preserved stream states its provenance since 0.19 -- "
+        "and the inherited Undecoded block still names raw.zpf, so raw.zpf is "
+        "declared too.",
         ann_blocks,
         [
             {
@@ -4196,14 +4051,12 @@ def build_chain() -> None:
                 "session_id": 7,
                 "pid": 0,
                 "endpoint": ["10.0.0.1:51000"],
-                "origin": {"source_id": 2, "session_id": 7, "pid": 0},
             },
             {
                 "type": "participant",
                 "session_id": 7,
                 "pid": 1,
                 "endpoint": ["93.184.216.34:80"],
-                "origin": {"source_id": 2, "session_id": 7, "pid": 1},
             },
             {"type": "name", "session_id": 7, "pid": 1, "label": "example.com", "kind": "tls-sni"},
             {
@@ -4214,6 +4067,15 @@ def build_chain() -> None:
                 "ts": 1000,
                 "payload": b64(DEC_REQ),
                 "decoder_id": 1,
+                "spans": [
+                    {
+                        "source_id": 2,
+                        "session_id": 7,
+                        "pid": 0,
+                        "off_start": 0,
+                        "off_end": len(DEC_REQ),
+                    },
+                ],
                 "content_type": "dec:request",
             },
             {
@@ -4224,6 +4086,15 @@ def build_chain() -> None:
                 "ts": 1100,
                 "payload": b64(DEC_RESP),
                 "decoder_id": 1,
+                "spans": [
+                    {
+                        "source_id": 2,
+                        "session_id": 7,
+                        "pid": 1,
+                        "off_start": 0,
+                        "off_end": len(DEC_RESP),
+                    },
+                ],
                 "content_type": "dec:response",
             },
             {

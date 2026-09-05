@@ -672,23 +672,6 @@ transform*'s, never half of each — and the discriminator binds **per
 participant**, so one file MAY hold a created stream beside a preserved one (see
 [Conformance](#conformance), which states the test).
 
-**Transforms that change no data.** A tool that only *adds* something — a
-[label](#nameidentity-resolution-0x30), a `comment`, a session-level annotation —
-is a pass-through transform as well: it alters no bytes and no offsets, so it
-preserves whatever layer its input was at, and the merge's rules already cover
-it. Two consequences are worth spelling out, since neither is obvious:
-
-- Its output is a **derived** file, not a copy of its input. Annotating a
-  *capture-sourced* file yields a file whose records reference a `zpf-input`
-  Source, so
-  capture-level provenance — `link_type`, the capture's `uri`/`digest` — now sits
-  one level away, reached through that Source instead of directly. Nothing is
-  lost; it is read one hop further down, as with any derivation.
-- Because a pass-through preserves the *layer* rather than the file kind, an
-  annotator works at any stage. Annotating a decode stage's output yields a
-  pass-through file carrying the decoded layer forward: same records, same
-  `decoder_id`s, same Undecoded blocks, plus the annotation.
-
 ### Referencing the source by stream offset
 
 The crux of the "2.5 records" problem: a decoded record points at **byte ranges
@@ -1107,74 +1090,6 @@ equal to the output's here — not copying them):
 {"type":"undecoded","source_id":1,"session_id":7,"pid":1,
  "off_start":100,"off_end":139,"reason":"undecodable","decoder_id":1}
 ```
-
-### Annotating a decoded file
-
-The subtler pass-through: a tool that adds a label to the decoded file above and
-changes nothing else. It is a **pass-through transform preserving a decoded
-layer** — records keep their `decoder_id`, `content_type` and `role` but carry no
-`spans` of their own, provenance is the participants' `origin`, and the Undecoded
-block rides along unchanged.
-
-Note the two Sources. `decoded.zpf` is the immediate input, which `origin` names
-and the records reference. `transport.zpf` is declared as well — not as a second input,
-but because the inherited `undecoded` line has always been a statement about
-`transport.zpf`'s stream, and it must keep resolving there. Numbering it as it was in
-the input lets the block be copied verbatim:
-
-```jsonl
-{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
- "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
-{"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
- "digest":"sha256:9f2c…"}
-{"type":"source","source_id":2,"kind":"zpf-input","uri":"decoded.zpf",
- "digest":"sha256:44dd…"}
-{"type":"decoder","decoder_id":1,"output_layer":"decoded","name":"http/1.1","version":"0.4",
- "params_digest":"sha256:00ab…"}
-
-{"type":"session","session_id":7,"proto":"http"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"],
- "origin":{"source_id":2,"session_id":7,"pid":0}}
-{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"],
- "origin":{"source_id":2,"session_id":7,"pid":1}}
-
-{"type":"name","session_id":7,"pid":1,"label":"example.com","kind":"tls-sni"}
-
-{"type":"record","session_id":7,"sender_pid":0,"source_id":2,"ts":1000,
- "decoder_id":1,"content_type":"dec:request","payload":"…decoded request…"}
-{"type":"record","session_id":7,"sender_pid":1,"source_id":2,"ts":995,
- "decoder_id":1,"content_type":"dec:response","payload":"…decoded response…"}
-{"type":"undecoded","source_id":1,"session_id":7,"pid":1,
- "off_start":100,"off_end":139,"reason":"undecodable","decoder_id":1}
-```
-
-The `name` line is the whole point of the transform, and it is the only line the
-input did not already have. Had the same tool annotated `transport.zpf` instead, the
-result would look like the merge's output: a pass-through preserving a
-*transport* layer, with byte-run records, no `decoder_id`s, and no Undecoded
-blocks.
-
-**Records and inherited Undecoded blocks resolve differently here, and the
-difference is easy to misread.** `transport.zpf` is declared in this file, which makes
-it look as though the records relate to it. They do not:
-
-- The **`undecoded` line names `transport.zpf` directly** and resolves in **one hop**.
-  Its offsets have always been in `transport.zpf`'s stream, which is why that Source
-  must be declared at all.
-- A **record** resolves through the **immediate** input. It carries `source_id 2`
-  (`decoded.zpf`) and no `spans`, so a consumer takes its participant's `origin`
-  to the corresponding stream in `decoded.zpf`, computes the record's
-  [positional range](#referencing-the-source-by-stream-offset) — offsets are
-  preserved, so it is the same range there — and reads the `spans` on the record
-  it finds, which name `transport.zpf`. Two hops, and **this file alone cannot say
-  which transport bytes a record came from**.
-
-That asymmetry is deliberate. `spans` is the discriminator between a stage that
-*built* a record and one that *re-emitted* it (see [Conformance](#conformance)),
-so a pass-through cannot carry its input's spans forward without destroying the
-test that tells the two apart. The Undecoded block is exempt because it is not
-provenance for anything this file produced — it is a statement *about* `transport.zpf`,
-carried along intact.
 
 ### Worked example: a decrypted tunnel
 
@@ -1596,7 +1511,7 @@ MUST be written 0, and MUST be ignored on read.
 
 Options: `endpoint` (string, **may repeat** — see below), `isn` (u32, the SYN's
 TCP sequence number — see below), `tcp_role` (u8, see enums), `identity`
-(string), `origin` (packed, pass-through files only — see below), `comment`.
+(string), `comment`.
 
 `tcp_role` records, **when the handshake was observed**, which side opened the
 connection: the participant that sent the initial SYN is the *initiator* (active
@@ -1638,22 +1553,6 @@ common forms like this:
 This is a naming convention, not a grammar: it buys byte-equality for the
 common cases, and a reader MUST NOT reject an endpoint it cannot parse —
 unrecognized forms are opaque labels.
-
-**`origin` (pass-through files).** In a pass-through derived file (see
-[Conformance](#conformance)), every participant MUST carry exactly one `origin`
-option naming the input stream it re-emits: a packed
-`source_id: u16, pid: u16, session_id: u64` (12 bytes; the u16s lead so
-`session_id` stays 4-byte aligned, exactly as in a `spans` entry). `source_id`
-references a `zpf-input` Source declared in *this* file; `session_id`/`pid` are
-read in **that source's id namespace**, exactly as a span's are. Because a
-pass-through transform preserves each stream's bytes and logical offsets,
-`origin` is the entire stream-level provenance — pass-through records carry no
-`spans`. `origin` MUST NOT appear on a capture-sourced stream, which is not a
-re-emission of anything.
-
-`origin` names the transform's **immediate** input, never a grandparent. Chained
-pass-throughs therefore chain their provenance: a consumer walks one level at a
-time, exactly as it does for `spans`.
 
 #### Session End (`0x12`)
 
@@ -2371,7 +2270,6 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
 | `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
-| `0x0064` | origin           | packed     | Participant (pass-through) | input stream this participant re-emits: `source_id: u16, pid: u16, session_id: u64` — ids in the source's namespace (see [Participant Descriptor](#participant-descriptor-0x11)) |
 | `0x0070` | seq_start        | u32        | Record (TCP)             | absolute sequence number of the first payload byte             |
 | `0x0072` | ack              | u32        | Record (TCP)             | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
@@ -2613,35 +2511,32 @@ A `zpf`-sourced stream is produced by one of the two kinds of transform — a
   [Typing a decoded record](#typing-a-decoded-record)).
 - A **pass-through transform** preserves the layer its input already had. It
   re-emits that input's records with their bytes, logical offsets, `decoder_id`s
-  and Undecoded markers **unchanged**, and its provenance is stream-level: an
-  [`origin`](#participant-descriptor-0x11) on every participant, no `spans` on
-  any record.
+  and Undecoded markers **unchanged**, each record citing the input range it was
+  re-emitted from — an **identity span**, the same range in as out.
 
-**The discriminator between the two is `spans` versus `origin`, not
-`decoder_id`.** A record carrying `spans` was built by this file's stage; a
-record without `spans`, whose participant carries `origin`, was re-emitted from
-the input unchanged. `decoder_id` answers a different question — which decoder's
-layer a record belongs to — and a pass-through carries inherited `decoder_id`s
-forward, so it does *not* imply the decoder ran in this stage.
+**Every `zpf`-sourced record carries `spans`.** That is the whole provenance rule,
+and it holds whichever kind of transform produced the record: a decode stage's
+spans name the input ranges its units *correspond to*, a pass-through's name the
+ranges it re-emitted unchanged. A record referencing a `zpf-input` Source and
+carrying no `spans` says nothing about which stream inside that input it came
+from, so nothing resolves one level down and no coverage obligation can be
+computed either way. A reader MAY isolate it. The rule binds on `zpf`-sourced
+streams alone — a capture-sourced record carries no `spans`, and its `source_id`
+is the whole of its provenance.
 
-**The discriminator binds per participant, so one file MAY do both.** A
-participant **MUST NOT** both carry `origin` and hold records carrying `spans`:
-one stream is created or preserved, never half of each. Across streams there is no
-such rule, and a transform that decodes one session while passing another through
-is ordinary — it is what a tool does when it has a decoder for one protocol and
-not the other. Forbidding it would leave that tool two dishonest options: pass
-everything through, or mark the second stream entirely Undecoded, which drops
-those bytes from the output altogether. A file whose streams are a mix declares
-every input it drew on and sets `produced_by`/`produced_at` once, as any derived
-file does.
+**Which kind a stream is, is read from the spans themselves**, not from which
+option is present: identity spans preserve a layer, anything else creates one.
+`decoder_id` answers a different question — which decoder's layer a record belongs
+to — and a pass-through carries inherited `decoder_id`s forward, so it does *not*
+imply the decoder ran in this stage.
 
-**And a `zpf`-sourced participant MUST be one or the other.** The two ways above
-are exhaustive, so a participant carrying **neither** `origin` nor records with
-`spans` is a violation: its records reference a `zpf-input` Source and say nothing
-about which stream inside it they came from, so nothing resolves one level down
-and no coverage obligation can be computed either way. A reader MAY isolate it.
-The rule binds on `zpf`-sourced streams alone — a capture-sourced participant
-carries neither, and its `source_id` is the whole of its provenance.
+**The distinction is per participant, so one file MAY do both.** A transform that
+decodes one session while passing another through is ordinary — it is what a tool
+does when it has a decoder for one protocol and not the other. Forbidding it would
+leave that tool two dishonest options: pass everything through, or mark the second
+stream entirely Undecoded, which drops those bytes from the output altogether. A
+file whose streams are a mix declares every input it drew on and sets
+`produced_by`/`produced_at` once, as any derived file does.
 
 One decode stage MAY also mix *decoders* per-record (HTTP on one session,
 TLS-then-HTTP on another). Every file holding a `zpf`-sourced stream MUST declare
@@ -2678,12 +2573,10 @@ declaration and make every existing capture-sourced file non-conformant for sayi
 nothing new.
 
 **Not every `zpf-input` Source is an input.** A file may also declare one so that
-an *inherited* reference still resolves — a pass-through carrying Undecoded
-blocks that name a file further up the chain does exactly this (see the
-[annotator example](#annotating-a-decoded-file)). The two are told apart by what
-points at them: a file's **immediate inputs** are the Sources its participants'
-`origin` options name, for a pass-through, or its records' `spans` name, for a
-decode stage. Anything else declared as `zpf-input` is there to resolve a
+an *inherited* reference still resolves — a pass-through carrying Undecoded blocks
+that name a file further up the chain does exactly this. The two are told apart by
+what points at them: a file's **immediate inputs** are the Sources its records'
+`spans` name. Anything else declared as `zpf-input` is there to resolve a
 reference, not because this file was derived from it.
 
 **The transport layer's own requirements bind on the layer, not on provenance.**

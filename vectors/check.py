@@ -129,6 +129,34 @@ NORMATIVE_V018 = {"MUST": 143, "MUST NOT": 53, "SHOULD": 27, "MAY": 54}
 # still present in the specification fails the check. That is what keeps the
 # baseline from being a knob to turn when the build goes red.
 NORMATIVE_REMOVALS = (
+    # 0.19, Package A. The rules that made pass-through a distinct derivation
+    # kind. `origin` is gone and every zpf-sourced record carries `spans`, so the
+    # three rules keyed on which option is present have nothing to key on. The
+    # "MAY isolate" survives in the replacement sentence and is not listed.
+    (
+        r"every participant MUST carry exactly one `origin`",
+        {"MUST": 1},
+        "the origin option is removed; a pass-through's provenance is an identity "
+        "span on every record, like any other derived record's",
+    ),
+    (
+        r"`origin` MUST NOT appear on a capture-sourced stream",
+        {"MUST": 1, "MUST NOT": 1},
+        "no option to bar; a capture-sourced record carries no spans and its "
+        "source_id is the whole of its provenance",
+    ),
+    (
+        r"participant \*\*MUST NOT\*\* both carry `origin` and hold records carrying",
+        {"MUST": 1, "MUST NOT": 1},
+        "the created/preserved discriminator is no longer which option is "
+        "present, so there is no pair to forbid mixing",
+    ),
+    (
+        r"\*\*And a `zpf`-sourced participant MUST be one or the other\.\*\*",
+        {"MUST": 1},
+        "replaced by the stronger and simpler rule that every zpf-sourced record "
+        "carries spans, which is stated once and binds per record",
+    ),
     # 0.19, Package B. The four rules that made a producer justify its sequencing
     # claim. Unlike the entry below these are not restatements being collapsed --
     # they are rules the release DELETES, which is what a subtractive release
@@ -227,7 +255,9 @@ RULES = {
         "undecoded-in-capture",
     ),
     "per-stream-transform": (
-        "one file MAY create one stream and preserve another; the bar is per participant",
+        "one file MAY create one stream and preserve another; the distinction is "
+        "per participant, and since 0.19 it is read from the spans rather than "
+        "from which option is present",
         "mixed-derivation",
     ),
     "no-intra-file-derivation": (
@@ -293,18 +323,20 @@ RULES = {
         "stored neighbours that were never adjacent do not join, so each seam is declared",
         "reordered-decoded",
     ),
-    "discontinuity-passthrough-renumber": (
-        "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
-        "passthrough-discontinuity",
-    ),
+    # 0.19 Package A removed the asymmetry this tested. With every derived
+    # record carrying spans there is no verbatim-versus-renumbered contrast left
+    # to draw: a re-emitted Discontinuity is still renumbered into this file's
+    # ids, and that duty is stated in the block's own section rather than as half
+    # of a contrast. No vector, because nothing pairs it against.
     # 0.16's four. Each is a MUST the syntax already allowed you to break, which
     # is why each needed a vector before it needed a checker.
     "layer-consistency": (
         "every record of one participant MUST resolve to the same layer",
         "isolate-mixed-layer-participant",
     ),
-    "zpf-stream-created-or-preserved": (
-        "a zpf-sourced participant MUST carry origin or hold records with spans, never neither",
+    "zpf-sourced-record-carries-spans": (
+        "every zpf-sourced record carries spans -- a pass-through's are identity "
+        "spans, so the rule binds per record with no exception to check",
         "isolate-unbound-zpf-stream",
     ),
     "undecoded-capture-bytes-only": (
@@ -478,6 +510,22 @@ RETIRED_CLAIMS = {
         "two cases are: a hole-class region between two adjacent units, and a "
         "bytes-class region carrying reason = dropped",
     ),
+    # 0.19, Package A. Pass-through stopped being a distinct derivation kind:
+    # every zpf-sourced record carries spans, and a preserved stream's are
+    # identity spans. These are the shapes of the rule that made it a kind apart.
+    "pass-through-carries-origin": (
+        (
+            r"every participant MUST carry exactly one `origin`",
+            r"The discriminator between the two is `spans` versus `origin`",
+            # vectors/README.md, and so any harness reading it
+            r"A pass-through preserving a transport layer: `origin`",
+        ),
+        "0.19",
+        None,
+        "every zpf-sourced record carries spans; a pass-through's are identity "
+        "spans, and which kind a stream is, is read from the spans rather than "
+        "from which option is present",
+    ),
     # 0.19, Package B. The basis rule is gone; these are the shapes it was
     # asserted in. Unlike a stale copy, these were all TRUE until this release --
     # the ratchet's job here is to stop a rule the model deliberately dropped from
@@ -594,9 +642,10 @@ ENUMERATIONS = {
             "since a hole is expressible without one",
             # Conformance -- what a pass-through preserving a decoded layer owes (#121)
             "re-emit every Undecoded block",
-            # Annotating a decoded file -- the worked example an annotator is
-            # written from (#121)
-            "provenance is the participants' `origin`",
+            # 0.19 Package A deleted the fifth site with the section holding it:
+            # "Annotating a decoded file", the worked example an annotator was
+            # written from (#121). The set is down to five sites, all of them
+            # rules rather than examples, which is the better place for it.
             # The two that were already right when 0.18 opened, so the check is
             # exercised in both directions from the start.
             "including one emitted by a reassembly decoder",

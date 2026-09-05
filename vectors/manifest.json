@@ -100,37 +100,6 @@
       "has_jsonl": true
     },
     {
-      "name": "passthrough-transport",
-      "tier": "accept",
-      "violations": 0,
-      "bytes": 280,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x41"
-      ],
-      "options": [
-        "0x0012",
-        "0x0013",
-        "0x0020",
-        "0x0021",
-        "0x0050",
-        "0x0052",
-        "0x0060",
-        "0x0061",
-        "0x0064",
-        "0x0070",
-        "0x0072"
-      ],
-      "summary": "A pass-through preserving a transport layer: byte-run records with no decoder_id, provenance carried by origin on each participant.",
-      "spec_section": "Conformance -- pass-through transform",
-      "expect": "Accept. The .jsonl file is the expected projection.",
-      "has_jsonl": true
-    },
-    {
       "name": "escape-unknown-block",
       "tier": "accept",
       "violations": 0,
@@ -218,79 +187,6 @@
       ],
       "summary": "A record with a reserved flags bit set. A reader MUST ignore it semantically but preserve it; a converter renders it as a hex token.",
       "spec_section": "Unrecognised data: the four escapes",
-      "expect": "Accept. The .jsonl file is the expected projection.",
-      "has_jsonl": true
-    },
-    {
-      "name": "annotator-decoded",
-      "tier": "accept",
-      "violations": 0,
-      "bytes": 556,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x03",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x21",
-        "0x30",
-        "0x41"
-      ],
-      "options": [
-        "0x0012",
-        "0x0013",
-        "0x0020",
-        "0x0021",
-        "0x0041",
-        "0x0042",
-        "0x0050",
-        "0x0060",
-        "0x0064",
-        "0x0090",
-        "0x0091",
-        "0x00A0",
-        "0x00B0",
-        "0x00B1"
-      ],
-      "summary": "A pass-through preserving a DECODED layer -- the 0.10 construct 0.9 could not express. Records keep decoder_id and carry no spans; the Undecoded block is inherited, so the grandparent source is declared too.",
-      "spec_section": "Annotating a decoded file",
-      "expect": "Accept. The .jsonl file is the expected projection.",
-      "has_jsonl": true
-    },
-    {
-      "name": "passthrough-discontinuity",
-      "tier": "accept",
-      "violations": 0,
-      "bytes": 548,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x03",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x21",
-        "0x22",
-        "0x41"
-      ],
-      "options": [
-        "0x0012",
-        "0x0013",
-        "0x0020",
-        "0x0021",
-        "0x0041",
-        "0x0042",
-        "0x0050",
-        "0x0060",
-        "0x0064",
-        "0x0090",
-        "0x00A0",
-        "0x00D0",
-        "0x00D1"
-      ],
-      "summary": "A pass-through preserving a DECODED layer whose input carried a Discontinuity. The two re-emission rules sit side by side here: the Undecoded block is copied VERBATIM, ids and all, because its statement was always about a file further up the chain -- while the Discontinuity is RENUMBERED to this file's own ids, because its statement is about the stream in the file that carries it. The input's (session 7, pid 0) becomes this file's (session 42, pid 1), so a transform that copied the ids verbatim produces visibly wrong output rather than accidentally-correct output. Note the declared width of 25 is carried forward unchanged: it is a term in the positional arithmetic, so dropping it would change the very offsets a pass-through exists to preserve.",
-      "spec_section": "Discontinuity (0x22) -- pass-through re-emission",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
     },
@@ -818,7 +714,7 @@
       "name": "mixed-derivation",
       "tier": "accept",
       "violations": 0,
-      "bytes": 500,
+      "bytes": 516,
       "blocks": [
         "0x01",
         "0x02",
@@ -840,7 +736,6 @@
         "0x0050",
         "0x0060",
         "0x0061",
-        "0x0064",
         "0x0070",
         "0x0080",
         "0x0090",
@@ -873,6 +768,33 @@
       "summary": "A hint-less session with no seq/ack, whose timestamps run backwards ACROSS participants. Every record is concurrent, so the whole order is the merge's timestamp tie-break -- but each participant's own records keep their stored order. A reader that rejects on the inversion, or that re-sorts one participant's records, fails.",
       "spec_section": "Merge algorithm -- stability",
       "expect": "Accept. The .jsonl file is the expected projection.",
+      "has_jsonl": true
+    },
+    {
+      "name": "sequenced-session",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 316,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0052",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0072"
+      ],
+      "summary": "A SEQUENCED session, which nothing else in the suite carries since 0.19 removed the four sequencing vectors with the basis rule. A single tap that saw both directions emits one directly, so this is capture-sourced and the flag is the whole of what it demonstrates. Its point is that SEQUENCED does NOT mean sorted by timestamp: pid 1's response is stored at ts 995, AFTER pid 0's request at ts 1000 that caused it, because the causal order comes from seq/ack and the two taps' clocks are skewed. A reader that re-sorts by timestamp, or rejects the inversion, has undone the work the flag announces.",
+      "spec_section": "Sequenced files (precomputed order)",
+      "expect": "Accept, and consume the records in STORED order without running the merge -- that is what SEQUENCED licenses. The timestamps run backwards across the two records and that is conformant: the response is caused by the request, its ack 1006 acknowledges the request's five bytes, and the 5 ms inversion is capture skew between two taps. A reader that emits the response first has reordered a causal pair.",
       "has_jsonl": true
     },
     {
@@ -1184,7 +1106,7 @@
       "name": "isolate-self-derived",
       "tier": "isolate",
       "violations": 1,
-      "bytes": 460,
+      "bytes": 476,
       "blocks": [
         "0x01",
         "0x02",
@@ -1204,13 +1126,12 @@
         "0x0050",
         "0x0060",
         "0x0061",
-        "0x0064",
         "0x0070",
         "0x0080",
         "0x0090",
         "0x0091"
       ],
-      "summary": "INTRA-FILE DERIVATION: a file deriving one of its own streams from another. Session 20's records span a zpf-input Source whose uri is THIS file, and session 21 is the stream they claim to come from. Legalising mixed-state files is what makes this reachable -- streams at differing positions on the two axes may now sit side by side, so the question of whether one may feed another arises for the first time and the answer is no. A stage reads its input and then writes its output, so a file cannot be among its own inputs: the offsets these spans name would have had to be fixed before the file holding them existed. Note the reason is NOT the digest -- that option is optional, and 0.16 restated the prohibition without it (#93) so it stands on files that omit one. DETECTION IS PARTIAL BY DESIGN: the only signal is the Source's uri, so a reader handed a PATH may compare and isolate, while a reader handed a file object -- stdin, a socket, a tar member -- cannot and is not obliged to. Session 21 carries origin so this file's ONLY violation is the one it is named for; through 0.15 it also had a zpf-sourced participant that was neither created nor preserved, and a reader could pass the vector by isolating for the wrong reason.",
+      "summary": "INTRA-FILE DERIVATION: a file deriving one of its own streams from another. Session 20's records span a zpf-input Source whose uri is THIS file, and session 21 is the stream they claim to come from. Legalising mixed-state files is what makes this reachable -- streams at differing positions on the two axes may now sit side by side, so the question of whether one may feed another arises for the first time and the answer is no. A stage reads its input and then writes its output, so a file cannot be among its own inputs: the offsets these spans name would have had to be fixed before the file holding them existed. Note the reason is NOT the digest -- that option is optional, and 0.16 restated the prohibition without it (#93) so it stands on files that omit one. DETECTION IS PARTIAL BY DESIGN: the only signal is the Source's uri, so a reader handed a PATH may compare and isolate, while a reader handed a file object -- stdin, a socket, a tar member -- cannot and is not obliged to. Session 21 carries an identity span so this file's ONLY violation is the one it is named for; through 0.15 it also had a zpf-sourced participant that cited nothing at all, and a reader could pass the vector by isolating for the wrong reason.",
       "spec_section": "Conceptual model -- the unit is the stream, not the file",
       "expect": "ISOLATE or reject, WHEN THE READER KNOWS THE PATH it opened. The Source names the file that contains it, and a stage cannot be among its own inputs. Streams at differing layers or provenances in one file are legal since 0.15; one deriving from another in the same file is not, and the two are easy to confuse. A reader MUST NOT resolve the spans against the sibling session -- that is the reinterpretation the isolate tier forbids. A reader with no path to compare against cannot detect this and is CONFORMANT in accepting the file; it must still not resolve the spans.",
       "has_jsonl": false
@@ -1575,7 +1496,6 @@
         "0x0050",
         "0x0060",
         "0x0061",
-        "0x0064",
         "0x0070",
         "0x0072",
         "0x0080",
@@ -1585,7 +1505,7 @@
         "0x00B0",
         "0x00B1"
       ],
-      "bytes": 1648,
+      "bytes": 1680,
       "summary": "A three-file provenance chain whose digests and offsets genuinely agree: raw.zpf -> decoded.zpf -> annotated.zpf. The only fixture where the recovery walk, two-hop resolution and digest verification can be exercised.",
       "spec_section": "Layers; Coverage honesty; Annotating a decoded file",
       "expect": "Accept all three. Each .jsonl is the expected projection. Each declared digest is the real SHA-256 of the sibling file it names, so a reader can verify the chain.",

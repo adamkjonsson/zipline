@@ -331,12 +331,17 @@ This is not a backlog. Planned work lives in the
 - **A machine-checkable "annotation" file kind.** A third derived-file kind
   asserting that a transform changed nothing but metadata, so a consumer could
   skip re-verifying the payloads. *Not adopted in `0.10`:* the layer-preserving
-  pass-through already covers the case, and the `spans`-versus-`origin`
-  distinction (see [Conformance](zipline-payload-format.md#conformance))
-  already tells mechanically
-  whether a file's own stage built a record or re-emitted it. A third kind would
-  add a permanent branch to a taxonomy whose value is that it has two, to buy a
-  guarantee nobody has yet needed to check.
+  pass-through already covers the case, and the discriminator between the two
+  kinds (see [Conformance](zipline-payload-format.md#conformance)) already tells
+  mechanically whether a file's own stage built a record or re-emitted it. A
+  third kind would add a permanent branch to a taxonomy whose value is that it
+  has two, to buy a guarantee nobody has yet needed to check.
+
+  *Restated in `0.19`, which changed what the discriminator is without changing
+  this answer.* The argument then rested on one option being present and the
+  other absent; it now rests on whether a record's spans are identity spans. The
+  test is cheaper than it was — one rule for every derived record instead of two
+  shapes to tell apart — so the case for a third kind is weaker, not stronger.
 
 - **Requiring `sequenced_basis` on every `SEQUENCED` session.** *Moot since
   `0.19`, which removed the option and the rule this would have widened.* It was a

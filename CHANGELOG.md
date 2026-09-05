@@ -68,6 +68,33 @@ reasoning in [docs/RELEASE-0.19-PLAN.md](docs/RELEASE-0.19-PLAN.md).
 
 ### Removed
 
+**Package A: pass-through stops being a distinct derivation kind.** Every
+`zpf`-sourced record carries `spans`. A pass-through writes an **identity span**
+per record — the same range in as out — so one provenance rule covers every
+derived record and there are no longer two shapes to tell apart.
+
+- **Option `origin` (`0x0064`)**, and with it the rule that every participant of a
+  pass-through carries exactly one, the bar on its appearing on a capture-sourced
+  stream, the rule that a participant may not carry both `origin` and records with
+  `spans`, and the rule that a `zpf`-sourced participant must be one kind or the
+  other. What replaces all four is a single sentence: a `zpf`-sourced record
+  carries `spans`.
+- **§Layers *Transforms that change no data*** and **§*Annotating a decoded
+  file***, the worked example built on the deleted discriminator.
+- **In §Discontinuity**, the verbatim-versus-renumbered contrast. A re-emitted
+  Discontinuity is still renumbered into the re-emitting file's ids; that duty is
+  now stated in the block's own section rather than as half of a contrast with
+  Undecoded.
+- **Vectors** (3): `passthrough-transport`, `annotator-decoded`,
+  `passthrough-discontinuity`.
+
+**Which kind a stream is, is now read from the spans**, not from which option is
+present: identity spans preserve a layer, anything else creates one. That is
+mechanically cheaper than the rule it replaces, and it is what
+`mixed-derivation`, `isolate-self-derived` and `chain/annotated.zpf` now
+demonstrate — three vectors neither the analysis nor the impact assessment listed
+as affected.
+
 **Package B: a producer no longer justifies its sequencing claim.** `SEQUENCED`
 becomes what it always was in practice — an assertion that the stored order is a
 valid causal order, taken on the same trust a reader already extends to the order
@@ -101,6 +128,12 @@ first file marking the session. §Sequenced files now says so.
 
 ### Added
 
+- **Vector `sequenced-session`.** `SEQUENCED` itself lost every vector it had —
+  three to Package B and the fourth, `passthrough-transport`, to Package A — so
+  the flag that survives both packages had nothing demonstrating it. The new
+  vector is capture-sourced, a single tap that saw both directions, and its point
+  is that `SEQUENCED` does **not** mean sorted by timestamp: the response is
+  stored at `ts 995`, after the `ts 1000` request that caused it.
 - **Vector `unplaceable-no-seq-start`.** `partially-hinted-sequenced` carried two
   lessons and only one was about sequencing: since `0.18` it also pinned the
   commoner unplaceable shape, a record with no `seq_start` on a stream whose
@@ -110,7 +143,7 @@ first file marking the session. §Sequenced files now says so.
 - **`time_epoch` moves to `descriptive-metadata`.** It survives the package and
   `file-clock-metadata` was its only vector. Five descriptive options there now.
 
-*56 vectors, from 59.*
+*54 vectors, from 59.*
 
 ### Clarified
 
