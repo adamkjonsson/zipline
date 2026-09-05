@@ -488,6 +488,35 @@ The 214 links, the companion's links back, and the sentences left with a danglin
 "as described above" where the above is now elsewhere. This is where the link
 guard earns its place.
 
+***Done for the moves made so far, and it has to run again after Phase 2 and 2b
+finish.*** Phase 3 checks seams, and four sections have not been cut yet.
+
+***The guard had a hole exactly where it hurt least to have one and most to
+keep.*** It read the two documents and nothing else, so a link from
+`vectors/README.md`, the changelog or any plan into a section that moved would
+have broken in silence — the same failure as an internal one, further from the
+person who caused it. It now reads **every tracked `.md`, `.py` and `.json` for
+links into the pair**, while still reading only the pair for links out. 39
+distinct targets across 2 documents and 27 files linking in, all resolving.
+Proven the only way that counts: a planted link from the suite's README into
+*Design decisions not taken* is reported by name.
+
+***The 56 unresolved links found first were not caused by this work, and fixing
+them would have been the error.*** All 56 are `#L120-L130` line anchors in
+`implementation-feedback-analysis.md`, which says of itself that it is a
+historical record, not kept current, with references pinned to `v1.0`. They went
+stale several releases ago. Line anchors are skipped by rule, and the reason is
+recorded in the code: **a line-anchored link into the specification does not
+survive the specification being edited**, which is why this guard resolves
+headings only and why nothing new should link that way.
+
+***No prose seam opened.*** Twenty-six positional references survive in the
+specification and every one is intra-section; none points at moved text. The two
+worth checking by hand both hold — "it MUST agree with the table above" still has
+its class table, and "see *A transport-layer stream MUST NOT carry one*, below"
+still has its paragraph. The companion carries one positional phrase, `below`,
+and its target travelled with it.
+
 ### Phase 4 — changelog, tag, and hand-off
 
 The `[0.18]` second entry, listing what moved rather than what changed, since

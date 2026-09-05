@@ -795,26 +795,52 @@ def check_anchor_links() -> list[str]:
     companion carrying `](#coverage-honesty-undecoded-blocks)` is precisely the
     defect this catches: valid before the move, dead after it, and unchanged.
 
-    Links to any other file are skipped rather than guessed at, so the check has no
-    false positives to allowlist.
+    Phase 3 widened it past the two documents. The suite's README, the changelog
+    and every plan link into the specification by heading, and a section that moves
+    breaks those exactly as it breaks an internal one -- with the same silence, and
+    further from the person who moved it. So every tracked `.md` is read for links
+    INTO the pair, while only the pair is read for links out.
+
+    `#L120-L130` line anchors are skipped, and deliberately. The one file carrying
+    them says of itself that it is a historical record pinned to `v1.0`, its links
+    went stale several releases before this work, and repairing them would falsify
+    the record. The lesson is the reason this check resolves headings only: a
+    line-anchored link into the specification does not survive it being edited.
     """
     docs = {os.path.basename(p): read_text(p) for p in (SPEC, RATIONALE) if os.path.exists(p)}
     slugs = {name: {_slug(h) for h in _headings(text)} for name, text in docs.items()}
 
+    root = os.path.dirname(HERE)
+    others = []
+    for base, _dirs, names in os.walk(root):
+        if ".git" in base:
+            continue
+        for n in names:
+            p = os.path.join(base, n)
+            if n.endswith((".md", ".py", ".json")) and os.path.basename(p) not in docs:
+                others.append(p)
+
     bad, seen = [], set()
-    for name, text in sorted(docs.items()):
-        for target, anchor in re.findall(r"\]\(([^)#\s]*)#([^)\s]+)\)", text):
-            where = os.path.basename(target) if target else name
-            if where not in slugs or (where, anchor) in seen:
+    sources = [(n, t, n) for n, t in sorted(docs.items())]
+    sources += [(os.path.relpath(p, root), read_text(p), None) for p in sorted(others)]
+
+    for label, text, own in sources:
+        for target, anchor in re.findall(r"\]?\(?([\w.-]*\.md)?#([A-Za-z0-9_-]+)\)", text):
+            where = os.path.basename(target) if target else own
+            if (
+                where not in slugs
+                or (where, anchor) in seen
+                or re.fullmatch(r"L\d+(-L\d+)?", anchor)
+            ):
                 continue
             seen.add((where, anchor))
             if anchor not in slugs[where]:
-                bad.append(f"{name}: anchor '#{anchor}' does not resolve in {where}")
+                bad.append(f"{label}: anchor '#{anchor}' does not resolve in {where}")
 
     if not bad:
         print(
-            f"  anchor links: {len(seen)} distinct targets across "
-            f"{len(docs)} documents -- all resolve"
+            f"  anchor links: {len(seen)} distinct targets, {len(docs)} documents "
+            f"+ {len(others)} files linking in -- all resolve"
         )
     return bad
 
