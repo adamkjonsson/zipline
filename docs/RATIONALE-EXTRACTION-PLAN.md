@@ -10,13 +10,72 @@ and what to do about the tag that already exists.*
 
 ---
 
+## What simplification means here, and what it does not
+
+**Not lines.** Line count is the measure this plan reached for first, and it is
+the wrong one: a specification is simpler when it costs a reader less to
+understand and when every rule in it serves a goal the document states. Lines are
+a proxy for both and a poor one. Two measures replace it, and each names work this
+plan did not originally contain.
+
+**Cognitive load: how often a reader crosses between a rule and prose about a
+rule.** Measured per section as mode switches between paragraphs that carry a
+normative keyword and paragraphs that do not, with the longest unbroken run of
+rules beside it:
+
+| Section | Switches before | Switches after | Longest run of rules |
+|---|---:|---:|---:|
+| §Undecoded | 10 | 10 | 2 |
+| §Discontinuity | 13 | 13 | 2 |
+
+**Moving the rationale out did not move these numbers at all**, and the reason is
+plain once measured: what interleaves with the rules is overwhelmingly
+**category 2**, not category 3. Removing a rationale paragraph from a run of
+explanatory paragraphs leaves the pattern of the section unchanged. A reader still
+crosses modes ten times in §Undecoded, and still never finds more than two rules
+in a row.
+
+So extraction **alone** does not deliver the thing it was undertaken for. What
+would is ordering: within each section, the rules stated together and the
+instructional text that supports them following, rather than the two shuffled. That
+is a change to how the specification reads rather than to what it contains, it is
+not in the phases below, and it is the larger half of the win. It is added as
+Phase 2b.
+
+**Goal focus: does each rule serve a goal the document states?** The
+[analysis](SIMPLIFICATION-ANALYSIS.md) rests its case on the observation that the
+principle carrying the weight was **not in the Goals list**. That changed when the
+findability goal landed, and it changes what the five reduction packages are
+arguing against. First pass, by judgment rather than measurement:
+
+| Package | The rules it deletes serve… | |
+|---|---|---|
+| 3.2 sequencing basis | no stated goal — a forensic hint about a claim | **candidate** |
+| 3.3 advisory tier | no stated goal — it governs non-conformant input | **candidate** |
+| 3.1 pass-through kind | provenance, thinly; the `origin` half is vocabulary | mixed |
+| 3.5 provenance and layer as axes | *reassembled bytes as the source of truth*, and findability across hops | **serves a goal** |
+| 3.4 coverage apparatus | **findability**, directly and by name | **serves a goal** |
+
+This is the ranking the analysis reached from line counts, arrived at from the
+goals instead, and it disagrees in one place: it promotes 3.2 and 3.3 above 3.1,
+and it makes 3.4 the package that now has to argue against a stated goal rather
+than merely against a strong claim. Turning this table from judgment into
+something checkable — every normative statement traced to a goal, and the ones
+tracing to none listed — is the instrument `0.19` should choose with. It is
+recorded here and belongs in that plan, not this one.
+
+---
+
 ## What this work is
 
-**The largest reduction available, and the only one that costs no capability.**
+**The only simplification available that costs no capability.**
 [SIMPLIFICATION-ANALYSIS.md](SIMPLIFICATION-ANALYSIS.md) measures about a third of
-the document as rationale and release history rather than specification, and puts
-the extracted document near 2 000 lines from 3 526. `python-zipline` prices its
-impact on the only complete implementation at **zero**.
+the document as rationale and release history rather than specification, and
+projects 2 000 lines from 3 526. That projection is wrong — Phase 2 measured the
+real rate and the specification lands near 2 950 — and it does not matter, because
+length was never what this work is for. See §What simplification means here.
+`python-zipline` prices the impact on the only complete implementation at **zero**,
+and that is the claim doing the work.
 
 **It goes first, before any of the five reduction packages, and the order only
 works one way.** Three reasons, in the order they were established:
@@ -401,6 +460,28 @@ disjoint line ranges and both were read back, but the plan says one section per
 commit so that a mis-extraction reverts alone, and that property is weaker for
 these two than for the sections that follow.
 
+### Phase 2b — order each section: rules together, support after
+
+Added after Phase 2 measured that extraction alone leaves cognitive load
+untouched. Within each section already visited, gather the normative statements
+into one run and let the instructional text follow, instead of alternating. The
+target is fewer mode switches and a longer unbroken run of rules, both measured
+per section against the numbers above.
+
+**This is the phase that can break something while appearing to change nothing**,
+so it carries two constraints the earlier phases did not need:
+
+- **Nothing is reworded, only moved.** Normative-sentence invariance already
+  forbids losing a rule; it does not notice a rule that survives in weaker words.
+  Reordering is the phase where that temptation appears, and the read-back is the
+  only thing that catches it.
+- **`ENUMERATIONS` locators and the four spec-parsing mechanisms are re-checked
+  after each section**, because moving a paragraph within a file moves a locator
+  exactly as moving it between files does.
+
+Take §Undecoded first, since its numbers are already recorded and it is the
+section most read.
+
 ### Phase 3 — cross-references and the seams
 
 The 214 links, the companion's links back, and the sentences left with a dangling
@@ -431,7 +512,13 @@ that the format is unchanged, and that their port target is unaffected.
 
 ## Definition of done
 
-- [ ] The specification is near 2 000 lines and the format is unchanged.
+- [ ] **Every section visited reads with its rules together**, and its mode-switch
+      count and longest run of rules are recorded against the Phase 2 baseline.
+      This, not a line count, is what says the work succeeded.
+- [ ] The format is unchanged. *(The "near 2 000 lines" target is struck: it came
+      from the crude split, Phase 2 measured the real rate, and the specification
+      lands near 2 950. Length was never the goal and the number was misleading in
+      both directions.)*
 - [ ] **Normative-sentence invariance passes**: 143 `MUST`, 53 `MUST NOT`, 27
       `SHOULD`, 54 `MAY`, every sentence still in the specification, every wording
       change reviewed by hand.
