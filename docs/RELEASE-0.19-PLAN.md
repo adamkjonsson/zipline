@@ -1205,12 +1205,22 @@ avoided.***
    D-clean it is a SHOULD; under **D-pair it remains a MUST**, so the work is
    real under the combination this plan recommends.
 
-   ***This is now live.*** A shipped and D did not, so a merge writing identity
-   spans cites an input stream and is answerable for every offset of it. No merge
-   vector in the suite has a holed input, so nothing fails and nothing in the tree
-   shows the obligation — but it binds a merge implementation today. **It goes in
-   the note to `python-zipline` before the tag**, because `merge_files` is theirs
-   and the plan's own §Definition of done requires telling them first.
+   ***This is now live, and it is
+   [#133](https://github.com/adamkjonsson/zipline/issues/133).*** A shipped and D
+   did not, so a merge writing identity spans cites an input stream and is
+   answerable for every offset of it. No merge vector in the suite has a holed
+   input, so nothing fails and nothing in the tree shows the obligation — but it
+   binds a merge implementation today.
+
+   **It is a gap, not one of the suite's recorded absences.** `RULES` carries two
+   MUSTs with no vector on purpose (#94, #117); both are unvectorable *by
+   construction*, a conformant file and a violating one being byte-identical. A
+   merge with a holed transport input is perfectly expressible, so this one is
+   owed a fixture. #133 describes the shape and says to add the `RULES` entry when
+   it lands, since a rule with no vector fails the build.
+
+   Reported to `python-zipline` before the tag as the one item needing action
+   rather than awareness, `merge_files` being theirs.
 2. **B and C both bear on `partially-hinted-sequenced`, in opposite directions.**
    B deletes the vector and needs its placement case rehoused first; C deletes the
    placement rule and makes the rehousing unnecessary. Taking both, do C's
