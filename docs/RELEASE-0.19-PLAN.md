@@ -21,7 +21,14 @@ fixing that would remove volume and leave the cost.
 
 So the release does two things, and the first gates the second. It **pins the
 terms** and rewrites the text to use them consistently (§Terminology, Phase 0 and
-Phase 0b). Then it takes **one** reduction package.
+Phase 0b). Then it takes the reduction packages.
+
+***It took three: A, B and C*** — the package the analysis recommends taking
+together, arrived at one at a time. The plan below argues for taking exactly one,
+and that argument is left standing rather than rewritten, because it was not
+wrong: taking them singly is what made each one's cost visible, and each landed as
+its own commit with its own accounting. What changed is only how many were taken,
+not how.
 
 **A subtractive release, and the first one.** Every release since `0.9` has added
 or corrected. The package half deletes: an option, a rule, a section, the vectors
@@ -29,7 +36,7 @@ that pinned them. Nothing in the repository has been built for that, and
 §Mechanics of a deletion release is the part of this plan with no precedent to
 copy.
 
-**It takes exactly one of the five proposals.** The analysis recommends 3.1–3.3
+**It takes one of the five proposals at a time.** The analysis recommends 3.1–3.3
 as a package and `python-zipline` agrees, but a package is not what this document
 is for: taking them one at a time is what makes each one's cost visible, and the
 five are independent enough that any single one is a complete release. §If you
@@ -46,16 +53,21 @@ for the release that takes them.
 
 | | Package | Spec lines out | Vectors | Options | Suite code | What is lost | `python-zipline` |
 |---|---|---:|---:|---:|---:|---|---|
-| **A** | 3.1 pass-through as a kind | ~150 | −4, 2 rewritten | −1 | small | nothing of substance | support |
+| **A** | 3.1 pass-through as a kind | ~150 | −4, 2 rewritten | −1 | ~~small~~ **largest of the three** | nothing of substance | support |
 | **B** | 3.2 justify the sequencing claim | ~170 | −4 | −2 | small | a forensic hint | support |
 | **C** | 3.3 agree on non-conformant input | ~150 | −4 | 0 | small | cross-reader agreement on malformed files | support |
 | **D** | 3.4 coverage as a verifiable MUST | ~300 | −6 | −2 | medium | single-file self-verifiability; a decryptor's failure class | support **the middle path** |
 | **E** | 3.5 provenance and layer as axes | ~330 | −8 | 0 | **~630 lines** | every multi-hop transform chain's per-hop account, a reassembler's `params_digest` | **oppose** |
 
-Vector counts are exact and the suite is at **59**. The spec-lines column is an
-estimate kept for scale only, and it is **not** the basis for choosing: see scope
-decision 4 for what extraction did and did not take out of each package, and the
-ranking below for what replaces it.
+Vector counts are exact and the suite was at **59** when this table was written;
+it ends at **53**. The spec-lines column is an estimate kept for scale only, and
+it is **not** the basis for choosing: see scope decision 4 for what extraction did
+and did not take out of each package, and the ranking below for what replaces it.
+
+*Two cells were wrong for the packages that shipped. **A**'s vector count is −4/2
+rewritten here and was −3 removed, 3 rewritten, 1 added, because three vectors
+carrying `origin` are not in the analysis's list. And A's suite cost is not small:
+it was the largest of the three, the `chain` fixture included.*
 
 **The last column is not a full assessment for D and E.** `python-zipline` has no
 transforming decoder, so its document cannot price what those two do to
@@ -77,11 +89,22 @@ list** partly is.
 | **E** 3.5 | provenance and layer as axes | **yes** — reassembled bytes as the source of truth, and findability across hops |
 | **D** 3.4 | coverage apparatus | **yes** — findability, by name |
 
-> ***Taken: B.*** *Chosen after one question the plan had not asked — whether the
+> ***Taken: B, then A, then C*** — the three the analysis recommends as a package,
+> taken one at a time and landed as three commits.
+>
+> *B went first, chosen after a question this plan had not asked: whether the
 > property actually wanted is traceability of **where and when** a session was
-> ordered. It is, and `sequenced_basis` never provided it; see §Package B's Done
-> notes. A, C, D and E remain unstarted and their sections stand for the release
-> that takes them.*
+> ordered. It is, and `sequenced_basis` never provided it.*
+>
+> ***That order cost something, and the plan predicted it.*** *§If you take more
+> than one says to do C's deletion before B's vector removal or the work is done
+> twice. Doing B first meant rehousing the placement shape into a new vector, and
+> C then unpinned the rule that vector was built to demonstrate. It survives with
+> a softened `expect`, so the cost was a paragraph rather than a vector — but the
+> interaction was written down and the order taken was still the expensive one.*
+>
+> *D and E remain unstarted and their sections stand for the release that takes
+> them.*
 
 **Take B.** It deletes the one thing on this list that serves no stated goal and
 that nothing else in the format keys on: two options, four vectors, **no `RULES`
@@ -553,6 +576,40 @@ main body.
    `RULES` and the registry in the same commit or the build stays red.
 5. **Changelog, `RETIRED_CLAIMS` sweep, release.**
 
+***Done, and it was the largest of the three by some way — not "small" as the
+choice table says.***
+
+***Three vectors carried `origin` that neither the analysis nor the impact
+assessment lists as affected:*** `mixed-derivation`, `isolate-self-derived`, and
+`chain/annotated.zpf`. The analysis names four vectors; six carried the option.
+All three unlisted ones are **rebuilt on identity spans rather than deleted**, and
+each reads better for it — `isolate-self-derived`'s one violation stays the one it
+is named for, and the chain fixture now shows what a preserved stream's provenance
+looks like under the new rule. The chain checker needed no change; it never read
+`origin`.
+
+***The three findings this plan added all held.*** `isolate-unbound-zpf-stream`
+was kept and its rule rewritten rather than deleted — the rule collapses to *every
+`zpf`-sourced record carries `spans`* and binds harder for having no exception.
+`mixed-derivation` was re-vendored rather than retired, because with identity
+spans it still demonstrates something real: one file creating one stream and
+preserving another, now told apart by whether the spans are identity. And the
+renumbering duty was restated in §Discontinuity's own section rather than deleted
+with the verbatim-versus-renumbered contrast.
+
+***The `ENUMERATIONS` casualty was the predicted one.*** `provenance is the
+participants' `origin`` died with the *Annotating a decoded file* example. The set
+is down to five sites, **all of them rules rather than worked examples**, which is
+the better place for it — an example is exactly the kind of site that gets deleted
+wholesale.
+
+***And a third capability was orphaned.*** `SEQUENCED` lost every vector it had:
+three to Package B and `passthrough-transport` to this one. The flag survives both
+packages and had nothing demonstrating it, which the capability check caught.
+`sequenced-session` now carries it, and carries the point the specification makes
+in prose and no vector ever did — the response stored at `ts 995` *after* the
+`ts 1000` request that caused it.
+
 ### Risks
 
 | Risk | Likelihood | Mitigation |
@@ -564,15 +621,20 @@ main body.
 
 ### Done
 
-- [ ] `origin` is out of the registry, the descriptor, and the JSONL mapping.
-- [ ] Every `zpf`-sourced record carries `spans`, stated once, with the identity
+- [x] `origin` is out of the registry, the descriptor, and the JSONL mapping.
+- [x] Every `zpf`-sourced record carries `spans`, stated once, with the identity
       span named as the pass-through case.
-- [ ] A vector fails a reader that omits the identity span.
-- [ ] `mixed-derivation`'s fate is a recorded decision, not a re-vendor.
-- [ ] The renumbering duty survives the deletion of the asymmetry.
-- [ ] `ENUMERATIONS` re-anchored; `check.py` green; **56** vectors — 55 if
-      `mixed-derivation` is retired with its rule. The analysis budgets 55 because
-      it deletes `isolate-unbound-zpf-stream`, which this package keeps.
+- [x] A vector fails a reader that omits the identity span.
+      *`isolate-unbound-zpf-stream`, kept and re-ruled rather than deleted.*
+- [x] `mixed-derivation`'s fate is a recorded decision, not a re-vendor.
+      *Re-vendored deliberately: with identity spans it still shows one file
+      creating one stream and preserving another.*
+- [x] The renumbering duty survives the deletion of the asymmetry.
+- [x] Three vectors the analysis does not list carried `origin` and are rebuilt,
+      not deleted. *`mixed-derivation`, `isolate-self-derived`,
+      `chain/annotated.zpf`.*
+- [x] `ENUMERATIONS` re-anchored; `check.py` green. ~~*56 vectors.*~~ Taken with B
+      and C, the suite ends at **53**; A alone removes three and adds one.
 
 ---
 
@@ -771,6 +833,35 @@ a vector nobody re-read.
 4. `partially-hinted-sequenced`'s `expect`, per the decision above.
 5. Changelog, `RETIRED_CLAIMS` sweep, release.
 
+***Done, and both findings changed what shipped.***
+
+***The middle course on the floor was taken, and it is not what the analysis
+proposed.*** The analysis replaces the whole block with one sentence and leaves
+placement unspecified. Finding 3 above says that returns the `seq_start`-less
+record to having **no rule at all** — the state `0.17` left and `0.18` fixed. So
+what shipped separates the two halves: the **effect** is kept as a rule (an
+unplaceable record covers no byte of the stream and contributes nothing to the
+extent) and only the **pinned range** is dropped. The cost is then exact and
+small, and the changelog states it: *two readers may differ on which range an
+unplaceable record occupies, and cannot differ on any extent, because it covers
+nothing under either reading.*
+
+***Two of the four advisory vectors stay, per finding 2.*** The transport-label
+pair exercise the *tier* — accept, report, ignore the label, round-trip — not a
+pinned repair, and the tier survives. Deleting all four would have left a live
+concept with **no vector at all**, and the capability check cannot catch that,
+because a tier is not an option. `advisory-below-origin-payload` became
+`unplaceable-below-origin` with `violations=0`: it now pins the effect rather than
+a violation, which is what remains true of it.
+
+***The removals table caught a site I had missed, and it is the shape this
+repository keeps hitting.*** The sentence calling the advisory strength
+"deliberately unusual … which this document gives only where it can say exactly
+what a reader does instead" **counted** the advisory MUST NOTs and named the
+origin floor as the other one. A count of a set, going stale as the set changes —
+`ENUMERATIONS`' own failure mode, in a sentence no enumeration declares. It went
+with the floor.
+
 ### Risks
 
 | Risk | Likelihood | Mitigation |
@@ -782,13 +873,15 @@ a vector nobody re-read.
 
 ### Done
 
-- [ ] The floor is one sentence, and it says what a reader does.
-- [ ] No MUST NOT in the document pins a repair.
-- [ ] The advisory tier still has a vector.
-- [ ] No `expect` asserts a placement the specification no longer states.
-- [ ] `RETIRED_CLAIMS` carries the floor's placement rule, reproducing against
-      `v0.18`.
-- [ ] `check.py` green; **55** or 56 vectors, depending on the tier vector kept.
+- [x] The floor says what a reader does. *And keeps the **effect** as a rule while
+      dropping the pinned range — the analysis would have dropped both.*
+- [x] No MUST NOT in the document pins a repair.
+- [x] The advisory tier still has a vector. *Two: the transport-label pair.*
+- [x] No `expect` asserts a placement the specification no longer states.
+      *`unplaceable-no-seq-start` now asserts the extent and not the range.*
+- [x] `RETIRED_CLAIMS` carries the floor's MUST NOT, reproducing against
+      **`v0.18-r2`**.
+- [x] `check.py` green. Taken with A and B, the suite ends at **53**.
 
 ---
 
@@ -1092,6 +1185,18 @@ package: seven rules retired, each asserted in a vector summary and a README row
 
 Three interactions matter, and two of them are named in neither document.
 
+***All three were taken, and this section's score is one hit, one live, one
+avoided.***
+
+- **Interaction 2 hit**, in the direction the section did not name. It says do C
+  before B's vector removal; B went first, so the placement shape was rehoused
+  into a vector C then unpinned. Cost: a softened `expect`, not a wasted vector.
+- **Interaction 1 is live and unresolved.** A without D is exactly what shipped —
+  see below.
+- **Interaction 3 was half-avoided.** A killed one `ENUMERATIONS` locator, not
+  two: the pass-through carry-forward bullet survives because a pass-through still
+  re-emits Undecoded blocks. E was not taken, so the set keeps five sites.
+
 1. **A without D makes a merge owe coverage.** A merge output carrying `spans`
    *cites* an input stream, and under the current coverage MUST that makes the
    file answerable for it — every offset spanned or marked. A transport input's
@@ -1099,6 +1204,13 @@ Three interactions matter, and two of them are named in neither document.
    `gap` block per hole. `python-zipline` found this and it is correct. Under
    D-clean it is a SHOULD; under **D-pair it remains a MUST**, so the work is
    real under the combination this plan recommends.
+
+   ***This is now live.*** A shipped and D did not, so a merge writing identity
+   spans cites an input stream and is answerable for every offset of it. No merge
+   vector in the suite has a holed input, so nothing fails and nothing in the tree
+   shows the obligation — but it binds a merge implementation today. **It goes in
+   the note to `python-zipline` before the tag**, because `merge_files` is theirs
+   and the plan's own §Definition of done requires telling them first.
 2. **B and C both bear on `partially-hinted-sequenced`, in opposite directions.**
    B deletes the vector and needs its placement case rehoused first; C deletes the
    placement rule and makes the rehousing unnecessary. Taking both, do C's
@@ -1171,16 +1283,20 @@ Clarification half:
 
 Package-independent:
 
-- [x] Exactly one of A–E is complete; the others are untouched in this file. *B.*
+- [x] Each package taken is complete on its own, in its own commit, with its own
+      accounting. ~~*Exactly one of A–E.*~~ **Three: B, A, C.** D and E are
+      untouched in this file.
 - [x] `CHANGELOG.md` `[0.19]` has a `Removed` section naming every deleted option,
       rule and vector, the vectors as a list.
 - [x] Every `RETIRED_CLAIMS` entry added by the release reproduces against
-      **`v0.18-r2`** and is absent now. *Four entries: two for the clarification,
-      two for Package B.*
+      **`v0.18-r2`** and is absent now. *Five entries: two for the clarification,
+      two for B, one each for A and C.*
 - [x] `ENUMERATIONS` passes, with any dead locator re-anchored rather than
       deleted quietly. *2 sets, 8 sites.*
 - [x] `python3 vectors/check.py` green; every vector stamps `0.19`, and
-      `reject-unknown-minor` rolled to `0/20` out of its own bytes.
+      `reject-unknown-minor` rolled to `0/20` out of its own bytes. **53 vectors,
+      from 59. 35 options, from 38. 121 `MUST`, from 143** — every one of the 23
+      removals named in `NORMATIVE_REMOVALS`.
 - [x] `ruff check` and `ruff format` clean.
 - [x] The package's own Done list above, complete.
 - [ ] `python-zipline` is told which package landed **before** the tag, not after —
@@ -1213,6 +1329,24 @@ document got wrong.
 - **The vector estimate was low again**, for the fourth release running. Budgeted
   55, shipped 56: the plan's own Phase 1 called for rehousing the placement shape
   and the estimate did not count the vector that rehousing needs.
+- **Deleting vectors keeps orphaning capabilities that survive**, and this is the
+  finding to carry into any future subtractive release. It happened **three
+  times**: `time_epoch`, the `seq_start`-less placement shape, and `SEQUENCED`
+  itself, which lost every vector it had across two packages. The capability check
+  caught each one, and would not have caught the middle case — no check knows that
+  a rule kept a vector but lost a *shape*. Budget a rehousing phase per package,
+  as Package B's Phase 1 did by accident.
+- **Package A was not "small".** The choice table calls its suite cost small; it
+  was the largest of the three, because three vectors carried `origin` that
+  neither source document lists — including the `chain` fixture. The lesson is
+  narrow and useful: **grep the tree for the option, do not trust the analysis's
+  vector list.**
+- **Twice the analysis proposed deleting more than shipped, and both times the
+  plan's own findings were right to keep something.** C would have dropped the
+  floor's effect along with its pinned range, returning the `seq_start`-less
+  record to having no rule; and all four advisory vectors, leaving the surviving
+  tier with none. A subtractive release needs a standing question at every
+  deletion: *does a rule survive this in weaker form, and does it keep a vector?*
 - **Two guards reported things no human would have found**, both in this release:
   a link into a section that had moved, and a link into the document's own title
   after the version stamp changed it. Neither is visible in a rendered page. The
