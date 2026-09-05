@@ -205,7 +205,8 @@ return. Extraction creates a file the scan does not read, and moves text into it
 
 **Add the companion to `SCANNED`**, because a retired claim reasserted in the
 rationale document is still a stale claim in the tree, and an implementer reading
-the companion for context will believe it.
+the companion for context will believe it. *(Taken in Phase 0, at zero allowlist
+cost — see the Phase 0 notes.)*
 
 **But the companion legitimately discusses history**, which is what the whole
 document is for. `check.py` already carries this tension once: `mixed-derivation`'s
@@ -240,6 +241,47 @@ it means re-reading everything already moved.
    put the Goals addition from #129 in it.
 
 **Nothing moves in this phase**, and the build stays green throughout.
+
+***Done. Both decisions went the way the plan recommended, and the measurement
+that decided `SCANNED` came out cleaner than expected.***
+
+***The `SCANNED` question cost nothing, and the number is worth recording because
+it will not stay true.*** The worry was that the companion, being the home for
+history, would need an allowlist entry per retired claim it recounts. Measured
+against the tree: of **480** paragraphs, **11** recount a superseded rule, and
+**none** matches any of the six retired spellings. So the companion joins
+`SCANNED` with an **empty** allowlist, and `RATIONALE_QUOTES` ships empty with the
+reason attached. The number is a fact about text that has not been written yet —
+every paragraph moved in Phase 2 is a new chance to reassert a retired claim in
+the companion, which is exactly what the scan is now there to catch.
+
+***Both guards were run against trees where they must fail, and all four planted
+defects reported.*** Deleting one `MUST NOT` from the specification moved two
+counters, not one, which is the pair of keys earning its keep. A `MUST` written
+into the companion was reported by line. A paragraph carrying its same-file
+`](#coverage-honesty-undecoded-blocks)` link into the companion was reported as
+unresolved — the silent failure, since a dead anchor scrolls nowhere and says
+nothing. And a retired claim reasserted in the companion was reported, which is
+the `SCANNED` decision working rather than merely being taken. The unmodified tree
+reports nothing from either guard, which is the asymmetry that proves a check is
+testing something.
+
+***One correction to the plan's own numbers.*** It says 214 links across 37
+targets, and the checker reports **37 distinct targets** — the 214 is the count of
+link *occurrences*, and the guard deduplicates by target, so a broken heading is
+reported once rather than six times. Both numbers are right and the plan conflated
+them.
+
+***`_slug` was written the wrong way first, on purpose to check, and it matters.***
+Collapsing runs of whitespace before hyphenating mis-resolves three of the
+specification's own links: `&` is dropped, leaving a gap that GitHub renders as a
+**double** hyphen. A link checker that silently mis-resolves is worse than none,
+so the one-for-one substitution is in the code with the reason beside it.
+
+***The changelog entry is open and will accumulate.*** `[0.18] — re-issued, from
+2026-09-05`, above the original entry rather than replacing it, carrying the Goals
+addition, the companion, both guards and the `SCANNED` measurement. Later phases
+add to it; the original `[0.18] — 2026-09-02` entry is not touched.
 
 ### Phase 1 — the pilot: sections that move whole
 

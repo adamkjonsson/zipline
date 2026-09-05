@@ -60,6 +60,58 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.18] — re-issued, from 2026-09-05
+
+**The same format, in two documents instead of one.** About a third of the
+specification explains why a rule exists rather than stating it, and that material
+is moving to a
+[rationale companion](docs/zipline-payload-format-rationale.md). Nothing the
+format means changes: no block, no option, no body layout, no rule, and **not one
+vector byte**. Scope and reasoning in
+[docs/RATIONALE-EXTRACTION-PLAN.md](docs/RATIONALE-EXTRACTION-PLAN.md).
+
+**It is not `0.19`, deliberately.** A version that is not on the wire cannot be
+communicated to a reader, and `0.x` files are disposable — a reader rejects a
+`version_minor` it does not implement. Bumping for a change with no semantic
+content would oblige every implementation to ship a release solely to accept a
+number that says nothing. `0.19` stays reserved for the reduction the
+[simplification analysis](docs/SIMPLIFICATION-ANALYSIS.md) proposes, and this work
+goes first so that each of those proposals is argued on the capability it costs
+rather than on the lines it removes.
+
+**The `v0.18` tag is not moved.** Every release since `0.16` closes by running each
+new `RETIRED_CLAIMS` entry against the tag of the release before the one that
+retired it, so a tag that names two trees breaks the reproduction step that
+validates every guard this repository has. The re-issue is tagged `v0.18-r2` and
+`v0.18` keeps pointing at `ea3ad7d`.
+
+### Added
+
+- **A Goals entry for findability of decoding failures.** The specification has
+  never listed the property that a decode stage's output says where its decoder's
+  model of the protocol broke, in the input's own bytes, so that a tool knowing
+  nothing about the protocol can find each such place and re-derive just those
+  ranges. The mechanisms have been there since `0.9`; the goal they serve was
+  left implicit. It states a property rather than adding a rule, which is why it
+  rides with a re-issue.
+- **`docs/zipline-payload-format-rationale.md`**, structured to mirror the
+  specification's sections so a moved paragraph has one obvious home.
+- **Two guards in `vectors/check.py`, both validated against trees where they must
+  fail** before being believed, as `0.17` and `0.18` established after two guards
+  in a row were proposed in forms that could not work.
+  - *Normative-sentence invariance*: the specification's normative keyword counts
+    must match the `v0.18` baseline (143 `MUST`, 53 `MUST NOT`, 27 `SHOULD`, 54
+    `MAY`), and the companion must carry none at all. A rule leaving with the
+    paragraph that explains it is this work's characteristic failure, and this is
+    what catches it.
+  - *Anchor-link integrity*: every `](#anchor)` in either document resolves
+    against the headings of the document it sits in. The specification carries 214
+    such links across 37 targets; moving a section breaks them in both directions,
+    and a dead anchor is silent in a rendered page.
+- **The companion is scanned for retired claims**, alongside the specification and
+  the suite. Measured before it was taken: of 480 paragraphs, 11 recount a
+  superseded rule and none matches a retired spelling, so the allowlist is empty.
+
 ## [0.18] — 2026-09-02
 
 **A corrective release, like `0.11`, `0.12`, `0.14` and `0.16`.** `0.17` decided
