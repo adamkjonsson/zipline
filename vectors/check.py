@@ -410,6 +410,24 @@ RETIRED_CLAIMS = {
         "two cases are: a hole-class region between two adjacent units, and a "
         "bytes-class region carrying reason = dropped",
     ),
+    # 0.19's clarification. The paragraph that DEFINED "decoder" carried the
+    # pre-0.15 model in words no existing entry matched -- the same paraphrase
+    # blindness 0.18's Phase 0 measured, on the highest-traffic paragraph in the
+    # document. `byte-run-has-no-decoder-id` below was written to stop exactly
+    # this idea returning and could not see it.
+    "decoder-derives-decoded-from-transport": (
+        (
+            r"the \*\*decoder\*\*, which derives a decoded stream from a transport one",
+            # the stale count in the same sentence: the document defines two KINDS
+            # of transform, not two transforms, and named neither of the kinds
+            r"This spec defines two:",
+        ),
+        "0.19",
+        None,
+        "a decoder is the identity a decoder_id resolves to; it may produce a "
+        "transport stream, consume a decoded one, or consume no stream in a file "
+        "at all -- and reassembly is a decoder",
+    ),
     "byte-run-has-no-decoder-id": (
         (r"A byte run carries none",),
         "0.16",
@@ -452,6 +470,20 @@ RETIRED_CLAIMS = {
 # join table's rows owe one word each. That is a wrong member, not a missing one,
 # so it is RETIRED_CLAIMS' shape and it is entered there instead.
 ENUMERATIONS = {
+    # 0.19. A transform creates a layer or preserves one, and those two kinds are
+    # the whole set. The sentence this replaces said "this spec defines two" and
+    # then named the decoder and the merge -- one kind and one instance, counted
+    # together. A third kind of transform must fail the build at every site that
+    # enumerates them, which is what nobody had when the count went stale.
+    "transform kinds": (
+        ("decode stage", "pass-through"),
+        (
+            # Terminology -- where the pair is introduced
+            "always file to file, never a layer inside a record",
+            # Conformance -- where the pair is stated
+            "the difference is whether",
+        ),
+    ),
     "transport-layer labels": (
         ("content_type", "role"),
         (
@@ -503,7 +535,15 @@ def check_enumerations() -> list[str]:
                     f"was not stable; re-anchor it on text the fix does not touch"
                 )
                 continue
-            missing = [m for m in members if f"`{m}`" not in found[0]]
+            # A member counts only where it is MARKED -- `code` for an option or
+            # field name, **bold** for a defined prose term. Both are deliberate
+            # markup, so an incidental mention still does not count, which is the
+            # property that keeps this check free of false positives. 0.19 added
+            # the bold form when the first set of prose terms (the two kinds of
+            # transform) was declared; before that every member was an identifier.
+            missing = [
+                m for m in members if f"`{m}`" not in found[0] and f"**{m}**" not in found[0]
+            ]
             if missing:
                 out.append(
                     f"enumeration '{label}': the site at {locator!r} names "

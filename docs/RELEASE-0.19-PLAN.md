@@ -151,7 +151,9 @@ twice is what #120 is about.
 | **decode stage** | a transform that **creates** a layer: its records carry `spans` and reference a `zpf-input` Source | §Conformance |
 | **pass-through** | a transform that **preserves** the layer its input had: participants carry `origin`, records carry no `spans` | §Conformance |
 | **decoded** | a **layer**, the counterpart to transport. Never a synonym for *derived* | §Layers |
-| **transform** | any file → file stage deriving a new `.zpf` from existing ones. The document defines two kinds, decode stage and pass-through, and the merge, annotator, filter and sessionization stage are instances of one or the other | §Terminology |
+| **transform** | any file → file stage deriving a new `.zpf` from existing ones, and **only** that. Two kinds: decode stage and pass-through. A merge, annotator, filter or sessionization stage is one or the other | §Terminology |
+| **frames** | what a decoder does when it gives bytes structure: cutting them into units with edges and a type | §Terminology |
+| **recodes** | what a decoder does when it changes the bytes and adds no structure — decompressing, decrypting. Reassembly recodes | §Terminology |
 | **reassembler** | a decoder. At the head of a pipeline it reads a capture; over a `.zpf` input it is a decode stage called a sessionization stage | §Conformance |
 
 **Three decisions inside that table, each of which could have gone otherwise:**
@@ -171,6 +173,41 @@ twice is what #120 is about.
    *decode stage / pass-through* in some places and *created / preserved* in
    others for the same distinction. Keep both words but bind them once: a decode
    stage **creates**, a pass-through **preserves**. They stop being two ideas.
+4. **"Transform" is narrowed to the file → file stage, and `recode` is coined for
+   what it used to also mean.** The word was doing two jobs at two levels of the
+   model — a stage that derives a `.zpf` (§Terminology) and the byte-changing act
+   inside one (*"a decoder MAY transform"*, §Typing and §Conformance). That
+   collision is why the second act had no usable name. **`recode`** takes it:
+   changing the bytes while adding no structure.
+5. **`decoder` stays broad; the narrow sense becomes a verb.** Decoding is
+   properly the act of giving unstructured data meaning and structure, which
+   would exclude decompression and decryption — and, applied consistently,
+   **excludes TCP reassembly too**, since it orders and dedupes bytes and produces
+   no units. `0.15` deliberately made reassembly a decoder so its overlap policy,
+   buffer depth and timeout had somewhere to live, and `python-zipline` and
+   `zpfwire` both rely on that; narrowing the noun would undo it, and would fight
+   the idiom that calls gzip a decoder. So the noun keeps its scope and the
+   distinction moves to what a decoder **does**: it frames, recodes, or both.
+
+| Decoder | Frames | Recodes |
+|---|---|---|
+| HTTP/1.1 | yes | no |
+| a gzip body | no | yes |
+| TCP reassembly | no | yes |
+| `wireguard-decrypt`, in `tunnel/packets.zpf` | yes | yes |
+
+The last row is the case the question came from, and the suite answers it: the
+only decryptor in the vectors emits records typed `dec:ip-packet`, one per inner
+packet. It recodes *and* frames, so it is a decoder on any reading. **A
+recode-only decoder has no vector** — a pure decryptor emitting plaintext bytes
+with no unit boundaries — and that gap is worth knowing before Package E is ever
+argued, since E's fallback turns exactly this shape into a transport stream.
+
+*Not written as a rule: framing is what gives a stream units to have a decoded
+layer over, which is why reassembly declares transport and HTTP declares decoded.
+It is a tendency rather than a rule — a gzip output has payload-concatenation
+offsets, not sequence-anchored ones — so it belongs in the rationale companion if
+anywhere.*
 
 **This is corrective, not normative.** §Terminology carries no `MUST`, `SHOULD` or
 `MAY`, so repairing it moves neither guard count — the same property that let the

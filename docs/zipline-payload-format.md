@@ -31,17 +31,32 @@
 > write it.
 
 **Terminology.** The **producer** (a *sessionizer*) writes a `.zpf`; a
-**consumer** (or *reader*) reads one. Two producer stages are named where the
-distinction matters. The **reassembler** turns each direction's raw TCP segment
-stream — out-of-order, retransmitted, overlapping — into one clean, in-order byte
-stream; the **writer** emits that result as blocks. Reassembly always completes
-*before* a record is written, so a `.zpf` holds the reassembled bytes, never raw
-retransmits (see [Caveats](#caveats)). A **transform** is a separate, later stage
-that derives a new `.zpf` from one or more existing ones. This spec defines two:
-the **decoder**, which derives a decoded stream from a transport one (see
-[Layers](#layers-transport-and-decoded-live-in-separate-streams)), and the **merge**,
-which combines separately-captured directions into one sequenced `.zpf` (see
-[Sequenced files](#sequenced-files-precomputed-order)).
+**consumer** (or *reader*) reads one. The **reassembler** turns each direction's
+raw TCP segment stream — out-of-order, retransmitted, overlapping — into one
+clean, in-order byte stream; the **writer** emits that result as blocks.
+Reassembly always completes *before* a record is written, so a `.zpf` holds the
+reassembled bytes, never raw retransmits (see [Caveats](#caveats)).
+
+A **transform** is a stage that derives a new `.zpf` from one or more existing
+ones — always file to file, never a layer inside a record. Every transform either
+**creates** a layer or **preserves** one, and those are its two kinds: the
+**decode stage** and the **pass-through**, both stated in
+[Conformance](#conformance). A merge, an annotator, a filter and a sessionization
+stage are each one or the other.
+
+A **decoder** is the identity a `decoder_id` resolves to — a name, a version, and
+the parameters it ran with — declaring the layer its output is in (see
+[Decoder Descriptor](#decoder-descriptor-which-decoding)). It is not a stage, and
+the two are independent: a decode stage may run no decoder of its own and inherit
+its input's instead.
+
+A decoder **frames**, **recodes**, or does both. *Framing* gives bytes structure,
+cutting them into units with edges and a type. *Recoding* changes the bytes and
+adds no structure — decompressing, decrypting. Reassembly recodes: it is a decoder
+because what it did is worth recording, not because it produced units. The words
+are used in that sense throughout; **decoded** always names a
+[layer](#layers-transport-and-decoded-live-in-separate-streams), never a synonym
+for *derived*.
 
 ## Goals
 
@@ -999,12 +1014,12 @@ without the key should expect none.
 
 ### Typing a decoded record
 
-A decoder **frames, and may transform**. Framing is the common case — assembling
-raw bytes into one logical unit and marking its edges — but it is not the
-definition: a decoder MAY emit bytes that do not appear in its input, and in a
-different quantity. Decompressing a `Content-Encoding: gzip` body, decrypting a
-TLS record, and expanding an HPACK header block all produce output that exists
-nowhere upstream. What a record's `spans` name is therefore the input region the
+A decoder **frames, recodes, or does both** ([Terminology](#zipline-payload-format-v018)).
+Framing is the common case — assembling raw bytes into one logical unit and
+marking its edges — but it is not the definition: a decoder MAY emit bytes that do
+not appear in its input, and in a different quantity. Decompressing a
+`Content-Encoding: gzip` body, decrypting a TLS record, and expanding an HPACK
+header block all **recode**, producing output that exists nowhere upstream. What a record's `spans` name is therefore the input region the
 unit **corresponds to**, not a region holding the same bytes (see
 [`spans`](#tlv-option-framing--id-registry)).
 
@@ -2674,15 +2689,16 @@ them. What follows from them here is that a file MAY hold streams of differing
 provenance and differing layer side by side, and that every rule below is a rule
 about a stream even where a file is the convenient thing to name.
 
-A `zpf`-sourced stream is produced one of two ways, and the difference is whether
-its stage **creates** a layer or **preserves** one:
+A `zpf`-sourced stream is produced by one of the two kinds of transform — a
+**decode stage** or a **pass-through** — and the difference is whether its stage
+**creates** a layer or **preserves** one:
 
 - A **decode stage** creates a layer. It runs decoders over its input's streams
   and emits records whose `spans` name the input ranges they **correspond to**,
   plus [Undecoded](#undecoded-0x21) markers for every region it did not decode.
   A decoder accounts for regions it could not parse by reference, never by
   copying bytes forward. Its records' bytes need not appear in its input: a
-  decoder MAY transform (see
+  decoder MAY recode (see
   [Typing a decoded record](#typing-a-decoded-record)).
 - A **pass-through transform** preserves the layer its input already had. It
   re-emits that input's records with their bytes, logical offsets, `decoder_id`s

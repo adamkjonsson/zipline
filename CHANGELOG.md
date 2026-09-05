@@ -60,6 +60,46 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.19] — unreleased
+
+**Clarification and simplification, in that order.** The terms are pinned first,
+the text is brought onto them, and then one reduction package lands. Scope and
+reasoning in [docs/RELEASE-0.19-PLAN.md](docs/RELEASE-0.19-PLAN.md).
+
+*The vectors still stamp `0.18` until the package starts; nothing below changes
+what a conformant file is.*
+
+### Clarified
+
+- **§Terminology defined `decoder` once, and had defined it wrongly since
+  `0.15`.** It said the decoder derives a decoded stream from a transport one.
+  But a decoder may produce a **transport** stream (a sessionization stage), may
+  consume a **decoded** one (`capture → tls-records → http`), and may consume no
+  stream in a file at all (a TLS-terminating proxy). The paragraph also placed the
+  reassembler outside the transform family, which `0.15` ended, and counted "two"
+  transforms while the document goes on to define the pass-through, the annotator,
+  a filter and the sessionization stage.
+- **A decoder is now defined as an identity, not a stage** — the name, version and
+  parameters a `decoder_id` resolves to, declaring the layer its output is in. The
+  document already said *"`decoder_id` names a layer, not a stage"*, buried in
+  §Referencing. A decode stage may run no decoder of its own and inherit its
+  input's.
+- **`transform` is narrowed to the file → file stage, and `recode` is coined for
+  what it used to also mean.** One word was doing two jobs at two levels of the
+  model. **A decoder frames, recodes, or does both**: *framing* gives bytes
+  structure, cutting them into units with edges and a type; *recoding* changes the
+  bytes and adds none. Decompression and decryption recode. So does reassembly,
+  which is a decoder because what it did is worth recording, not because it
+  produced units.
+- **The two kinds of transform are named where they are counted.** §Conformance's
+  lead-in said "one of two ways" without naming them, the same shape that went
+  stale in §Terminology. Both sites now name the decode stage and the
+  pass-through, and `ENUMERATIONS` fails the build if a third kind is added
+  without updating them.
+
+`RETIRED_CLAIMS` gains the stale definition, reproducing against `v0.18-r2` and
+absent now. No rule changed and no normative keyword moved.
+
 ## [0.18] — re-issued, from 2026-09-05
 
 **The same format, in two documents instead of one.** About a third of the
