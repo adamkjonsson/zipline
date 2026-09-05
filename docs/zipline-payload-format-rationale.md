@@ -1,4 +1,4 @@
-# Zipline Payload Format — rationale companion (v0.18)
+# Zipline Payload Format — rationale companion (v0.19)
 
 *Why the rules in [the specification](zipline-payload-format.md) are the way they
 are: the argument that produced each one, what an earlier version got wrong, and

@@ -1,6 +1,6 @@
-# Zipline Payload Format (v0.18)
+# Zipline Payload Format (v0.19)
 
-> Status: **version 0.18** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.19** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
@@ -30,7 +30,9 @@
 > needed to consume them. The format is tool-independent — any program can read or
 > write it.
 
-**Terminology.** The **producer** (a *sessionizer*) writes a `.zpf`; a
+## Terminology
+
+The **producer** (a *sessionizer*) writes a `.zpf`; a
 **consumer** (or *reader*) reads one. The **reassembler** turns each direction's
 raw TCP segment stream — out-of-order, retransmitted, overlapping — into one
 clean, in-order byte stream; the **writer** emits that result as blocks.
@@ -279,7 +281,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -483,7 +485,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -570,7 +572,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -996,7 +998,7 @@ The decoder is a first-class, referenceable **identity**: a `decoder_id`
 (referenced per-record), a `name` (e.g. `http/1.1`), a `version`, a
 `params_digest` (hash of the decoder config, so the decode is reproducible), and
 an `output_layer` naming the layer its output is in. It is not the stage that ran
-it, in the sense [Terminology](#zipline-payload-format-v018) gives both words.
+it, in the sense [Terminology](#terminology) gives both words.
 
 Every record produced by a decoder carries an **explicit** `decoder_id` — there is
 no implicit "primary" default. Its presence names the decoder; what **layer** the
@@ -1016,7 +1018,7 @@ without the key should expect none.
 
 ### Typing a decoded record
 
-A decoder **frames, recodes, or does both** ([Terminology](#zipline-payload-format-v018)).
+A decoder **frames, recodes, or does both** ([Terminology](#terminology)).
 Framing is the common case — assembling raw bytes into one logical unit and
 marking its edges — but it is not the definition: a decoder MAY emit bytes that do
 not appear in its input, and in a different quantity. Decompressing a
@@ -1164,7 +1166,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1202,7 +1204,7 @@ but because the inherited `undecoded` line has always been a statement about
 the input lets the block be copied verbatim:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
  "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1297,7 +1299,7 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
