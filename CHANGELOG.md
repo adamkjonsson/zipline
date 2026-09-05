@@ -66,8 +66,51 @@ neither is safe to skip within `0.x`.
 the text is brought onto them, and then one reduction package lands. Scope and
 reasoning in [docs/RELEASE-0.19-PLAN.md](docs/RELEASE-0.19-PLAN.md).
 
-*The vectors still stamp `0.18` until the package starts; nothing below changes
-what a conformant file is.*
+### Removed
+
+**Package B: a producer no longer justifies its sequencing claim.** `SEQUENCED`
+becomes what it always was in practice — an assertion that the stored order is a
+valid causal order, taken on the same trust a reader already extends to the order
+itself, which it cannot check either.
+
+- **Option `sequenced_basis` (`0x0053`)**, and the rule that a hint-less
+  `SEQUENCED` session MUST carry it. With it go the four defined values
+  (`clock`/`protocol`/`external`/`trivial`), the soundness rule a producer had to
+  meet before setting the flag, the reader-side rule against rejecting an
+  unrecognised value, and §Conformance's restatement of all three.
+- **Option `flags` (`0x0014`) on the File Header**, whose only defined bit was
+  **`SINGLE_CLOCK`**. The per-session clock requirement it supplied is gone, so
+  the file-wide assertion has nothing left to supply, and the one mechanical check
+  the basis enabled — `clock` asserted in a multi-source file that declines
+  `SINGLE_CLOCK` — lost both operands.
+- **Vectors** (4): `sequenced-basis`, `isolate-sequenced-no-basis`,
+  `partially-hinted-sequenced`, `file-clock-metadata`. Downstream ratchets keyed
+  on vector names should drop these four rather than treat them as regressions.
+
+**What is kept.** *Hint-less* survives as a description in §Merge algorithm, since
+it still names a real distinction, but **no rule turns on it** and the paragraph
+says so. `SEQUENCED` itself, the merge algorithm, the tie-break and the
+producer's freedom to choose one are untouched.
+
+**Where the forensic answer moved.** The basis named a *category* of reasoning and
+not the thing a reader needs when an order looks wrong, which is which run of
+which tool produced it. That is answered by the build provenance of the file that
+set the flag — `produced_by`, `produced_at` and `transform_params_digest`, where a
+merge's ordering key lives — reached by walking `zpf-input` Sources back to the
+first file marking the session. §Sequenced files now says so.
+
+### Added
+
+- **Vector `unplaceable-no-seq-start`.** `partially-hinted-sequenced` carried two
+  lessons and only one was about sequencing: since `0.18` it also pinned the
+  commoner unplaceable shape, a record with no `seq_start` on a stream whose
+  earlier record has one. That half is rehoused as an ordinary accept vector.
+  Placement keys on whether a stream is sequence-anchored, not on `SEQUENCED`, so
+  the shape never needed a sequenced session to live in.
+- **`time_epoch` moves to `descriptive-metadata`.** It survives the package and
+  `file-clock-metadata` was its only vector. Five descriptive options there now.
+
+*56 vectors, from 59.*
 
 ### Clarified
 

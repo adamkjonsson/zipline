@@ -561,32 +561,6 @@
       "has_jsonl": true
     },
     {
-      "name": "file-clock-metadata",
-      "tier": "accept",
-      "violations": 0,
-      "bytes": 204,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x41"
-      ],
-      "options": [
-        "0x0010",
-        "0x0011",
-        "0x0014",
-        "0x0020",
-        "0x0050",
-        "0x0060"
-      ],
-      "summary": "The File Header's two clock-related options, which no vector carried before 0.14. time_epoch moves the origin, so wall time is (time_epoch + timestamp) / tick_hz -- here 1719500000 + 1000 ticks at 1 MHz, i.e. 1719500000.001 s. SINGLE_CLOCK asserts every record in the file was stamped against one trustworthy clock, so timestamps are globally comparable; it is a clock assertion, NOT an ordering one.",
-      "spec_section": "File Header (0x01) -- file flags",
-      "expect": "Accept. The .jsonl file is the expected projection.",
-      "has_jsonl": true
-    },
-    {
       "name": "descriptive-metadata",
       "tier": "accept",
       "violations": 0,
@@ -632,31 +606,6 @@
       ],
       "summary": "A Custom (0xFF) vendor block. It is RECOGNISED, not unknown: a reader without knowledge of this pen/subtype skips it by frame length, but a converter still projects it as a `custom` line carrying pen, subtype and a base64 payload -- not through the unknown-block escape, which would lose the field structure.",
       "spec_section": "Custom (0xFF)",
-      "expect": "Accept. The .jsonl file is the expected projection.",
-      "has_jsonl": true
-    },
-    {
-      "name": "sequenced-basis",
-      "tier": "accept",
-      "violations": 0,
-      "bytes": 248,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x41"
-      ],
-      "options": [
-        "0x0020",
-        "0x0050",
-        "0x0052",
-        "0x0053",
-        "0x0060"
-      ],
-      "summary": "A hint-less UDP session marked SEQUENCED. Because it carries no seq/ack, sequenced_basis is mandatory and states what the order rests on.",
-      "spec_section": "Sequenced files (precomputed order)",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
     },
@@ -950,31 +899,6 @@
       "has_jsonl": true
     },
     {
-      "name": "partially-hinted-sequenced",
-      "tier": "accept",
-      "violations": 0,
-      "bytes": 316,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x41"
-      ],
-      "options": [
-        "0x0020",
-        "0x0050",
-        "0x0052",
-        "0x0060",
-        "0x0070"
-      ],
-      "summary": "A SEQUENCED session where ONE record carries seq_start and the rest carry no hints at all. Under 0.12's definition a single hint anywhere means the session is not hint-less, so no sequenced_basis is required -- even though most of the order rests on timestamps. This vector pins that answer. Since 0.18 it also carries the OTHER unplaceable shape: pid 0's second record has no seq_start on a stream whose first record has one, so the offset space cannot say where it belongs. 0.17 stated a placement rule for a below-origin record and left this shape silent, and it is the commoner of the two.",
-      "spec_section": "Merge algorithm -- hint-less",
-      "expect": "Accept. The .jsonl file is the expected projection. On placement: pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- a zero-width range at the highest off_end reached, offset 6, contributing nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with.",
-      "has_jsonl": true
-    },
-    {
       "name": "unplaceable-no-seq-start",
       "tier": "accept",
       "violations": 0,
@@ -997,30 +921,6 @@
       "spec_section": "Referencing the source by stream offset",
       "expect": "Accept. The .jsonl file is the expected projection. On placement: pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- a zero-width range at the highest off_end reached, offset 6, contributing nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with.",
       "has_jsonl": true
-    },
-    {
-      "name": "isolate-sequenced-no-basis",
-      "tier": "isolate",
-      "violations": 1,
-      "bytes": 168,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x41"
-      ],
-      "options": [
-        "0x0020",
-        "0x0050",
-        "0x0052",
-        "0x0060"
-      ],
-      "summary": "A hint-less session marked SEQUENCED with no sequenced_basis. Recording the basis is unconditional -- the trivially-sound cases write `trivial` rather than omitting it -- so this file is semantically invalid.",
-      "spec_section": "Sequenced files (precomputed order)",
-      "expect": "MAY reject the file, or isolate the session. Note WHEN: no record carries seq_start or ack, so the session is hint-less -- but a reader cannot know that until Session End or end-of-stream, since hint-lessness is a property of the records and the Session Descriptor precedes them. A checker that raises this at the descriptor is guessing; one that never raises it has not deferred the check.",
-      "has_jsonl": false
     },
     {
       "name": "reject-bad-magic",

@@ -54,23 +54,34 @@ encoding, and why the projection is lossy in the direction it is.*
 
 ## Causal ordering from TCP seq/ack
 
-**Why recording the sequencing basis is unconditional while soundness may be
-trivial.** Keeping the recording unconditional is what makes the rule decidable at
-the moment it has to be applied. `SEQUENCED` is written on the Session Descriptor,
-which declare-on-first-use places *before* the session's records, so a streaming
-producer cannot yet know whether only one participant will ever send. It can
-always know what it is relying on.
+### The sequencing basis, removed in `0.19`
 
-**The same asymmetry settles a question the rule otherwise raises.** Whether a
-session is hint-less is a property of its records, which the producer cannot
-confirm when it writes the descriptor either — and it does not need to, because it
-decides by what it is relying on. Only the reader, which cannot see the producer's
-reasoning, has to wait until Session End.
+*`sequenced_basis` and the File Header `SINGLE_CLOCK` flag are gone, along with
+the rule that a producer justify a hint-less `SEQUENCED` claim. Kept here because
+the argument was sound and the reasons it was dropped are not the reasons it was
+written — a later release reconsidering this should start from both.*
 
-**Why the basis is required rather than merely permitted.** It puts the obligation
-where the knowledge is: a producer that has to name a basis has to decide what the
-basis *is* at the moment it sets the bit. `SEQUENCED` is a strong assertion, not a
-default.
+**Why the recording was unconditional while soundness could be trivial.** It made
+the rule decidable at the moment it had to be applied. `SEQUENCED` is written on
+the Session Descriptor, which declare-on-first-use places *before* the session's
+records, so a streaming producer cannot yet know whether only one participant will
+ever send. It can always know what it is relying on. The same asymmetry settled a
+question the rule otherwise raised: whether a session is hint-less is a property
+of its records, which the producer also cannot confirm at descriptor time, and did
+not need to.
+
+**Why it was required rather than permitted.** It put the obligation where the
+knowledge was: a producer that has to name a basis has to decide what the basis
+*is* at the moment it sets the bit.
+
+**Why `0.19` dropped it anyway.** The field was, by the specification's own
+account, "mostly *not* something a consumer branches on". It named a category of
+reasoning — clock, protocol, external, trivial — and not the thing a reader
+actually needs when an order looks wrong, which is *which run of which tool*
+produced it. That is answered better by the build provenance of the file that set
+the flag: `produced_by`, `produced_at`, and `transform_params_digest`, which is
+where a merge's ordering key lives. The one mechanical check the basis enabled —
+`clock` asserted without `SINGLE_CLOCK` — went with both operands.
 
 ## Layers: transport and decoded live in separate streams
 
@@ -327,39 +338,22 @@ This is not a backlog. Planned work lives in the
   add a permanent branch to a taxonomy whose value is that it has two, to buy a
   guarantee nobody has yet needed to check.
 
-- **Requiring `sequenced_basis` on every `SEQUENCED` session.** The requirement
-  binds [hint-less](zipline-payload-format.md#merge-algorithm) sessions only,
-  and hint-less is
-  all-or-nothing: one record carrying `seq_start` or `ack` among a hundred that
-  carry none makes the session hinted, so no basis is required even though nearly
-  all of its order still rests on timestamps. Requiring the basis unconditionally
-  closes that gap and removes the hint-less dependency from the rule entirely.
-  *Filed as a candidate in `0.12` pending evidence the gap mattered, and not
-  adopted in `0.15` because none arrived* — three releases and one full external
-  implementation later, including a review of `0.14` that returned a single
-  finding, about something else.
+- **Requiring `sequenced_basis` on every `SEQUENCED` session.** *Moot since
+  `0.19`, which removed the option and the rule this would have widened.* It was a
+  live design question for three releases, and the gap it named was real: the
+  requirement bound hint-less sessions only, and hint-less is all-or-nothing, so
+  one record carrying `seq_start` among a hundred that carry none made the session
+  hinted and excused the basis even though nearly all its order still rested on
+  timestamps. Requiring it unconditionally would have closed that gap; `0.19`
+  closed it the other way, by removing the claim a producer had to justify.
 
-  The cost was never in doubt: it puts an option on every sequenced TCP session,
-  reinstates the `transport` vocabulary value that `0.12` deleted on the grounds
-  that it could never legitimately appear, and adds an obligation to files that
-  are conformant today. What it buys is narrower than it first looks. A consumer
-  can already see which records carry no hints, and that the merge leaves those
-  concurrent; what it cannot learn is what the producer relied on for them. The
-  loss is **legibility, not correctness**, and the behaviour is pinned by the
-  `partially-hinted-sequenced` vector, so it cannot drift unnoticed.
-
-  One variant is worth not proposing a third time: splitting the rule, so that a
-  reader checks the hint-less proxy while a producer is obliged to record the
-  basis whenever the order does not follow entirely from causal hints. That
-  obligation is **undecidable for a streaming producer** — the Session Descriptor
-  is written before the session's records, which is the same asymmetry
-  [Recording the
-  basis](zipline-payload-format.md#sequenced-files-precomputed-order) resolves
-  by keying on
-  what the producer relies on. It is the defect `0.11` removed from the previous
-  exemption, reproduced inside the fix for it. The full analysis is
-  [#42](https://github.com/adamkjonsson/zipline/issues/42), and reopening it costs
-  nothing.
+  Two things are worth carrying forward if a later release reinstates a basis.
+  The gap above is inherited, not solved. And one variant should not be proposed a
+  third time: splitting the rule, so a reader checks the hint-less proxy while a
+  producer records the basis whenever the order does not follow entirely from
+  causal hints. That obligation is **undecidable for a streaming producer**, since
+  the Session Descriptor is written before the session's records. The full
+  analysis is [#42](https://github.com/adamkjonsson/zipline/issues/42).
 
 ### Planned, tracked elsewhere
 

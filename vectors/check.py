@@ -129,6 +129,74 @@ NORMATIVE_V018 = {"MUST": 143, "MUST NOT": 53, "SHOULD": 27, "MAY": 54}
 # still present in the specification fails the check. That is what keeps the
 # baseline from being a knob to turn when the build goes red.
 NORMATIVE_REMOVALS = (
+    # 0.19, Package B. The four rules that made a producer justify its sequencing
+    # claim. Unlike the entry below these are not restatements being collapsed --
+    # they are rules the release DELETES, which is what a subtractive release
+    # does, and the table is what stops that being silent. Each names the sentence
+    # that went; none of them can still be in the specification.
+    (
+        r"MUST NOT\*\* mark a hint-less session `SEQUENCED` unless it",
+        {"MUST": 1, "MUST NOT": 1},
+        "SEQUENCED is a bare assertion; a producer is trusted for the basis as it "
+        "already is for the order itself",
+    ),
+    (
+        r"so the producer \*\*MUST\*\* say what the claim rests on",
+        {"MUST": 1},
+        "the basis is not recorded, so there is nothing to compel a producer to say",
+    ),
+    (
+        r"\*\*MUST\*\* also set \*\*`sequenced_basis`\*\*",
+        {"MUST": 1},
+        "the sequenced_basis option is removed from the registry",
+    ),
+    (
+        r"a reader \*\*MUST NOT\*\*\s*reject a session for an unrecognised value",
+        {"MUST": 1, "MUST NOT": 1},
+        "no value to recognise; the reader-side rule went with the option it protected",
+    ),
+    (
+        r"A consumer MAY report that, and `clock` being the common basis",
+        {"MAY": 1},
+        "the one mechanical check the basis enabled -- basis = clock without "
+        "SINGLE_CLOCK -- has neither operand left",
+    ),
+    (
+        r"the producer MUST NOT set SEQUENCED without a \*\*sound basis\*\*",
+        {"MUST": 1, "MUST NOT": 1},
+        "Conformance's restatement of the basis rule, gone with the rule",
+    ),
+    (
+        r"and it \*\*MUST\*\* record\s*which via `sequenced_basis`",
+        {"MUST": 1},
+        "Conformance's restatement of the recording rule, gone with the option",
+    ),
+    (
+        r"A reader MUST NOT reject a session merely\s*for carrying a `sequenced_basis` value",
+        {"MUST": 1, "MUST NOT": 1},
+        "Conformance's restatement of the unrecognised-value rule; no value left to recognise",
+    ),
+    (
+        # The FILE HEADER flags field's reserved-bits rule. SINGLE_CLOCK was its
+        # only defined bit, so removing the option removes the field, and the
+        # reserved-bit discipline goes with the field rather than being loosened.
+        #
+        # Anchored on SINGLE_CLOCK, because the Session Descriptor's flags field
+        # carries the same reserved-bits sentence word for word and SURVIVES. A
+        # pattern matching the sentence alone reports the wrong one -- which the
+        # check caught, and which is why removal patterns are anchored on what is
+        # unique to the site rather than on the rule being removed.
+        r"SINGLE_CLOCK.*?All other bits are reserved, MUST be written\s*0, "
+        r"and MUST be ignored on read",
+        {"MUST": 2},
+        "the File Header flags option is removed; its only defined bit was "
+        "SINGLE_CLOCK, so there is no bitfield left to reserve bits in",
+    ),
+    (
+        r"\*\*MUST\*\* be present on such a session; open vocabulary",
+        {"MUST": 1},
+        "the sequenced_basis registry row, gone with the option",
+    ),
     (
         r"a reader MUST NOT gate parsing on `version_minor`",
         {"MUST": 1, "MUST NOT": 1},
@@ -409,6 +477,35 @@ RETIRED_CLAIMS = {
         98,
         "two cases are: a hole-class region between two adjacent units, and a "
         "bytes-class region carrying reason = dropped",
+    ),
+    # 0.19, Package B. The basis rule is gone; these are the shapes it was
+    # asserted in. Unlike a stale copy, these were all TRUE until this release --
+    # the ratchet's job here is to stop a rule the model deliberately dropped from
+    # being reintroduced by someone reading an older draft or an implementation
+    # that still carries it.
+    "sequenced-needs-a-basis": (
+        (
+            r"MUST NOT\*\* mark a hint-less session `SEQUENCED` unless",
+            r"the producer MUST NOT set SEQUENCED without a \*\*sound basis\*\*",
+            # vectors/README.md, and so any harness reading it
+            r"A hint-less `SEQUENCED` session with no `sequenced_basis`",
+        ),
+        "0.19",
+        None,
+        "SEQUENCED is a bare assertion that the stored order is a valid causal "
+        "order; the producer is trusted for the basis as it already is for the "
+        "order itself",
+    ),
+    "single-clock-flag": (
+        (
+            r"Bit `0x0001` \(\*\*SINGLE_CLOCK\*\*\)",
+            # build.py summary, and so manifest.json
+            r"\*\*SINGLE_CLOCK\*\* asserts one trustworthy clock across the file",
+        ),
+        "0.19",
+        None,
+        "the File Header flags option is removed; SINGLE_CLOCK was its only "
+        "defined bit and the per-session clock requirement it supplied is gone",
     ),
     # 0.19's clarification. The paragraph that DEFINED "decoder" carried the
     # pre-0.15 model in words no existing entry matched -- the same paraphrase

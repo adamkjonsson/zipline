@@ -397,31 +397,20 @@ participant's own records keep their stored order, and a timestamp that runs
 backwards within one participant changes nothing. The merge is *stable* with
 respect to stored order.
 
-**Hint-less**, used throughout this document, means: **a session in which no
+**Hint-less**, used where the distinction matters, means: **a session in which no
 record carries `seq_start` or `ack`.** A single such hint anywhere in the session
 yields causal edges, so the session is not hint-less. Chat rooms and one-way UDP
 feeds are the usual examples; a TCP session is hint-less only if its writer
-recorded no sequence numbers at all.
-
-Note what this is a property of: the session's **records**, not its Session
-Descriptor. Because [declare-on-first-use](#declaration-order-declare-on-first-use)
-places the descriptor before them, a reader cannot decide it when the session is
-declared — only at [Session End](#session-end-0x12) or end-of-stream. Any check
-that depends on it defers to that point, which costs one boolean per open session
-and composes with the state a reader already keeps.
+recorded no sequence numbers at all. It is a property of the session's
+**records**, not of its Session Descriptor, and no rule in this document turns on
+it — it is a description, not a test.
 
 **A producer computing a sequenced order MAY choose a different tie-break** —
 round-robin, source order, anything deterministic — if it knows the clocks are
 unreliable. That choice belongs to the producer, which knows how the capture was
 taken; the stored order is authoritative however it was reached, and a reader
-never re-derives it. On a **hint-less** session the producer records what the
-order rests on in
-[`sequenced_basis`](#sequenced-files-precomputed-order); on a session with hints
-there is nothing to record, since the causal edges already account for the order
-and only genuinely concurrent records reach the tie-break at all. A **reader** cannot make
-it: skew is not a property a file asserts, and the absence of
-[`SINGLE_CLOCK`](#file-header-0x01) says nothing either way. So a reader
-breaking ties always uses the timestamp.
+never re-derives it. A **reader** cannot make that choice: skew is not a property
+a file asserts. So a reader breaking ties always uses the timestamp.
 
 **Cost, and why a reader rarely pays it in full.** Stated naively, step 2 is
 O(N·M) per session — every record weighed against every peer record — plus the
@@ -536,9 +525,8 @@ one correct answer*, not that it is the only one.
 **A [sessionization stage's](#conformance) output sequences and merges like any
 other transport stream**, and this is worth stating because its records carry a
 `decoder_id` and might be mistaken for a decoded stream's. They carry `seq_start`
-and `ack` exactly as a capture's do, so such a session is **not hint-less**, needs
-no `sequenced_basis`, and its causal order comes from the hints rather than from
-timestamps. Merging two of them is the ordinary two-direction merge: the merge
+and `ack` exactly as a capture's do, so its causal order comes from the hints
+rather than from timestamps. Merging two of them is the ordinary two-direction merge: the merge
 preserves the transport layer, carries the hints forward, and carries the
 reassembler's `decoder_id` and its Decoder Descriptor forward with them.
 
@@ -600,99 +588,30 @@ so the frontiers are totally ordered and every reader of the same file computes
 the same interleaving. A producer that bakes the order in saves each reader the
 work; it does not change the answer.
 
-**What a sequenced session rests on.** A session's causal order comes from
-whatever ordering hints its records carry. A **TCP** session has `seq`/`ack`, so
-its sequenced order is clock-independent — sound regardless of capture skew. A
-session **without** such hints (a chat room, a one-way UDP feed) has no causal
-edges, so its order is purely the timestamp tie-break (non-decreasing
-`timestamp`, ties resolved by the producer's fixed rule, e.g. source/pid order).
-That is a *sound* order only when all the session's records share **one
-trustworthy clock** — the normal case when a single observer (one chat server,
-one receiver) saw the whole session.
+**What a sequenced session rests on is the producer's affair.** `SEQUENCED`
+asserts that the stored order is a valid causal order, and a reader takes that as
+given — the same trust it already extends to the order itself, which it cannot
+check either. Where the records carry `seq`/`ack` the order is derived from them
+and is sound however badly the capture clocks disagree. Where they do not, the
+producer is relying on something this format does not model: one trustworthy
+clock, an application-layer sequence, an order known out of band. The file states
+the order, not the reasoning behind it.
 
-A producer therefore **MUST NOT** mark a hint-less session `SEQUENCED` unless it
-has a **sound basis** for the order it stores. A single trustworthy clock is the
-common basis, but not the only one: a producer may hold ordering knowledge this
-format does not model — a chat server that assigns its own total order, an
-application-layer sequence number, an ordering recorded out of band. Two cases
-meet the soundness bar **trivially**: a session with **one participant** (a
-one-way UDP feed), and one where **only one participant ever sends**, since
-neither has a cross-participant order to get wrong.
+Where that reasoning matters — records in an order that makes no sense — it is
+recovered the way any producer decision is, from the build provenance of the file
+that set the flag: `produced_by`, `produced_at` and
+[`transform_params_digest`](#file-header-0x01), which is where a merge's ordering
+key lives. Walking [`zpf-input`](#source-descriptor-which-input) Sources back to
+the first file marking the session finds it.
 
-Trivially sound is still a basis, and it is still recorded. The producer owns
-the soundness of its claim and a reader cannot check it, so the producer
-**MUST** say what the claim rests on — including when the answer is "nothing to
-get wrong". See [`sequenced_basis`](#tlv-option-framing--id-registry) below.
-
-**The basis requirement applies to hint-less sessions only.** A session *with*
-causal hints has **no** timestamp requirement whatsoever: its sequenced order is
-derived from `seq`/`ack`, so it is sound however badly the capture clocks
-disagree, and its stored records may freely run backwards in time. That is not a
+**Sequencing never means "sorted by timestamp."** It means stored in a valid
+causal order, and a session with causal hints has **no** timestamp requirement
+whatsoever: its stored records may freely run backwards in time. That is not a
 tolerated edge case but the central one — the
-[worked example](#worked-example-a-skewed-two-file-capture) sequences exactly
-such a pair, storing a record stamped `ts 995` *after* the one at `ts 1000` that
-causes it. Sequencing never means "sorted by timestamp"; it means "stored in a
-valid causal order", and only a hint-less session is reduced to using timestamps
-to find one.
-
-**Recording the basis.** A producer that sets `SEQUENCED` on a hint-less session
-**MUST** also set **`sequenced_basis`** (string, Session Descriptor), saying what
-the order rests on. The vocabulary is open; the defined values are:
-
-| Value      | The order rests on                                                  |
-|------------|---------------------------------------------------------------------|
-| `clock`    | one trustworthy clock shared by every record — the `SINGLE_CLOCK` case |
-| `protocol` | ordering carried by the application protocol itself, e.g. a server-assigned sequence |
-| `external` | an order the producer knows out of band, recorded nowhere in the file |
-| `trivial`  | nothing to get wrong — one participant, or only one that ever sends |
-
-**Recording is unconditional; soundness may be trivial.** These are two
-requirements and they are easy to conflate. A hint-less `SEQUENCED` session
-always carries `sequenced_basis`, whatever the order rests on; `trivial` is what
-a producer writes when the answer is that there was never anything to get wrong.
-
-A producer that cannot justify triviality yet simply is not relying on it, and
-records the basis it *is* relying on. A producer relying on transport hints
-expects them and writes no basis; one relying on anything else writes that. The
-reader, which cannot see the producer's reasoning, is the side that must wait
-until Session End to conclude the session was hint-less at all.
-
-The requirement is on the producer, not the consumer: a reader **MUST NOT**
-reject a session for an unrecognised value, and a value it does not know simply
-means an unknown basis.
-
-**What the field is for.** Mostly *not* something a consumer branches on — it is
-an explanation kept for when something turns out to be wrong, in the same family
-as `creator`, `produced_by` and `params_digest`. Records in an order that makes
-no sense are a different investigation depending on whether the producer claimed
-`clock` (look at capture skew), `protocol` (look at the producer's protocol
-assumptions) or `external` (look outside the file entirely).
-
-There is one mechanical check it enables. A hint-less session claiming
-`basis = clock` in a file that draws on several `capture` Sources and does **not**
-set [`SINGLE_CLOCK`](#file-header-0x01) is self-contradictory: the session asserts
-one trustworthy clock while the file declines to. A consumer MAY report that, and
-`clock` being the common basis makes it worth checking.
-
-**File-level `SINGLE_CLOCK`.** That clock precondition has a file-wide form, the
-`SINGLE_CLOCK` flag on the [File Header](#file-header-0x01): it asserts that
-*every record in the file was stamped against one trustworthy clock*, so
-timestamps are globally comparable across sessions and sources (no inter-source
-skew). Its value is forward-looking. A capture-sourced writer often cannot tell
-that a handful of one-way UDP streams are really one `N`-party session (the `N=5`
-case), so it emits them as separate, unsequenced streams — it can commit no
-cross-stream order. But it *can* honestly assert `SINGLE_CLOCK` if it was a single
-capture point, and a later decoder that regroups those streams into one session
-can then rely on the bit to sequence the regrouped session by timestamp soundly.
-`SINGLE_CLOCK` set also satisfies the per-session clock requirement above for
-every hint-less session in the file.
-
-The two flags are independent. A **merged two-tap TCP file** carries per-session
-`SEQUENCED` but **not** `SINGLE_CLOCK` (it used seq/ack precisely because the
-clocks were skewed); a **single-tap UDP capture** carries `SINGLE_CLOCK` but its
-sessions are **not** yet `SEQUENCED` (no writer has committed an order). A reader
-that wants "is this whole file already ordered?" simply ANDs the `SEQUENCED` bits
-of the sessions it sees.
+[worked example](#worked-example-a-skewed-two-file-capture) sequences exactly such
+a pair, storing a record stamped `ts 995` *after* the one at `ts 1000` that causes
+it. A reader that re-sorts a sequenced session by timestamp has undone the work
+the flag announces.
 
 ## Layers: transport and decoded live in separate streams
 
@@ -1545,15 +1464,6 @@ digest on; a capture-sourced file has no such stage. The `produced_by` and
 `produced_at` options are different and are **not** restricted this way — every
 file was produced by something, and a capture-sourced file may name it.
 
-**File flags.** The `flags` option is a u16 bitfield of file-level assertions;
-when absent, every bit is 0. Bit `0x0001` (**SINGLE_CLOCK**) asserts that every
-record in the file was stamped against one trustworthy clock, so timestamps are
-globally comparable across all sessions and sources with no inter-source skew
-(see [Sequenced files](#sequenced-files-precomputed-order)). It is a clock
-assertion, *not* an ordering one — per-record/per-session ordering is the
-Session Descriptor `SEQUENCED` flag. All other bits are reserved, MUST be written
-0, and MUST be ignored on read.
-
 ### Descriptor blocks
 
 Each fixed body ends with a `_reserved: u16` (0) where needed to round it to a
@@ -1632,9 +1542,8 @@ stream with no predecessor it is not vacuous.
 | `session_id` | u64  | id referenced by participants and records |
 
 Options: `proto` (string; see below), `flow_key` (string), `flags` (u16,
-session-level flags; see below), `sequenced_basis` (string; see
-[Sequenced files](#sequenced-files-precomputed-order)), `external_session_id`
-(bytes; see below), `comment`.
+session-level flags; see below), `external_session_id` (bytes; see below),
+`comment`.
 
 **`external_session_id` — what the rest of the world calls this conversation.**
 `session_id` and this option answer different questions, and reaching for the
@@ -2447,7 +2356,6 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0011` | creator          | string     | File Header              | tool + version that wrote the file                             |
 | `0x0012` | produced_by      | string     | File Header              | tool + version that wrote this file. **Required** of a file holding a `zpf`-sourced stream; permitted on any file, including a capture-sourced one — a writer exists either way |
 | `0x0013` | produced_at      | i64        | File Header              | wall-clock build time of this artifact (Unix seconds)          |
-| `0x0014` | flags            | u16        | File Header              | file-level flags bitfield; bit `0x0001` = SINGLE_CLOCK (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0015` | transform_params_digest | string | File Header           | hash of the config of a transform that produced records **without decoding** — a filter, a reordering stage, a merge. A decode stage's config lives on its Decoder (`params_digest`); see [Layers](#layers-transport-and-decoded-live-in-separate-streams) |
 | `0x0020` | uri              | string     | Source                   | where the referenced capture/input file lives                  |
 | `0x0021` | digest           | string     | Source                   | content hash of the referenced file — the dependency edge      |
@@ -2458,7 +2366,6 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0050` | proto            | string     | Session                  | session protocol; well-known values `tcp`/`udp`/`http`/`tls`/`irc`/`dns`, other lowercase values permitted (unrecognized = opaque) |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
-| `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; **MUST** be present on such a session; open vocabulary, defined values `clock`/`protocol`/`external`/`trivial` (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0054` | external_session_id | bytes   | Session                  | an identity assigned by something *outside* this format — a trace id, a capture orchestrator's UUID, a case number. Opaque: nothing here interprets it (see [Session Descriptor](#session-descriptor-0x10)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick (recommended spellings: see [Participant Descriptor](#participant-descriptor-0x11)); **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
@@ -2901,26 +2808,10 @@ order is a valid causal linearization (concurrent records ordered by the
 producer's tie-break), and a reader MAY then consume them in stored order without
 running the [merge](#merge-algorithm). A reader MUST NOT assume a session is
 sequenced unless its bit is set, and MUST still accept sessions that omit it. For
-a session with no causal hints (no TCP `seq`/`ack` — e.g. chat or one-way UDP),
-the producer MUST NOT set SEQUENCED without a **sound basis** for the order it
-stores: a single trustworthy clock shared by every record in the session, or
-ordering knowledge this format does not model (see
-[Sequenced files](#sequenced-files-precomputed-order)), and it **MUST** record
-which via `sequenced_basis`. A session with one participant, or with only one
-sender, meets the *soundness* bar trivially and records `trivial`; the recording
-requirement itself has no exemption. The File Header `flags` **SINGLE_CLOCK** bit is the
-file-wide assertion of the clock property (timestamps globally comparable, no
-inter-source skew); when set it supplies that basis for every hint-less session,
-and a downstream tool may rely on it to sequence streams it regroups. The basis
-requirement binds **hint-less sessions only** — a session carrying `seq`/`ack`
-may be sequenced whatever its timestamps do, and needs no `sequenced_basis`.
-
-A **missing** `sequenced_basis` on a hint-less `SEQUENCED` session is a semantic
-violation, isolatable like any other. A reader can only raise it at
-[Session End](#session-end-0x12) or end-of-stream, because until then it does not
-know the session is hint-less (see [Merge algorithm](#merge-algorithm)). A reader MUST NOT reject a session merely
-for carrying a `sequenced_basis` value it does not recognise — the vocabulary is
-open, and an unknown value means an unknown basis, not an invalid one.
+a session with no causal hints (no TCP `seq`/`ack` — e.g. chat or one-way
+UDP), the producer is asserting an order this format cannot derive, and a
+reader takes the assertion as given (see
+[Sequenced files](#sequenced-files-precomputed-order)).
 
 **Timestamps are not an ordering invariant.** Record timestamps are **not**
 required to be non-decreasing in stored order, in any session, sequenced or not.
