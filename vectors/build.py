@@ -41,7 +41,7 @@ def read_text(path: str) -> str:
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 18
+MAJOR, MINOR = 0, 19
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -877,59 +877,6 @@ vector(
     violations=0,
 )
 
-vector(
-    "passthrough-transport",
-    "accept",
-    "A pass-through preserving a transport layer: byte-run records with no "
-    "decoder_id, provenance carried by origin on each participant.",
-    "Conformance -- pass-through transform",
-    [
-        file_header(options=[o_produced_by("zpf-merge 1.2"), o_produced_at(1719510000)]),
-        source(1, 1, [o_uri("sideA.zpf"), o_digest("sha256:11aa")]),
-        session(1, [o_proto("tcp"), o_sess_flags(0x0001)]),
-        participant(1, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_origin(1, 0, 7)]),
-        record(1, 0, 1, 1000, GET, flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]),
-        end_block(),
-    ],
-    jsonl=[
-        {
-            "type": "file",
-            "format": FORMAT,
-            "tick_hz": 1000000,
-            "produced_by": "zpf-merge 1.2",
-            "produced_at": 1719510000,
-        },
-        {
-            "type": "source",
-            "source_id": 1,
-            "kind": "zpf-input",
-            "uri": "sideA.zpf",
-            "digest": "sha256:11aa",
-        },
-        {"type": "session", "session_id": 1, "proto": "tcp", "sequenced": True},
-        {
-            "type": "participant",
-            "session_id": 1,
-            "pid": 0,
-            "endpoint": ["10.0.0.1:51000"],
-            "isn": 1000,
-            "origin": {"source_id": 1, "session_id": 7, "pid": 0},
-        },
-        {
-            "type": "record",
-            "session_id": 1,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 1000,
-            "flags": ["psh"],
-            "payload": b64(GET),
-            "seq_start": 1001,
-            "ack": 5001,
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
 
 # --- the four escapes ------------------------------------------------------
 
@@ -1053,214 +1000,6 @@ vector(
 
 # --- 0.10 constructs -------------------------------------------------------
 
-vector(
-    "annotator-decoded",
-    "accept",
-    "A pass-through preserving a DECODED layer -- the 0.10 construct 0.9 could "
-    "not express. Records keep decoder_id and carry no spans; the Undecoded "
-    "block is inherited, so the grandparent source is declared too.",
-    "Annotating a decoded file",
-    [
-        file_header(options=[o_produced_by("zpf-annotate 0.2"), o_produced_at(1719520000)]),
-        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
-        source(2, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
-        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
-        session(7, [o_proto("http")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
-        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_origin(2, 1, 7)]),
-        name_block(7, 1, [o_label("example.com"), o_name_kind("tls-sni")]),
-        record(7, 0, 2, 1000, b"REQ", options=[o_decoder_id(1), o_content_type("dec:request")]),
-        record(7, 1, 2, 995, b"RESP", options=[o_decoder_id(1), o_content_type("dec:response")]),
-        undecoded(1, 1, 7, 100, 139, [o_reason("undecodable"), o_decoder_id(1)]),
-        end_block(),
-    ],
-    jsonl=[
-        {
-            "type": "file",
-            "format": FORMAT,
-            "tick_hz": 1000000,
-            "produced_by": "zpf-annotate 0.2",
-            "produced_at": 1719520000,
-        },
-        {
-            "type": "source",
-            "source_id": 1,
-            "kind": "zpf-input",
-            "uri": "raw.zpf",
-            "digest": "sha256:9f2c",
-        },
-        {
-            "type": "source",
-            "source_id": 2,
-            "kind": "zpf-input",
-            "uri": "decoded.zpf",
-            "digest": "sha256:44dd",
-        },
-        {
-            "type": "decoder",
-            "decoder_id": 1,
-            "output_layer": "decoded",
-            "name": "http/1.1",
-            "version": "0.4",
-        },
-        {"type": "session", "session_id": 7, "proto": "http"},
-        {
-            "type": "participant",
-            "session_id": 7,
-            "pid": 0,
-            "endpoint": ["10.0.0.1:51000"],
-            "origin": {"source_id": 2, "session_id": 7, "pid": 0},
-        },
-        {
-            "type": "participant",
-            "session_id": 7,
-            "pid": 1,
-            "endpoint": ["93.184.216.34:80"],
-            "origin": {"source_id": 2, "session_id": 7, "pid": 1},
-        },
-        {"type": "name", "session_id": 7, "pid": 1, "label": "example.com", "kind": "tls-sni"},
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 2,
-            "ts": 1000,
-            "payload": b64(b"REQ"),
-            "decoder_id": 1,
-            "content_type": "dec:request",
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 1,
-            "source_id": 2,
-            "ts": 995,
-            "payload": b64(b"RESP"),
-            "decoder_id": 1,
-            "content_type": "dec:response",
-        },
-        {
-            "type": "undecoded",
-            "source_id": 1,
-            "session_id": 7,
-            "pid": 1,
-            "off_start": 100,
-            "off_end": 139,
-            "reason": "undecodable",
-            "decoder_id": 1,
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
-
-vector(
-    "passthrough-discontinuity",
-    "accept",
-    "A pass-through preserving a DECODED layer whose input carried a "
-    "Discontinuity. The two re-emission rules sit side by side here: the "
-    "Undecoded block is copied VERBATIM, ids and all, because its statement was "
-    "always about a file further up the chain -- while the Discontinuity is "
-    "RENUMBERED to this file's own ids, because its statement is about the "
-    "stream in the file that carries it. The input's (session 7, pid 0) becomes "
-    "this file's (session 42, pid 1), so a transform that copied the ids "
-    "verbatim produces visibly wrong output rather than accidentally-correct "
-    "output. Note the declared width of 25 is carried forward unchanged: it is "
-    "a term in the positional arithmetic, so dropping it would change the very "
-    "offsets a pass-through exists to preserve.",
-    "Discontinuity (0x22) -- pass-through re-emission",
-    [
-        file_header(options=[o_produced_by("zpf-annotate 0.2"), o_produced_at(1719610000)]),
-        source(1, 1, [o_uri("raw.zpf"), o_digest("sha256:9f2c")]),
-        source(2, 1, [o_uri("tls-records.zpf"), o_digest("sha256:8b3a")]),
-        decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
-        session(42, [o_proto("tls")]),
-        # origin maps this file's 42/1 back to the input's 7/0.
-        participant(42, 1, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
-        record(42, 1, 2, 1000, b"A" * 50, options=[o_decoder_id(1)]),
-        # Inherited: names the GRANDPARENT raw.zpf, copied verbatim.
-        undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
-        # Renumbered: names THIS file's stream, not the input's 7/0.
-        discontinuity(42, 1, [o_width(25), o_disc_reason("tls-record-lost")]),
-        record(42, 1, 2, 1100, b"B" * 30, options=[o_decoder_id(1)]),
-        end_block(),
-    ],
-    jsonl=[
-        {
-            "type": "file",
-            "format": FORMAT,
-            "tick_hz": 1000000,
-            "produced_by": "zpf-annotate 0.2",
-            "produced_at": 1719610000,
-        },
-        {
-            "type": "source",
-            "source_id": 1,
-            "kind": "zpf-input",
-            "uri": "raw.zpf",
-            "digest": "sha256:9f2c",
-        },
-        {
-            "type": "source",
-            "source_id": 2,
-            "kind": "zpf-input",
-            "uri": "tls-records.zpf",
-            "digest": "sha256:8b3a",
-        },
-        {
-            "type": "decoder",
-            "decoder_id": 1,
-            "output_layer": "decoded",
-            "name": "tls-records",
-            "version": "0.2",
-        },
-        {"type": "session", "session_id": 42, "proto": "tls"},
-        {
-            "type": "participant",
-            "session_id": 42,
-            "pid": 1,
-            "endpoint": ["10.0.0.1:51000"],
-            "origin": {"source_id": 2, "session_id": 7, "pid": 0},
-        },
-        {
-            "type": "record",
-            "session_id": 42,
-            "sender_pid": 1,
-            "source_id": 2,
-            "ts": 1000,
-            "payload": b64(b"A" * 50),
-            "decoder_id": 1,
-        },
-        {
-            "type": "undecoded",
-            "source_id": 1,
-            "session_id": 7,
-            "pid": 0,
-            "off_start": 100,
-            "off_end": 139,
-            "reason": "gap",
-            "decoder_id": 1,
-        },
-        {
-            "type": "discontinuity",
-            "session_id": 42,
-            "pid": 1,
-            "width": 25,
-            "reason": "tls-record-lost",
-        },
-        {
-            "type": "record",
-            "session_id": 42,
-            "sender_pid": 1,
-            "source_id": 2,
-            "ts": 1100,
-            "payload": b64(b"B" * 30),
-            "decoder_id": 1,
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
 
 vector(
     "broken-chain",
@@ -1854,66 +1593,22 @@ vector(
     violations=0,
 )
 
-vector(
-    "file-clock-metadata",
-    "accept",
-    "The File Header's two clock-related options, which no vector carried "
-    "before 0.14. time_epoch moves the origin, so wall time is "
-    "(time_epoch + timestamp) / tick_hz -- here 1719500000 + 1000 ticks at "
-    "1 MHz, i.e. 1719500000.001 s. SINGLE_CLOCK asserts every record in the "
-    "file was stamped against one trustworthy clock, so timestamps are "
-    "globally comparable; it is a clock assertion, NOT an ordering one.",
-    "File Header (0x01) -- file flags",
-    [
-        file_header(
-            options=[
-                o_time_epoch(1719500000000000),
-                o_file_flags(0x0001),
-                o_creator("zpf-capture 2.1"),
-            ]
-        ),
-        source(1, 0, [o_uri("c.pcap")]),
-        session(7, [o_proto("tcp")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
-        record(7, 0, 1, 1000, b"hi"),
-        end_block(),
-    ],
-    jsonl=[
-        {
-            "type": "file",
-            "format": FORMAT,
-            "tick_hz": 1000000,
-            "time_epoch": 1719500000000000,
-            "single_clock": True,
-            "creator": "zpf-capture 2.1",
-        },
-        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
-        {"type": "session", "session_id": 7, "proto": "tcp"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 1000,
-            "payload": b64(b"hi"),
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
 
 vector(
     "descriptive-metadata",
     "accept",
-    "Four optional descriptive options that no vector carried before 0.14, one "
-    "per block that defines one: link_type on a capture Source, flow_key on a "
-    "Session, identity on a Participant, ts_first on a Record. None changes "
+    "Five optional descriptive options, one per block that defines one: "
+    "time_epoch on the File Header, link_type on a capture Source, flow_key on "
+    "a Session, identity on a Participant, ts_first on a Record. None changes "
     "how anything else is read -- they project straight through, and the point "
-    "is that a converter carries them rather than dropping them.",
+    "is that a converter carries them rather than dropping them. time_epoch "
+    "arrived here in 0.19: it moves the clock ORIGIN, so wall time is "
+    "(time_epoch + timestamp) / tick_hz, and it was previously carried only by "
+    "file-clock-metadata, whose other half was the SINGLE_CLOCK flag that 0.19 "
+    "removed. The option outlived its vector.",
     "TLV option framing & id registry",
     [
-        file_header(),
+        file_header(options=[o_time_epoch(1719500000)]),
         source(1, 0, [o_uri("c.pcap"), o_link_type(1)]),
         session(7, [o_proto("tcp"), o_flow_key("10.0.0.1:51000 <-> 93.184.216.34:80")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_identity("alice@example.com")]),
@@ -1923,7 +1618,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000, "time_epoch": 1719500000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap", "link_type": 1},
         {
             "type": "session",
@@ -1978,54 +1673,6 @@ vector(
     violations=0,
 )
 
-vector(
-    "sequenced-basis",
-    "accept",
-    "A hint-less UDP session marked SEQUENCED. Because it carries no seq/ack, "
-    "sequenced_basis is mandatory and states what the order rests on.",
-    "Sequenced files (precomputed order)",
-    [
-        file_header(),
-        source(1, 0, [o_uri("chat.pcap")]),
-        session(8, [o_proto("irc"), o_sess_flags(0x0001), o_seq_basis("protocol")]),
-        participant(8, 0, [o_endpoint("alice")]),
-        participant(8, 1, [o_endpoint("bob")]),
-        record(8, 0, 1, 2000, b"hi"),
-        record(8, 1, 1, 2100, b"yo"),
-        end_block(),
-    ],
-    jsonl=[
-        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
-        {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
-        {
-            "type": "session",
-            "session_id": 8,
-            "proto": "irc",
-            "sequenced": True,
-            "sequenced_basis": "protocol",
-        },
-        {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["alice"]},
-        {"type": "participant", "session_id": 8, "pid": 1, "endpoint": ["bob"]},
-        {
-            "type": "record",
-            "session_id": 8,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 2000,
-            "payload": b64(b"hi"),
-        },
-        {
-            "type": "record",
-            "session_id": 8,
-            "sender_pid": 1,
-            "source_id": 1,
-            "ts": 2100,
-            "payload": b64(b"yo"),
-        },
-        {"type": "end"},
-    ],
-    violations=0,
-)
 
 vector(
     "reordered-decoded",
@@ -2684,11 +2331,21 @@ vector(
             options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 40)]), o_content_type("dec:request")],
         ),
         session_end(10, [o_input_extents([(1, 0, 7, 40)])]),
-        # Preserved: origin, no spans, no decoder_id -- the stage had no
-        # decoder for this protocol and re-emitted it rather than dropping it.
+        # Preserved: an IDENTITY span -- same range in as out -- and no
+        # decoder_id, the stage having had no decoder for this protocol and
+        # re-emitted it rather than dropping it. Since 0.19 that is what tells a
+        # preserved stream from a created one: not which option is present, but
+        # whether the spans are identity.
         session(11, [o_proto("smtp")]),
-        participant(11, 0, [o_endpoint("10.0.0.2:25"), o_isn(4000), o_origin(1, 0, 8)]),
-        record(11, 0, 1, 1100, b"EHLO relay", options=[o_seq_start(4001)]),
+        participant(11, 0, [o_endpoint("10.0.0.2:25"), o_isn(4000)]),
+        record(
+            11,
+            0,
+            1,
+            1100,
+            b"EHLO relay",
+            options=[o_seq_start(4001), o_spans([(1, 8, 0, 0, 10)])],
+        ),
         end_block(),
     ],
     jsonl=[
@@ -2739,7 +2396,6 @@ vector(
             "pid": 0,
             "endpoint": ["10.0.0.2:25"],
             "isn": 4000,
-            "origin": {"source_id": 1, "session_id": 8, "pid": 0},
         },
         {
             "type": "record",
@@ -2749,6 +2405,7 @@ vector(
             "ts": 1100,
             "payload": b64(b"EHLO relay"),
             "seq_start": 4001,
+            "spans": [{"source_id": 1, "session_id": 8, "pid": 0, "off_start": 0, "off_end": 10}],
         },
         {"type": "end"},
     ],
@@ -2813,6 +2470,78 @@ vector(
 )
 
 vector(
+    "sequenced-session",
+    "accept",
+    "A SEQUENCED session, which nothing else in the suite carries since 0.19 "
+    "removed the four sequencing vectors with the basis rule. A single tap that "
+    "saw both directions emits one directly, so this is capture-sourced and the "
+    "flag is the whole of what it demonstrates. Its point is that SEQUENCED does "
+    "NOT mean sorted by timestamp: pid 1's response is stored at ts 995, AFTER "
+    "pid 0's request at ts 1000 that caused it, because the causal order comes "
+    "from seq/ack and the two taps' clocks are skewed. A reader that re-sorts by "
+    "timestamp, or rejects the inversion, has undone the work the flag "
+    "announces.",
+    "Sequenced files (precomputed order)",
+    [
+        file_header(),
+        source(1, 0, [o_uri("both-directions.pcap")]),
+        session(1, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(1, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        participant(1, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+        record(1, 0, 1, 1000, b"GET /", options=[o_seq_start(1001)]),
+        record(1, 1, 1, 995, b"HTTP/1.1 200", options=[o_seq_start(5001), o_ack(1006)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "both-directions.pcap"},
+        {"type": "session", "session_id": 1, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 1,
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"GET /"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 995,
+            "payload": b64(b"HTTP/1.1 200"),
+            "seq_start": 5001,
+            "ack": 1006,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order without running the "
+    "merge -- that is what SEQUENCED licenses. The timestamps run "
+    "backwards across the two records and that is conformant: the "
+    "response is caused by the request, its ack 1006 acknowledges the "
+    "request's five bytes, and the 5 ms inversion is capture skew "
+    "between two taps. A reader that emits the response first has "
+    "reordered a causal pair.",
+    violations=0,
+)
+
+vector(
     "merge-timestamp-tie",
     "accept",
     "Two concurrent records from DIFFERENT participants bearing the SAME "
@@ -2859,23 +2588,24 @@ vector(
     violations=0,
 )
 
+
 vector(
-    "partially-hinted-sequenced",
+    "unplaceable-no-seq-start",
     "accept",
-    "A SEQUENCED session where ONE record carries seq_start and the rest carry "
-    "no hints at all. Under 0.12's definition a single hint anywhere means the "
-    "session is not hint-less, so no sequenced_basis is required -- even though "
-    "most of the order rests on timestamps. This vector pins that answer. "
-    "Since 0.18 it also carries the OTHER unplaceable shape: pid 0's second "
-    "record has no seq_start on a stream whose first record has one, so the "
-    "offset space cannot say where it belongs. 0.17 stated a placement rule for "
-    "a below-origin record and left this shape silent, and it is the commoner "
-    "of the two.",
-    "Merge algorithm -- hint-less",
+    "The COMMONER unplaceable shape, on its own: a record with no seq_start on "
+    "a stream whose earlier record has one, so the offset space cannot say "
+    "where it belongs. 0.17 stated a placement rule for a below-origin record "
+    "and left this shape silent; 0.18 stated one rule for both and pinned this "
+    "half inside partially-hinted-sequenced, which 0.19 removed with the "
+    "sequencing basis. The shape has nothing to do with SEQUENCED -- placement "
+    "keys on whether a stream is sequence-anchored, not on the flag -- so it is "
+    "carried here by an ordinary session, which is where it always belonged. "
+    "Its twin is advisory-below-origin-payload, the other shape of one rule.",
+    "Referencing the source by stream offset",
     [
         file_header(),
         source(1, 0, [o_uri("mixed.pcap")]),
-        session(9, [o_proto("udp"), o_sess_flags(0x0001)]),
+        session(9, [o_proto("udp")]),
         participant(9, 0, [o_endpoint("10.0.0.1:5000")]),
         participant(9, 1, [o_endpoint("10.0.0.2:5000")]),
         record(9, 0, 1, 3000, b"hinted", options=[o_seq_start(1001)]),
@@ -2886,7 +2616,7 @@ vector(
     jsonl=[
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "mixed.pcap"},
-        {"type": "session", "session_id": 9, "proto": "udp", "sequenced": True},
+        {"type": "session", "session_id": 9, "proto": "udp"},
         {"type": "participant", "session_id": 9, "pid": 0, "endpoint": ["10.0.0.1:5000"]},
         {"type": "participant", "session_id": 9, "pid": 1, "endpoint": ["10.0.0.2:5000"]},
         {
@@ -2918,42 +2648,19 @@ vector(
     ],
     expect="Accept. The .jsonl file is the expected projection. On placement: "
     "pid 0's first record is at [0,6) and its second carries no seq_start "
-    "on a stream whose first record has one, so it is UNPLACEABLE -- a "
-    "zero-width range at the highest off_end reached, offset 6, "
-    "contributing nothing, so the extent stays 6 and those six bytes are "
-    "in no offset at all. A reader that appended them at [6,12) is "
-    "reading an offset the file does not state. pid 1 is NOT this rule's "
-    "case: no record of that participant carries a seq_start, so its "
-    "stream is not sequence-anchored to begin with.",
+    "on a stream whose first record has one, so it is UNPLACEABLE -- it "
+    "covers no byte of the stream and contributes nothing, so the extent "
+    "stays 6 and those six bytes are in no offset at all. A reader that "
+    "appended them at [6,12) is reading an offset the file does not "
+    "state. Since 0.19 the RANGE a reader reports for the unplaceable "
+    "record is not pinned, so two readers may differ there while both "
+    "give extent 6. pid 1 is NOT this rule's case: no record of that "
+    "participant carries a seq_start, so its stream is not "
+    "sequence-anchored to begin with.",
     violations=0,
 )
 
 # --- negative: the reject tier --------------------------------------------
-
-vector(
-    "isolate-sequenced-no-basis",
-    "isolate",
-    "A hint-less session marked SEQUENCED with no sequenced_basis. Recording "
-    "the basis is unconditional -- the trivially-sound cases write `trivial` "
-    "rather than omitting it -- so this file is semantically invalid.",
-    "Sequenced files (precomputed order)",
-    [
-        file_header(),
-        source(1, 0, [o_uri("chat.pcap")]),
-        session(8, [o_proto("irc"), o_sess_flags(0x0001)]),
-        participant(8, 0, [o_endpoint("alice")]),
-        record(8, 0, 1, 2000, b"hi"),
-        end_block(),
-    ],
-    expect="MAY reject the file, or isolate the session. Note WHEN: no record "
-    "carries seq_start or ack, so the session is hint-less -- but a "
-    "reader cannot know that until Session End or end-of-stream, since "
-    "hint-lessness is a property of the records and the Session "
-    "Descriptor precedes them. A checker that raises this at the "
-    "descriptor is guessing; one that never raises it has not deferred "
-    "the check.",
-    violations=1,
-)
 
 
 vector(
@@ -3212,10 +2919,10 @@ vector(
     "DETECTION IS PARTIAL BY DESIGN: the only signal is the Source's uri, so a "
     "reader handed a PATH may compare and isolate, while a reader handed a file "
     "object -- stdin, a socket, a tar member -- cannot and is not obliged to. "
-    "Session 21 carries origin so this file's ONLY violation is the one it is "
-    "named for; through 0.15 it also had a zpf-sourced participant that was "
-    "neither created nor preserved, and a reader could pass the vector by "
-    "isolating for the wrong reason.",
+    "Session 21 carries an identity span so this file's ONLY violation is the "
+    "one it is named for; through 0.15 it also had a zpf-sourced participant "
+    "that cited nothing at all, and a reader could pass the vector by isolating "
+    "for the wrong reason.",
     "Conceptual model -- the unit is the stream, not the file",
     [
         file_header(options=[o_produced_by("zpf-decode 0.4"), o_produced_at(1719620000)]),
@@ -3223,9 +2930,17 @@ vector(
         source(1, 1, [o_uri("isolate-self-derived.zpf"), o_digest("sha256:0000")]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
         session(21, [o_proto("tcp")]),
-        # origin, so session 21 is PRESERVED rather than neither -- #92/#93.
-        participant(21, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_origin(1, 0, 21)]),
-        record(21, 0, 1, 1000, b"GET /", options=[o_seq_start(1001)]),
+        # An identity span, so session 21 is PRESERVED rather than citing
+        # nothing -- #92/#93, restated for 0.19's one-provenance-rule.
+        participant(21, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        record(
+            21,
+            0,
+            1,
+            1000,
+            b"GET /",
+            options=[o_seq_start(1001), o_spans([(1, 0, 21, 0, 5)])],
+        ),
         session(20, [o_proto("http")]),
         participant(20, 0, [o_endpoint("10.0.0.1:51000")]),
         record(
@@ -3585,112 +3300,6 @@ vector(
     violations=0,
 )
 
-vector(
-    "advisory-seq-start-below-origin",
-    "accept",
-    "A zero-length syn record whose seq_start is the isn rather than isn + 1, "
-    "which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit "
-    "below it. handshake-at-origin is the same record written correctly, and the "
-    "two are one story read from either end. This is the shape found in the wild "
-    "-- a converter writing the handshake at the isn -- and it is worth seeing "
-    "what it costs, because the "
-    "arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) "
-    "is modular, so the syn record lands at offset 4294967295 and the stream "
-    "measures 4294967295 bytes where its data ends at 12. Every coverage check "
-    "against this participant then fails for a file that is otherwise correct. "
-    "WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other "
-    "byte is exactly where it was, so the damage is bounded and the document "
-    "can say precisely what to do instead -- the record occupies a ZERO-WIDTH "
-    "range at the stream's current position (here 0, it being first), covers no "
-    "byte, and contributes nothing to the extent. Isolating the session would "
-    "discard a whole capture to fix one offset. "
-    "The manifest marks it advisory: true, so it declares 1 violation on the "
-    "ACCEPT tier.",
-    "Referencing the source by stream offset -- the origin is a floor",
-    [
-        file_header(),
-        source(1, 0, [o_uri("tcp.pcap")]),
-        session(7, [o_proto("tcp")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
-        # THE VIOLATION: the handshake record sits at the isn, one below the
-        # origin. isn + 1 is where it belongs -- the SYN consumes a sequence
-        # number but delivers no byte.
-        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1000)]),
-        # Three ordinary data records from the origin. Their offsets are
-        # [0,4) [4,8) [8,12), and the extent is 12 -- unchanged by the record
-        # above, which is the point of the zero-width rule.
-        record(7, 0, 1, 2000, b"AAAA", flags=0x0001, options=[o_seq_start(1001)]),
-        record(7, 0, 1, 3000, b"BBBB", flags=0x0001, options=[o_seq_start(1005)]),
-        record(7, 0, 1, 4000, b"CCCC", flags=0x0001, options=[o_seq_start(1009)]),
-        end_block(),
-    ],
-    jsonl=[
-        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
-        {"type": "source", "source_id": 1, "kind": "capture", "uri": "tcp.pcap"},
-        {"type": "session", "session_id": 7, "proto": "tcp"},
-        {
-            "type": "participant",
-            "session_id": 7,
-            "pid": 0,
-            "endpoint": ["10.0.0.1:51000"],
-            "isn": 1000,
-            "tcp_role": "initiator",
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 1000,
-            "flags": ["syn"],
-            "payload": "",
-            "seq_start": 1000,
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 2000,
-            "flags": ["psh"],
-            "payload": b64(b"AAAA"),
-            "seq_start": 1001,
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 3000,
-            "flags": ["psh"],
-            "payload": b64(b"BBBB"),
-            "seq_start": 1005,
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 4000,
-            "flags": ["psh"],
-            "payload": b64(b"CCCC"),
-            "seq_start": 1009,
-        },
-        {"type": "end"},
-    ],
-    expect="ACCEPT, and REPORT. Place the syn record at zero width at the "
-    "stream's current position -- offset 0 here -- so the participant's "
-    "extent is 12, the length of its data. A reader that instead computes "
-    "(1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent "
-    "to match; that is the defect this vector exists to catch, and it is "
-    "the number a real converter produced. Rejecting or isolating this "
-    "file is NOT conformant: the advisory strength is stated in "
-    "Referencing the source by stream offset. The record is not deleted -- "
-    "its timestamp, flags and payload stay readable, and only its "
-    "PLACEMENT is refused.",
-    violations=1,
-    advisory=True,
-)
 
 vector(
     "advisory-transport-role",
@@ -3792,21 +3401,18 @@ vector(
 )
 
 vector(
-    "advisory-below-origin-payload",
+    "unplaceable-below-origin",
     "accept",
-    "A below-origin record CARRYING PAYLOAD, which is the shape whose cost the "
-    "rule has to state out loud. advisory-seq-start-below-origin's offending "
-    "record is a zero-length syn, so placing it at zero width loses nothing and "
-    "a reader that instead DROPPED it would give the same answers. Here it has "
-    "eight bytes, and the two readings stop agreeing: under the rule the record "
-    "is unplaceable, occupies a zero-width range at offset 0, and its eight "
-    "bytes are outside the offset space -- excluded from the extent and from "
-    "every coverage answer this file supports -- while the record itself stays "
-    "readable, its timestamp, flags and payload intact. "
-    "THE COST IS DELIBERATE, and this vector is where a reader can see it: the "
-    "alternative is to trust the wrapped offset, which puts those bytes near "
-    "2**32 and corrupts the extent for every other record too. The shape is what "
-    "a converter with an off-by-one on isn produces for its first record.",
+    "A below-origin record CARRYING PAYLOAD: seq_start 1000 on a stream whose "
+    "origin is isn + 1 = 1001. Since 0.19 that is not a violation -- the floor "
+    "stopped being a MUST NOT when the advisory tier stopped pinning repairs -- "
+    "but the EFFECT survives and is what this vector pins: the record is "
+    "UNPLACEABLE, so it covers no byte of the stream and its eight bytes are "
+    "outside the offset space, excluded from the extent and from every coverage "
+    "answer. What 0.19 dropped is the exact range a reader reports for it; two "
+    "readers may differ there and still agree on every extent. A reader that "
+    "trusts the wrapped offset places it near 2**32 and corrupts the extent for "
+    "every other record, which is the reading this vector exists to fail.",
     "Referencing the source by stream offset -- unplaceable records",
     [
         file_header(),
@@ -3875,8 +3481,7 @@ vector(
     "and reports an extent to match, the other drops it and reports two "
     "records where the file has three. Rejecting or isolating is NOT "
     "conformant.",
-    violations=1,
-    advisory=True,
+    violations=0,
 )
 
 vector(
@@ -4263,19 +3868,45 @@ def build_chain() -> None:
         source(2, 1, [o_uri("decoded.zpf"), o_digest(dec_dg)]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
         session(7, [o_proto("http")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_origin(2, 0, 7)]),
-        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_origin(2, 1, 7)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
         name_block(7, 1, [o_label("example.com"), o_name_kind("tls-sni")]),
-        record(7, 0, 2, 1000, DEC_REQ, options=[o_decoder_id(1), o_content_type("dec:request")]),
-        record(7, 1, 2, 1100, DEC_RESP, options=[o_decoder_id(1), o_content_type("dec:response")]),
+        # Identity spans: same range in as out, which is what a pass-through's
+        # provenance looks like since 0.19.
+        record(
+            7,
+            0,
+            2,
+            1000,
+            DEC_REQ,
+            options=[
+                o_decoder_id(1),
+                o_spans([(2, 0, 7, 0, len(DEC_REQ))]),
+                o_content_type("dec:request"),
+            ],
+        ),
+        record(
+            7,
+            1,
+            2,
+            1100,
+            DEC_RESP,
+            options=[
+                o_decoder_id(1),
+                o_spans([(2, 1, 7, 0, len(DEC_RESP))]),
+                o_content_type("dec:response"),
+            ],
+        ),
         undecoded(1, 1, 7, 16, 20, [o_reason("undecodable"), o_decoder_id(1)]),
         end_block(),
     ]
     chain_file(
         "annotated",
         "A pass-through preserving decoded.zpf's layer, adding only a "
-        "label. Records carry no spans; the inherited Undecoded block "
-        "still names raw.zpf, so raw.zpf is declared too.",
+        "label. Its records carry IDENTITY spans -- the same range in as out, "
+        "which is how a preserved stream states its provenance since 0.19 -- "
+        "and the inherited Undecoded block still names raw.zpf, so raw.zpf is "
+        "declared too.",
         ann_blocks,
         [
             {
@@ -4312,14 +3943,12 @@ def build_chain() -> None:
                 "session_id": 7,
                 "pid": 0,
                 "endpoint": ["10.0.0.1:51000"],
-                "origin": {"source_id": 2, "session_id": 7, "pid": 0},
             },
             {
                 "type": "participant",
                 "session_id": 7,
                 "pid": 1,
                 "endpoint": ["93.184.216.34:80"],
-                "origin": {"source_id": 2, "session_id": 7, "pid": 1},
             },
             {"type": "name", "session_id": 7, "pid": 1, "label": "example.com", "kind": "tls-sni"},
             {
@@ -4330,6 +3959,15 @@ def build_chain() -> None:
                 "ts": 1000,
                 "payload": b64(DEC_REQ),
                 "decoder_id": 1,
+                "spans": [
+                    {
+                        "source_id": 2,
+                        "session_id": 7,
+                        "pid": 0,
+                        "off_start": 0,
+                        "off_end": len(DEC_REQ),
+                    },
+                ],
                 "content_type": "dec:request",
             },
             {
@@ -4340,6 +3978,15 @@ def build_chain() -> None:
                 "ts": 1100,
                 "payload": b64(DEC_RESP),
                 "decoder_id": 1,
+                "spans": [
+                    {
+                        "source_id": 2,
+                        "session_id": 7,
+                        "pid": 1,
+                        "off_start": 0,
+                        "off_end": len(DEC_RESP),
+                    },
+                ],
                 "content_type": "dec:response",
             },
             {

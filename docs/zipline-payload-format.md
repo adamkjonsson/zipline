@@ -1,6 +1,6 @@
-# Zipline Payload Format (v0.18)
+# Zipline Payload Format (v0.19)
 
-> Status: **version 0.18** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.19** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
@@ -30,18 +30,35 @@
 > needed to consume them. The format is tool-independent — any program can read or
 > write it.
 
-**Terminology.** The **producer** (a *sessionizer*) writes a `.zpf`; a
-**consumer** (or *reader*) reads one. Two producer stages are named where the
-distinction matters. The **reassembler** turns each direction's raw TCP segment
-stream — out-of-order, retransmitted, overlapping — into one clean, in-order byte
-stream; the **writer** emits that result as blocks. Reassembly always completes
-*before* a record is written, so a `.zpf` holds the reassembled bytes, never raw
-retransmits (see [Caveats](#caveats)). A **transform** is a separate, later stage
-that derives a new `.zpf` from one or more existing ones. This spec defines two:
-the **decoder**, which derives a decoded stream from a transport one (see
-[Layers](#layers-transport-and-decoded-live-in-separate-streams)), and the **merge**,
-which combines separately-captured directions into one sequenced `.zpf` (see
-[Sequenced files](#sequenced-files-precomputed-order)).
+## Terminology
+
+The **producer** (a *sessionizer*) writes a `.zpf`; a
+**consumer** (or *reader*) reads one. The **reassembler** turns each direction's
+raw TCP segment stream — out-of-order, retransmitted, overlapping — into one
+clean, in-order byte stream; the **writer** emits that result as blocks.
+Reassembly always completes *before* a record is written, so a `.zpf` holds the
+reassembled bytes, never raw retransmits (see [Caveats](#caveats)).
+
+A **transform** is a stage that derives a new `.zpf` from one or more existing
+ones — always file to file, never a layer inside a record. Every transform either
+**creates** a layer or **preserves** one, and those are its two kinds: the
+**decode stage** and the **pass-through**, both stated in
+[Conformance](#conformance). A merge, an annotator, a filter and a sessionization
+stage are each one or the other.
+
+A **decoder** is the identity a `decoder_id` resolves to — a name, a version, and
+the parameters it ran with — declaring the layer its output is in (see
+[Decoder Descriptor](#decoder-descriptor-which-decoding)). It is not a stage, and
+the two are independent: a decode stage may run no decoder of its own and inherit
+its input's instead.
+
+A decoder **frames**, **recodes**, or does both. *Framing* gives bytes structure,
+cutting them into units with edges and a type. *Recoding* changes the bytes and
+adds no structure — decompressing, decrypting. Reassembly recodes: it is a decoder
+because what it did is worth recording, not because it produced units. The words
+are used in that sense throughout; **decoded** always names a
+[layer](#layers-transport-and-decoded-live-in-separate-streams), never a synonym
+for *derived*.
 
 ## Goals
 
@@ -264,7 +281,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -380,31 +397,20 @@ participant's own records keep their stored order, and a timestamp that runs
 backwards within one participant changes nothing. The merge is *stable* with
 respect to stored order.
 
-**Hint-less**, used throughout this document, means: **a session in which no
+**Hint-less**, used where the distinction matters, means: **a session in which no
 record carries `seq_start` or `ack`.** A single such hint anywhere in the session
 yields causal edges, so the session is not hint-less. Chat rooms and one-way UDP
 feeds are the usual examples; a TCP session is hint-less only if its writer
-recorded no sequence numbers at all.
-
-Note what this is a property of: the session's **records**, not its Session
-Descriptor. Because [declare-on-first-use](#declaration-order-declare-on-first-use)
-places the descriptor before them, a reader cannot decide it when the session is
-declared — only at [Session End](#session-end-0x12) or end-of-stream. Any check
-that depends on it defers to that point, which costs one boolean per open session
-and composes with the state a reader already keeps.
+recorded no sequence numbers at all. It is a property of the session's
+**records**, not of its Session Descriptor, and no rule in this document turns on
+it — it is a description, not a test.
 
 **A producer computing a sequenced order MAY choose a different tie-break** —
 round-robin, source order, anything deterministic — if it knows the clocks are
 unreliable. That choice belongs to the producer, which knows how the capture was
 taken; the stored order is authoritative however it was reached, and a reader
-never re-derives it. On a **hint-less** session the producer records what the
-order rests on in
-[`sequenced_basis`](#sequenced-files-precomputed-order); on a session with hints
-there is nothing to record, since the causal edges already account for the order
-and only genuinely concurrent records reach the tie-break at all. A **reader** cannot make
-it: skew is not a property a file asserts, and the absence of
-[`SINGLE_CLOCK`](#file-header-0x01) says nothing either way. So a reader
-breaking ties always uses the timestamp.
+never re-derives it. A **reader** cannot make that choice: skew is not a property
+a file asserts. So a reader breaking ties always uses the timestamp.
 
 **Cost, and why a reader rarely pays it in full.** Stated naively, step 2 is
 O(N·M) per session — every record weighed against every peer record — plus the
@@ -468,7 +474,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -519,9 +525,8 @@ one correct answer*, not that it is the only one.
 **A [sessionization stage's](#conformance) output sequences and merges like any
 other transport stream**, and this is worth stating because its records carry a
 `decoder_id` and might be mistaken for a decoded stream's. They carry `seq_start`
-and `ack` exactly as a capture's do, so such a session is **not hint-less**, needs
-no `sequenced_basis`, and its causal order comes from the hints rather than from
-timestamps. Merging two of them is the ordinary two-direction merge: the merge
+and `ack` exactly as a capture's do, so its causal order comes from the hints
+rather than from timestamps. Merging two of them is the ordinary two-direction merge: the merge
 preserves the transport layer, carries the hints forward, and carries the
 reassembler's `decoder_id` and its Decoder Descriptor forward with them.
 
@@ -555,7 +560,7 @@ participant's `origin` mapping is required — and stores the two records in
 causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -583,99 +588,30 @@ so the frontiers are totally ordered and every reader of the same file computes
 the same interleaving. A producer that bakes the order in saves each reader the
 work; it does not change the answer.
 
-**What a sequenced session rests on.** A session's causal order comes from
-whatever ordering hints its records carry. A **TCP** session has `seq`/`ack`, so
-its sequenced order is clock-independent — sound regardless of capture skew. A
-session **without** such hints (a chat room, a one-way UDP feed) has no causal
-edges, so its order is purely the timestamp tie-break (non-decreasing
-`timestamp`, ties resolved by the producer's fixed rule, e.g. source/pid order).
-That is a *sound* order only when all the session's records share **one
-trustworthy clock** — the normal case when a single observer (one chat server,
-one receiver) saw the whole session.
+**What a sequenced session rests on is the producer's affair.** `SEQUENCED`
+asserts that the stored order is a valid causal order, and a reader takes that as
+given — the same trust it already extends to the order itself, which it cannot
+check either. Where the records carry `seq`/`ack` the order is derived from them
+and is sound however badly the capture clocks disagree. Where they do not, the
+producer is relying on something this format does not model: one trustworthy
+clock, an application-layer sequence, an order known out of band. The file states
+the order, not the reasoning behind it.
 
-A producer therefore **MUST NOT** mark a hint-less session `SEQUENCED` unless it
-has a **sound basis** for the order it stores. A single trustworthy clock is the
-common basis, but not the only one: a producer may hold ordering knowledge this
-format does not model — a chat server that assigns its own total order, an
-application-layer sequence number, an ordering recorded out of band. Two cases
-meet the soundness bar **trivially**: a session with **one participant** (a
-one-way UDP feed), and one where **only one participant ever sends**, since
-neither has a cross-participant order to get wrong.
+Where that reasoning matters — records in an order that makes no sense — it is
+recovered the way any producer decision is, from the build provenance of the file
+that set the flag: `produced_by`, `produced_at` and
+[`transform_params_digest`](#file-header-0x01), which is where a merge's ordering
+key lives. Walking [`zpf-input`](#source-descriptor-which-input) Sources back to
+the first file marking the session finds it.
 
-Trivially sound is still a basis, and it is still recorded. The producer owns
-the soundness of its claim and a reader cannot check it, so the producer
-**MUST** say what the claim rests on — including when the answer is "nothing to
-get wrong". See [`sequenced_basis`](#tlv-option-framing--id-registry) below.
-
-**The basis requirement applies to hint-less sessions only.** A session *with*
-causal hints has **no** timestamp requirement whatsoever: its sequenced order is
-derived from `seq`/`ack`, so it is sound however badly the capture clocks
-disagree, and its stored records may freely run backwards in time. That is not a
+**Sequencing never means "sorted by timestamp."** It means stored in a valid
+causal order, and a session with causal hints has **no** timestamp requirement
+whatsoever: its stored records may freely run backwards in time. That is not a
 tolerated edge case but the central one — the
-[worked example](#worked-example-a-skewed-two-file-capture) sequences exactly
-such a pair, storing a record stamped `ts 995` *after* the one at `ts 1000` that
-causes it. Sequencing never means "sorted by timestamp"; it means "stored in a
-valid causal order", and only a hint-less session is reduced to using timestamps
-to find one.
-
-**Recording the basis.** A producer that sets `SEQUENCED` on a hint-less session
-**MUST** also set **`sequenced_basis`** (string, Session Descriptor), saying what
-the order rests on. The vocabulary is open; the defined values are:
-
-| Value      | The order rests on                                                  |
-|------------|---------------------------------------------------------------------|
-| `clock`    | one trustworthy clock shared by every record — the `SINGLE_CLOCK` case |
-| `protocol` | ordering carried by the application protocol itself, e.g. a server-assigned sequence |
-| `external` | an order the producer knows out of band, recorded nowhere in the file |
-| `trivial`  | nothing to get wrong — one participant, or only one that ever sends |
-
-**Recording is unconditional; soundness may be trivial.** These are two
-requirements and they are easy to conflate. A hint-less `SEQUENCED` session
-always carries `sequenced_basis`, whatever the order rests on; `trivial` is what
-a producer writes when the answer is that there was never anything to get wrong.
-
-A producer that cannot justify triviality yet simply is not relying on it, and
-records the basis it *is* relying on. A producer relying on transport hints
-expects them and writes no basis; one relying on anything else writes that. The
-reader, which cannot see the producer's reasoning, is the side that must wait
-until Session End to conclude the session was hint-less at all.
-
-The requirement is on the producer, not the consumer: a reader **MUST NOT**
-reject a session for an unrecognised value, and a value it does not know simply
-means an unknown basis.
-
-**What the field is for.** Mostly *not* something a consumer branches on — it is
-an explanation kept for when something turns out to be wrong, in the same family
-as `creator`, `produced_by` and `params_digest`. Records in an order that makes
-no sense are a different investigation depending on whether the producer claimed
-`clock` (look at capture skew), `protocol` (look at the producer's protocol
-assumptions) or `external` (look outside the file entirely).
-
-There is one mechanical check it enables. A hint-less session claiming
-`basis = clock` in a file that draws on several `capture` Sources and does **not**
-set [`SINGLE_CLOCK`](#file-header-0x01) is self-contradictory: the session asserts
-one trustworthy clock while the file declines to. A consumer MAY report that, and
-`clock` being the common basis makes it worth checking.
-
-**File-level `SINGLE_CLOCK`.** That clock precondition has a file-wide form, the
-`SINGLE_CLOCK` flag on the [File Header](#file-header-0x01): it asserts that
-*every record in the file was stamped against one trustworthy clock*, so
-timestamps are globally comparable across sessions and sources (no inter-source
-skew). Its value is forward-looking. A capture-sourced writer often cannot tell
-that a handful of one-way UDP streams are really one `N`-party session (the `N=5`
-case), so it emits them as separate, unsequenced streams — it can commit no
-cross-stream order. But it *can* honestly assert `SINGLE_CLOCK` if it was a single
-capture point, and a later decoder that regroups those streams into one session
-can then rely on the bit to sequence the regrouped session by timestamp soundly.
-`SINGLE_CLOCK` set also satisfies the per-session clock requirement above for
-every hint-less session in the file.
-
-The two flags are independent. A **merged two-tap TCP file** carries per-session
-`SEQUENCED` but **not** `SINGLE_CLOCK` (it used seq/ack precisely because the
-clocks were skewed); a **single-tap UDP capture** carries `SINGLE_CLOCK` but its
-sessions are **not** yet `SEQUENCED` (no writer has committed an order). A reader
-that wants "is this whole file already ordered?" simply ANDs the `SEQUENCED` bits
-of the sessions it sees.
+[worked example](#worked-example-a-skewed-two-file-capture) sequences exactly such
+a pair, storing a record stamped `ts 995` *after* the one at `ts 1000` that causes
+it. A reader that re-sorts a sequenced session by timestamp has undone the work
+the flag announces.
 
 ## Layers: transport and decoded live in separate streams
 
@@ -736,23 +672,6 @@ transform*'s, never half of each — and the discriminator binds **per
 participant**, so one file MAY hold a created stream beside a preserved one (see
 [Conformance](#conformance), which states the test).
 
-**Transforms that change no data.** A tool that only *adds* something — a
-[label](#nameidentity-resolution-0x30), a `comment`, a session-level annotation —
-is a pass-through transform as well: it alters no bytes and no offsets, so it
-preserves whatever layer its input was at, and the merge's rules already cover
-it. Two consequences are worth spelling out, since neither is obvious:
-
-- Its output is a **derived** file, not a copy of its input. Annotating a
-  *capture-sourced* file yields a file whose records reference a `zpf-input`
-  Source, so
-  capture-level provenance — `link_type`, the capture's `uri`/`digest` — now sits
-  one level away, reached through that Source instead of directly. Nothing is
-  lost; it is read one hop further down, as with any derivation.
-- Because a pass-through preserves the *layer* rather than the file kind, an
-  annotator works at any stage. Annotating a decode stage's output yields a
-  pass-through file carrying the decoded layer forward: same records, same
-  `decoder_id`s, same Undecoded blocks, plus the annotation.
-
 ### Referencing the source by stream offset
 
 The crux of the "2.5 records" problem: a decoded record points at **byte ranges
@@ -796,72 +715,32 @@ handshake and the first captured byte are the leading hole `[0, K)`
 is no room below the first captured byte, so a pre-first-byte loss simply is not
 representable — one more reason `isn` is mandatory once the handshake is seen.
 
-**The origin is a floor: a record's `seq_start` MUST NOT precede it.** The origin
-is `isn + 1` where the participant carries an `isn`, and the first captured byte
-otherwise. Everything above measures from it — the leading hole is
-`first seq_start − (isn + 1)`, and a record's offset is `seq_start − (isn + 1)` —
-so a record below the origin has a negative offset in a space with none, and the
-modular subtraction does not report that. It returns a number just under 2³²
-instead: one zero-length record at `isn` rather than `isn + 1` puts that record at
-offset 4294967295 and makes the stream measure 4294967295 bytes, whatever its data
-actually spans.
+**A record below the origin covers no byte of the stream.** The origin is
+`isn + 1` where the participant carries an `isn`, and the first captured byte
+otherwise; everything above measures from it. A record whose `seq_start` precedes
+the origin therefore has a negative offset in a space that has none, and the
+modular subtraction does not report that — it returns a number just under 2³²,
+which would make the stream measure 4294967295 bytes whatever its data actually
+spans.
 
-**The floor binds meaningfully only on an `isn`-anchored participant.** Without an
-`isn` the origin *is* the first record's `seq_start`, and the ordering MUST stores
-that record first, so nothing can precede it and the rule cannot be violated. It
-is stated for both cases anyway, because the rule is about the origin rather than
-about `isn` — but an implementer who writes the check and cannot make it fire on
-an unanchored stream should know the rule is unreachable there by construction,
-not that they have misread the origin.
+Such a record is **unplaceable**, and so is one carrying **no `seq_start`** on a
+stream whose other records carry them. An unplaceable record contributes nothing
+to the extent and covers no byte of the stream, whatever range a reader reports
+for it. A reader accepts the file and SHOULD report the record; where this
+document once pinned the exact range, it now does not, so two readers may report
+different ranges for the same unplaceable record while agreeing on every extent
+and every other record.
 
-**Unplaceable records, and where they go.** A record is **unplaceable** when this
-offset space cannot say where it belongs. Two shapes are: one whose `seq_start`
-precedes the origin, and one carrying **no `seq_start`** on a stream whose other
-records carry them. A reader **MUST** treat an unplaceable record as occupying a
-**zero-width range at the highest `off_end` any earlier record of that participant
-reached** — `0` where there is none — contributing nothing to the extent and
-covering no byte of the stream. A reader **MUST NOT** place a below-origin record
-at the wrapped offset the arithmetic yields.
+Zero width is not *deletion* — the record's `timestamp`, `flags` and payload
+remain readable, and a consumer indexing by anything other than offset still sees
+it. Where such a record carries payload those bytes are excluded from the extent
+and from every coverage answer the file supports, which is the price of not
+trusting the wrapped offset.
 
-The position is a **running maximum** rather than "where the previous record
-ended", and the two differ: records within a participant may overlap — the
-favor-old policy exists for exactly that — so the record stored last is not always
-the one that reached furthest. A run of unplaceable records is well defined by the same
-sentence: each contributes nothing, so each sits where the last placed record
-left off.
-
-**Violating the floor is advisory, not isolating**, the treatment
-[`content_type` at the transport layer](#typing-a-decoded-record) gets: the reader
-**accepts the file**, applies the rule above, and SHOULD report. This is the
-specific rule for this violation, in the sense [Conformance](#conformance) gives
-that phrase, and it binds instead of the general licence to isolate. The reason is
-the reason that licence exists — isolation is for damage a reader cannot bound,
-and here it can: one record is unplaceable and every other byte of the stream is
-exactly where it was. A reader that discarded the session over it would lose the
-whole capture to fix one offset, and two readers taking different options would
-disagree about the stream, which is what this rule exists to stop.
-
-Zero width is not *deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
-consumer indexing by anything other than offset still sees it.
-
-**Where such a record carries payload, this costs bytes, and the cost is
-deliberate.** A handshake record written one below the origin is zero-length and
-loses nothing. A converter with an off-by-one on `isn` instead produces a
-below-origin record *with a payload*, and those bytes are then excluded from the
-extent and from every coverage answer the file supports: they are not in the
-offset space at all. The alternative is to trust the wrapped offset, which places
-them near 2³² and corrupts the extent for every other record too — so the bytes
-are kept and only their **placement** is refused. "Data must never vanish
-silently" is discharged by the SHOULD-report and by the record remaining readable,
-not by pretending it was placed.
-
-**The floor is decidable only within the serial-arithmetic half-space.** The
+The floor is only decidable within the serial-arithmetic half-space: the
 comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
 `seq_start` comparison uses, so a `seq_start` more than 2³¹ below the origin is
-indistinguishable from one above it and no checker can raise it. That is a
-property of the sequence space, not a gap in this rule: the same limit governs
-record ordering and every `ack` edge, and it is far beyond any distance real
-traffic travels.
+indistinguishable from one above it.
 
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
@@ -977,9 +856,11 @@ predecessor changes. It is `source → object` with a Makefile dependency, not a
 
 ### Decoder Descriptor (which decoding)
 
-The decoder is a first-class, referenceable entity: a `decoder_id` (referenced
-per-record), a `name` (e.g. `http/1.1`), a `version`, and a `params_digest` (hash
-of the decoder config, so the decode is reproducible).
+The decoder is a first-class, referenceable **identity**: a `decoder_id`
+(referenced per-record), a `name` (e.g. `http/1.1`), a `version`, a
+`params_digest` (hash of the decoder config, so the decode is reproducible), and
+an `output_layer` naming the layer its output is in. It is not the stage that ran
+it, in the sense [Terminology](#terminology) gives both words.
 
 Every record produced by a decoder carries an **explicit** `decoder_id` — there is
 no implicit "primary" default. Its presence names the decoder; what **layer** the
@@ -999,12 +880,12 @@ without the key should expect none.
 
 ### Typing a decoded record
 
-A decoder **frames, and may transform**. Framing is the common case — assembling
-raw bytes into one logical unit and marking its edges — but it is not the
-definition: a decoder MAY emit bytes that do not appear in its input, and in a
-different quantity. Decompressing a `Content-Encoding: gzip` body, decrypting a
-TLS record, and expanding an HPACK header block all produce output that exists
-nowhere upstream. What a record's `spans` name is therefore the input region the
+A decoder **frames, recodes, or does both** ([Terminology](#terminology)).
+Framing is the common case — assembling raw bytes into one logical unit and
+marking its edges — but it is not the definition: a decoder MAY emit bytes that do
+not appear in its input, and in a different quantity. Decompressing a
+`Content-Encoding: gzip` body, decrypting a TLS record, and expanding an HPACK
+header block all **recode**, producing output that exists nowhere upstream. What a record's `spans` name is therefore the input region the
 unit **corresponds to**, not a region holding the same bytes (see
 [`spans`](#tlv-option-framing--id-registry)).
 
@@ -1083,16 +964,10 @@ neutralise; labelling an arbitrary window `prim:bytes` asserts it is a unit when
 is a slice. It would also type identical bytes differently by provenance, since a
 capture-sourced reassembler declaring itself is only a SHOULD.
 
-**Violating this is advisory, not isolating** — a deliberately unusual strength
-for a MUST NOT, which this document gives only where it can say exactly what a
-reader does instead (the [origin floor](#referencing-the-source-by-stream-offset)
-is the other). Dropping the label loses nothing and the record stays
-fully readable, so there is no unit a reader could soundly discard and nothing it
-would gain by discarding one — the treatment `tcp_role` gets, not the one an
-`origin` on a capture-sourced stream gets. A reader meeting one **MUST ignore the
-label** and SHOULD report it; what it MUST NOT do is take the label as evidence
-that the stream is decoded after all, which would put every later offset in that
-participant in the wrong space.
+**Violating this is advisory, not isolating.** Dropping the label loses nothing
+and the record stays fully readable, so there is no unit a reader could soundly
+discard and nothing it would gain by discarding one — the treatment `tcp_role`
+gets. A reader meeting one **MUST ignore the label** and SHOULD report it.
 
 Absent already says the right thing, and says something new here: the fallback is
 the decoder `name`, so a consumer that used to report nothing about how a stream
@@ -1147,7 +1022,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1169,74 +1044,6 @@ equal to the output's here — not copying them):
 {"type":"undecoded","source_id":1,"session_id":7,"pid":1,
  "off_start":100,"off_end":139,"reason":"undecodable","decoder_id":1}
 ```
-
-### Annotating a decoded file
-
-The subtler pass-through: a tool that adds a label to the decoded file above and
-changes nothing else. It is a **pass-through transform preserving a decoded
-layer** — records keep their `decoder_id`, `content_type` and `role` but carry no
-`spans` of their own, provenance is the participants' `origin`, and the Undecoded
-block rides along unchanged.
-
-Note the two Sources. `decoded.zpf` is the immediate input, which `origin` names
-and the records reference. `transport.zpf` is declared as well — not as a second input,
-but because the inherited `undecoded` line has always been a statement about
-`transport.zpf`'s stream, and it must keep resolving there. Numbering it as it was in
-the input lets the block be copied verbatim:
-
-```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
- "produced_by":"zpf-annotate 0.2","produced_at":1719520000}
-{"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
- "digest":"sha256:9f2c…"}
-{"type":"source","source_id":2,"kind":"zpf-input","uri":"decoded.zpf",
- "digest":"sha256:44dd…"}
-{"type":"decoder","decoder_id":1,"output_layer":"decoded","name":"http/1.1","version":"0.4",
- "params_digest":"sha256:00ab…"}
-
-{"type":"session","session_id":7,"proto":"http"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"],
- "origin":{"source_id":2,"session_id":7,"pid":0}}
-{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"],
- "origin":{"source_id":2,"session_id":7,"pid":1}}
-
-{"type":"name","session_id":7,"pid":1,"label":"example.com","kind":"tls-sni"}
-
-{"type":"record","session_id":7,"sender_pid":0,"source_id":2,"ts":1000,
- "decoder_id":1,"content_type":"dec:request","payload":"…decoded request…"}
-{"type":"record","session_id":7,"sender_pid":1,"source_id":2,"ts":995,
- "decoder_id":1,"content_type":"dec:response","payload":"…decoded response…"}
-{"type":"undecoded","source_id":1,"session_id":7,"pid":1,
- "off_start":100,"off_end":139,"reason":"undecodable","decoder_id":1}
-```
-
-The `name` line is the whole point of the transform, and it is the only line the
-input did not already have. Had the same tool annotated `transport.zpf` instead, the
-result would look like the merge's output: a pass-through preserving a
-*transport* layer, with byte-run records, no `decoder_id`s, and no Undecoded
-blocks.
-
-**Records and inherited Undecoded blocks resolve differently here, and the
-difference is easy to misread.** `transport.zpf` is declared in this file, which makes
-it look as though the records relate to it. They do not:
-
-- The **`undecoded` line names `transport.zpf` directly** and resolves in **one hop**.
-  Its offsets have always been in `transport.zpf`'s stream, which is why that Source
-  must be declared at all.
-- A **record** resolves through the **immediate** input. It carries `source_id 2`
-  (`decoded.zpf`) and no `spans`, so a consumer takes its participant's `origin`
-  to the corresponding stream in `decoded.zpf`, computes the record's
-  [positional range](#referencing-the-source-by-stream-offset) — offsets are
-  preserved, so it is the same range there — and reads the `spans` on the record
-  it finds, which name `transport.zpf`. Two hops, and **this file alone cannot say
-  which transport bytes a record came from**.
-
-That asymmetry is deliberate. `spans` is the discriminator between a stage that
-*built* a record and one that *re-emitted* it (see [Conformance](#conformance)),
-so a pass-through cannot carry its input's spans forward without destroying the
-test that tells the two apart. The Undecoded block is exempt because it is not
-provenance for anything this file produced — it is a statement *about* `transport.zpf`,
-carried along intact.
 
 ### Worked example: a decrypted tunnel
 
@@ -1280,7 +1087,7 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.18","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
@@ -1526,15 +1333,6 @@ digest on; a capture-sourced file has no such stage. The `produced_by` and
 `produced_at` options are different and are **not** restricted this way — every
 file was produced by something, and a capture-sourced file may name it.
 
-**File flags.** The `flags` option is a u16 bitfield of file-level assertions;
-when absent, every bit is 0. Bit `0x0001` (**SINGLE_CLOCK**) asserts that every
-record in the file was stamped against one trustworthy clock, so timestamps are
-globally comparable across all sessions and sources with no inter-source skew
-(see [Sequenced files](#sequenced-files-precomputed-order)). It is a clock
-assertion, *not* an ordering one — per-record/per-session ordering is the
-Session Descriptor `SEQUENCED` flag. All other bits are reserved, MUST be written
-0, and MUST be ignored on read.
-
 ### Descriptor blocks
 
 Each fixed body ends with a `_reserved: u16` (0) where needed to round it to a
@@ -1613,9 +1411,8 @@ stream with no predecessor it is not vacuous.
 | `session_id` | u64  | id referenced by participants and records |
 
 Options: `proto` (string; see below), `flow_key` (string), `flags` (u16,
-session-level flags; see below), `sequenced_basis` (string; see
-[Sequenced files](#sequenced-files-precomputed-order)), `external_session_id`
-(bytes; see below), `comment`.
+session-level flags; see below), `external_session_id` (bytes; see below),
+`comment`.
 
 **`external_session_id` — what the rest of the world calls this conversation.**
 `session_id` and this option answer different questions, and reaching for the
@@ -1668,7 +1465,7 @@ MUST be written 0, and MUST be ignored on read.
 
 Options: `endpoint` (string, **may repeat** — see below), `isn` (u32, the SYN's
 TCP sequence number — see below), `tcp_role` (u8, see enums), `identity`
-(string), `origin` (packed, pass-through files only — see below), `comment`.
+(string), `comment`.
 
 `tcp_role` records, **when the handshake was observed**, which side opened the
 connection: the participant that sent the initial SYN is the *initiator* (active
@@ -1710,22 +1507,6 @@ common forms like this:
 This is a naming convention, not a grammar: it buys byte-equality for the
 common cases, and a reader MUST NOT reject an endpoint it cannot parse —
 unrecognized forms are opaque labels.
-
-**`origin` (pass-through files).** In a pass-through derived file (see
-[Conformance](#conformance)), every participant MUST carry exactly one `origin`
-option naming the input stream it re-emits: a packed
-`source_id: u16, pid: u16, session_id: u64` (12 bytes; the u16s lead so
-`session_id` stays 4-byte aligned, exactly as in a `spans` entry). `source_id`
-references a `zpf-input` Source declared in *this* file; `session_id`/`pid` are
-read in **that source's id namespace**, exactly as a span's are. Because a
-pass-through transform preserves each stream's bytes and logical offsets,
-`origin` is the entire stream-level provenance — pass-through records carry no
-`spans`. `origin` MUST NOT appear on a capture-sourced stream, which is not a
-re-emission of anything.
-
-`origin` names the transform's **immediate** input, never a grandparent. Chained
-pass-throughs therefore chain their provenance: a consumer walks one level at a
-time, exactly as it does for `spans`.
 
 #### Session End (`0x12`)
 
@@ -1918,16 +1699,10 @@ the [floor rule](#referencing-the-source-by-stream-offset) — the SYN consumes 
 sequence number but delivers no byte, which is exactly why the origin is `isn + 1`
 and not `isn`.
 
-**Violating this is advisory wherever the record sits**, which is one strength for
-the whole MUST rather than one for each side of it. *Below* the origin the record
-is unplaceable and the floor rule places it. *Above* the origin — `isn + 7`, say —
-it is placeable and ordinary arithmetic places it: a zero-length record a few bytes
-up, covering nothing. Either way a reader **accepts the file**, places the record,
-and SHOULD report; what it loses is the handshake's timing and nothing else, and
-the origin it might have been tempted to re-derive is fixed by `isn` rather than by
-this record. Isolating over a misplaced zero-length record would be the strength
-inverted — discarding a session for the mild shape while the shape that wrecks the
-whole offset space is accepted and repaired.
+**Violating this is advisory wherever the record sits.** A reader accepts the
+file and SHOULD report; what it loses is the handshake's timing and nothing else,
+and the origin it might have been tempted to re-derive is fixed by `isn` rather
+than by this record.
 
 Two neighbouring shapes follow from the same reasoning. A `syn`-flagged record
 carrying **no** `seq_start` is unplaceable like any other and placed by the same
@@ -2018,7 +1793,7 @@ Either way the bytes are not in *this* file. What the class promises is the byte
 **of the region the span names**, in the file it names them in — one level down.
 That is exact for an Undecoded block, whose region was by definition not decoded.
 Following a *record's* `spans` is a weaker thing, because a decoder may have
-transformed: it yields the input region the record corresponds to, which is the
+**recoded**: it yields the input region the record corresponds to, which is the
 provenance of the record's bytes rather than a second copy of them. See
 [Recovering the bytes](#undecoded-0x21) below.
 
@@ -2069,9 +1844,9 @@ referenced span is itself Undecoded in `source_id`, it recurses — until it rea
 the capture-sourced file that holds the bytes of the region it arrived at.
 
 **Those need not be the bytes it set out to find.** Each hop the walk crosses a
-*transforming* decode stage, what it recovers is the corresponding input, not the
-same content in another file: chasing a plaintext HTTP region down through a TLS
-stage reaches ciphertext, and through a gzip stage, compressed bytes. That is the
+stage whose decoder **recoded**, what it recovers is the corresponding input, not
+the same content in another file: chasing a plaintext HTTP region down through a
+TLS stage reaches ciphertext, and through a gzip stage, compressed bytes. That is the
 honest answer — the plaintext exists nowhere upstream, and re-deriving it means
 re-running the stage, which needs its `params_digest` config and, for a key-gated
 stage, its key. A consumer that reports the recovered bytes as the region's
@@ -2202,7 +1977,7 @@ every record header, nonce and tag accounted for without decoding them, and its
 plaintext joins perfectly, so a rule keyed on unspanned input bytes would demand a
 block that says something false. Not `spans` adjacency either — `spans` assert
 [correspondence, not identity](#tlv-option-framing--id-registry), so a
-transforming decoder's spans need not abut where its output is continuous, and
+**recoding** decoder's spans need not abut where its output is continuous, and
 they may legally overlap or run downward. The question is only whether content
 that belonged between these two units failed to reach the output, or was never
 between them at all.
@@ -2428,7 +2203,6 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0011` | creator          | string     | File Header              | tool + version that wrote the file                             |
 | `0x0012` | produced_by      | string     | File Header              | tool + version that wrote this file. **Required** of a file holding a `zpf`-sourced stream; permitted on any file, including a capture-sourced one — a writer exists either way |
 | `0x0013` | produced_at      | i64        | File Header              | wall-clock build time of this artifact (Unix seconds)          |
-| `0x0014` | flags            | u16        | File Header              | file-level flags bitfield; bit `0x0001` = SINGLE_CLOCK (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0015` | transform_params_digest | string | File Header           | hash of the config of a transform that produced records **without decoding** — a filter, a reordering stage, a merge. A decode stage's config lives on its Decoder (`params_digest`); see [Layers](#layers-transport-and-decoded-live-in-separate-streams) |
 | `0x0020` | uri              | string     | Source                   | where the referenced capture/input file lives                  |
 | `0x0021` | digest           | string     | Source                   | content hash of the referenced file — the dependency edge      |
@@ -2439,13 +2213,11 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0050` | proto            | string     | Session                  | session protocol; well-known values `tcp`/`udp`/`http`/`tls`/`irc`/`dns`, other lowercase values permitted (unrecognized = opaque) |
 | `0x0051` | flow_key         | string     | Session                  | human-readable flow key, e.g. `a:port <-> b:port`              |
 | `0x0052` | flags            | u16        | Session                  | session-level flags bitfield; bit `0x0001` = SEQUENCED (see [Sequenced files](#sequenced-files-precomputed-order)) |
-| `0x0053` | sequenced_basis  | string     | Session                  | what a `SEQUENCED` hint-less session's order rests on; **MUST** be present on such a session; open vocabulary, defined values `clock`/`protocol`/`external`/`trivial` (see [Sequenced files](#sequenced-files-precomputed-order)) |
 | `0x0054` | external_session_id | bytes   | Session                  | an identity assigned by something *outside* this format — a trace id, a capture orchestrator's UUID, a case number. Opaque: nothing here interprets it (see [Session Descriptor](#session-descriptor-0x10)) |
 | `0x0060` | endpoint         | string     | Participant              | participant address, e.g. `ip:port` or a nick (recommended spellings: see [Participant Descriptor](#participant-descriptor-0x11)); **repeatable**, outermost tunnel layer first → innermost last |
 | `0x0061` | isn              | u32        | Participant              | the SYN's sequence number; MUST be present when the handshake was seen. Fixes the stream's absolute origin (first byte = `isn+1`); ordering does not use it |
 | `0x0062` | identity         | string     | Participant              | stable identity distinct from a transient endpoint             |
 | `0x0063` | tcp_role         | u8         | Participant (TCP)        | active/passive opener when the handshake was seen (see enums)  |
-| `0x0064` | origin           | packed     | Participant (pass-through) | input stream this participant re-emits: `source_id: u16, pid: u16, session_id: u64` — ids in the source's namespace (see [Participant Descriptor](#participant-descriptor-0x11)) |
 | `0x0070` | seq_start        | u32        | Record (TCP)             | absolute sequence number of the first payload byte             |
 | `0x0072` | ack              | u32        | Record (TCP)             | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
@@ -2674,47 +2446,45 @@ them. What follows from them here is that a file MAY hold streams of differing
 provenance and differing layer side by side, and that every rule below is a rule
 about a stream even where a file is the convenient thing to name.
 
-A `zpf`-sourced stream is produced one of two ways, and the difference is whether
-its stage **creates** a layer or **preserves** one:
+A `zpf`-sourced stream is produced by one of the two kinds of transform — a
+**decode stage** or a **pass-through** — and the difference is whether its stage
+**creates** a layer or **preserves** one:
 
 - A **decode stage** creates a layer. It runs decoders over its input's streams
   and emits records whose `spans` name the input ranges they **correspond to**,
   plus [Undecoded](#undecoded-0x21) markers for every region it did not decode.
-  A decoder accounts for regions it could not parse by reference, never by
+  The stage accounts for regions it could not parse by reference, never by
   copying bytes forward. Its records' bytes need not appear in its input: a
-  decoder MAY transform (see
+  decoder MAY recode (see
   [Typing a decoded record](#typing-a-decoded-record)).
 - A **pass-through transform** preserves the layer its input already had. It
   re-emits that input's records with their bytes, logical offsets, `decoder_id`s
-  and Undecoded markers **unchanged**, and its provenance is stream-level: an
-  [`origin`](#participant-descriptor-0x11) on every participant, no `spans` on
-  any record.
+  and Undecoded markers **unchanged**, each record citing the input range it was
+  re-emitted from — an **identity span**, the same range in as out.
 
-**The discriminator between the two is `spans` versus `origin`, not
-`decoder_id`.** A record carrying `spans` was built by this file's stage; a
-record without `spans`, whose participant carries `origin`, was re-emitted from
-the input unchanged. `decoder_id` answers a different question — which decoder's
-layer a record belongs to — and a pass-through carries inherited `decoder_id`s
-forward, so it does *not* imply the decoder ran in this stage.
+**Every `zpf`-sourced record carries `spans`.** That is the whole provenance rule,
+and it holds whichever kind of transform produced the record: a decode stage's
+spans name the input ranges its units *correspond to*, a pass-through's name the
+ranges it re-emitted unchanged. A record referencing a `zpf-input` Source and
+carrying no `spans` says nothing about which stream inside that input it came
+from, so nothing resolves one level down and no coverage obligation can be
+computed either way. A reader MAY isolate it. The rule binds on `zpf`-sourced
+streams alone — a capture-sourced record carries no `spans`, and its `source_id`
+is the whole of its provenance.
 
-**The discriminator binds per participant, so one file MAY do both.** A
-participant **MUST NOT** both carry `origin` and hold records carrying `spans`:
-one stream is created or preserved, never half of each. Across streams there is no
-such rule, and a transform that decodes one session while passing another through
-is ordinary — it is what a tool does when it has a decoder for one protocol and
-not the other. Forbidding it would leave that tool two dishonest options: pass
-everything through, or mark the second stream entirely Undecoded, which drops
-those bytes from the output altogether. A file whose streams are a mix declares
-every input it drew on and sets `produced_by`/`produced_at` once, as any derived
-file does.
+**Which kind a stream is, is read from the spans themselves**, not from which
+option is present: identity spans preserve a layer, anything else creates one.
+`decoder_id` answers a different question — which decoder's layer a record belongs
+to — and a pass-through carries inherited `decoder_id`s forward, so it does *not*
+imply the decoder ran in this stage.
 
-**And a `zpf`-sourced participant MUST be one or the other.** The two ways above
-are exhaustive, so a participant carrying **neither** `origin` nor records with
-`spans` is a violation: its records reference a `zpf-input` Source and say nothing
-about which stream inside it they came from, so nothing resolves one level down
-and no coverage obligation can be computed either way. A reader MAY isolate it.
-The rule binds on `zpf`-sourced streams alone — a capture-sourced participant
-carries neither, and its `source_id` is the whole of its provenance.
+**The distinction is per participant, so one file MAY do both.** A transform that
+decodes one session while passing another through is ordinary — it is what a tool
+does when it has a decoder for one protocol and not the other. Forbidding it would
+leave that tool two dishonest options: pass everything through, or mark the second
+stream entirely Undecoded, which drops those bytes from the output altogether. A
+file whose streams are a mix declares every input it drew on and sets
+`produced_by`/`produced_at` once, as any derived file does.
 
 One decode stage MAY also mix *decoders* per-record (HTTP on one session,
 TLS-then-HTTP on another). Every file holding a `zpf`-sourced stream MUST declare
@@ -2751,12 +2521,10 @@ declaration and make every existing capture-sourced file non-conformant for sayi
 nothing new.
 
 **Not every `zpf-input` Source is an input.** A file may also declare one so that
-an *inherited* reference still resolves — a pass-through carrying Undecoded
-blocks that name a file further up the chain does exactly this (see the
-[annotator example](#annotating-a-decoded-file)). The two are told apart by what
-points at them: a file's **immediate inputs** are the Sources its participants'
-`origin` options name, for a pass-through, or its records' `spans` name, for a
-decode stage. Anything else declared as `zpf-input` is there to resolve a
+an *inherited* reference still resolves — a pass-through carrying Undecoded blocks
+that name a file further up the chain does exactly this. The two are told apart by
+what points at them: a file's **immediate inputs** are the Sources its records'
+`spans` name. Anything else declared as `zpf-input` is there to resolve a
 reference, not because this file was derived from it.
 
 **The transport layer's own requirements bind on the layer, not on provenance.**
@@ -2881,26 +2649,10 @@ order is a valid causal linearization (concurrent records ordered by the
 producer's tie-break), and a reader MAY then consume them in stored order without
 running the [merge](#merge-algorithm). A reader MUST NOT assume a session is
 sequenced unless its bit is set, and MUST still accept sessions that omit it. For
-a session with no causal hints (no TCP `seq`/`ack` — e.g. chat or one-way UDP),
-the producer MUST NOT set SEQUENCED without a **sound basis** for the order it
-stores: a single trustworthy clock shared by every record in the session, or
-ordering knowledge this format does not model (see
-[Sequenced files](#sequenced-files-precomputed-order)), and it **MUST** record
-which via `sequenced_basis`. A session with one participant, or with only one
-sender, meets the *soundness* bar trivially and records `trivial`; the recording
-requirement itself has no exemption. The File Header `flags` **SINGLE_CLOCK** bit is the
-file-wide assertion of the clock property (timestamps globally comparable, no
-inter-source skew); when set it supplies that basis for every hint-less session,
-and a downstream tool may rely on it to sequence streams it regroups. The basis
-requirement binds **hint-less sessions only** — a session carrying `seq`/`ack`
-may be sequenced whatever its timestamps do, and needs no `sequenced_basis`.
-
-A **missing** `sequenced_basis` on a hint-less `SEQUENCED` session is a semantic
-violation, isolatable like any other. A reader can only raise it at
-[Session End](#session-end-0x12) or end-of-stream, because until then it does not
-know the session is hint-less (see [Merge algorithm](#merge-algorithm)). A reader MUST NOT reject a session merely
-for carrying a `sequenced_basis` value it does not recognise — the vocabulary is
-open, and an unknown value means an unknown basis, not an invalid one.
+a session with no causal hints (no TCP `seq`/`ack` — e.g. chat or one-way
+UDP), the producer is asserting an order this format cannot derive, and a
+reader takes the assertion as given (see
+[Sequenced files](#sequenced-files-precomputed-order)).
 
 **Timestamps are not an ordering invariant.** Record timestamps are **not**
 required to be non-decreasing in stored order, in any session, sequenced or not.
@@ -2966,10 +2718,10 @@ readers in two tiers, split by what the violation poisons:
   [width-mismatch rule](#enums), the
   [origin floor](#referencing-the-source-by-stream-offset)), that rule
   **displaces this licence**: a reader applies the stated rule instead, whether it
-  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and the
-  origin floor both keep the record, ignore the part that is wrong, and report —
-  so reading them as instances of a tier headed *the reader MAY isolate* gets them
-  backwards.
+  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and a
+  transport-layer label both keep the record, ignore the part that is wrong, and
+  report — so reading them as instances of a tier headed *the reader MAY isolate*
+  gets them backwards.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**

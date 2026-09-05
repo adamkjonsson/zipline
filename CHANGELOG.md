@@ -60,6 +60,163 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.19] — unreleased
+
+**Clarification and simplification, in that order.** The terms are pinned first,
+the text is brought onto them, and then one reduction package lands. Scope and
+reasoning in [docs/RELEASE-0.19-PLAN.md](docs/RELEASE-0.19-PLAN.md).
+
+### Removed
+
+**Package A: pass-through stops being a distinct derivation kind.** Every
+`zpf`-sourced record carries `spans`. A pass-through writes an **identity span**
+per record — the same range in as out — so one provenance rule covers every
+derived record and there are no longer two shapes to tell apart.
+
+- **Option `origin` (`0x0064`)**, and with it the rule that every participant of a
+  pass-through carries exactly one, the bar on its appearing on a capture-sourced
+  stream, the rule that a participant may not carry both `origin` and records with
+  `spans`, and the rule that a `zpf`-sourced participant must be one kind or the
+  other. What replaces all four is a single sentence: a `zpf`-sourced record
+  carries `spans`.
+- **§Layers *Transforms that change no data*** and **§*Annotating a decoded
+  file***, the worked example built on the deleted discriminator.
+- **In §Discontinuity**, the verbatim-versus-renumbered contrast. A re-emitted
+  Discontinuity is still renumbered into the re-emitting file's ids; that duty is
+  now stated in the block's own section rather than as half of a contrast with
+  Undecoded.
+- **Vectors** (3): `passthrough-transport`, `annotator-decoded`,
+  `passthrough-discontinuity`.
+
+**Which kind a stream is, is now read from the spans**, not from which option is
+present: identity spans preserve a layer, anything else creates one. That is
+mechanically cheaper than the rule it replaces, and it is what
+`mixed-derivation`, `isolate-self-derived` and `chain/annotated.zpf` now
+demonstrate — three vectors neither the analysis nor the impact assessment listed
+as affected.
+
+**Package C: readers need only agree on conformant files.** The advisory tier
+keeps its strength — a reader accepts the file, ignores what is wrong, and reports
+— and loses its **pinned repairs**, the clauses that made two readers land on one
+specific answer for a malformed file.
+
+- **The origin floor stops being a MUST NOT.** A record whose `seq_start` precedes
+  the origin is no longer a violation; what survives is the **effect**, which is
+  that such a record is unplaceable, covers no byte of the stream and contributes
+  nothing to the extent. Two readers may now report different ranges for it while
+  agreeing on every extent and every other record.
+- **The pinned placement is gone**: the zero-width range at the running maximum,
+  and the bar on placing a below-origin record at the wrapped offset.
+- **The handshake MUST's two-sided treatment** collapses to one accept-and-report,
+  and §Typing loses the clause forbidding a reader to read layer from a
+  transport-layer label — redundant once the treatment is simply to ignore it.
+- **Vectors**: `advisory-seq-start-below-origin` removed;
+  `advisory-below-origin-payload` becomes **`unplaceable-below-origin`**, an
+  ordinary accept vector pinning the effect that survives.
+
+**The two transport-label advisory vectors stay**, and that is a decision rather
+than an omission. They exercise the *tier* — accept, report, ignore the label,
+round-trip — and not a pinned repair, so deleting all four would have left a live
+concept with no vector at all, which the capability check cannot catch because a
+tier is not an option.
+
+**What this costs, stated plainly.** Two readers handed the same malformed file
+may disagree about which range an unplaceable record occupies. They will not
+disagree about any extent, because the record covers nothing under either reading.
+
+**Package B: a producer no longer justifies its sequencing claim.** `SEQUENCED`
+becomes what it always was in practice — an assertion that the stored order is a
+valid causal order, taken on the same trust a reader already extends to the order
+itself, which it cannot check either.
+
+- **Option `sequenced_basis` (`0x0053`)**, and the rule that a hint-less
+  `SEQUENCED` session MUST carry it. With it go the four defined values
+  (`clock`/`protocol`/`external`/`trivial`), the soundness rule a producer had to
+  meet before setting the flag, the reader-side rule against rejecting an
+  unrecognised value, and §Conformance's restatement of all three.
+- **Option `flags` (`0x0014`) on the File Header**, whose only defined bit was
+  **`SINGLE_CLOCK`**. The per-session clock requirement it supplied is gone, so
+  the file-wide assertion has nothing left to supply, and the one mechanical check
+  the basis enabled — `clock` asserted in a multi-source file that declines
+  `SINGLE_CLOCK` — lost both operands.
+- **Vectors** (4): `sequenced-basis`, `isolate-sequenced-no-basis`,
+  `partially-hinted-sequenced`, `file-clock-metadata`. Downstream ratchets keyed
+  on vector names should drop these four rather than treat them as regressions.
+
+**What is kept.** *Hint-less* survives as a description in §Merge algorithm, since
+it still names a real distinction, but **no rule turns on it** and the paragraph
+says so. `SEQUENCED` itself, the merge algorithm, the tie-break and the
+producer's freedom to choose one are untouched.
+
+**Where the forensic answer moved.** The basis named a *category* of reasoning and
+not the thing a reader needs when an order looks wrong, which is which run of
+which tool produced it. That is answered by the build provenance of the file that
+set the flag — `produced_by`, `produced_at` and `transform_params_digest`, where a
+merge's ordering key lives — reached by walking `zpf-input` Sources back to the
+first file marking the session. §Sequenced files now says so.
+
+### Added
+
+- **Vector `sequenced-session`.** `SEQUENCED` itself lost every vector it had —
+  three to Package B and the fourth, `passthrough-transport`, to Package A — so
+  the flag that survives both packages had nothing demonstrating it. The new
+  vector is capture-sourced, a single tap that saw both directions, and its point
+  is that `SEQUENCED` does **not** mean sorted by timestamp: the response is
+  stored at `ts 995`, after the `ts 1000` request that caused it.
+- **Vector `unplaceable-no-seq-start`.** `partially-hinted-sequenced` carried two
+  lessons and only one was about sequencing: since `0.18` it also pinned the
+  commoner unplaceable shape, a record with no `seq_start` on a stream whose
+  earlier record has one. That half is rehoused as an ordinary accept vector.
+  Placement keys on whether a stream is sequence-anchored, not on `SEQUENCED`, so
+  the shape never needed a sequenced session to live in.
+- **`time_epoch` moves to `descriptive-metadata`.** It survives the package and
+  `file-clock-metadata` was its only vector. Five descriptive options there now.
+
+*53 vectors, from 59.*
+
+### Clarified
+
+- **§Terminology defined `decoder` once, and had defined it wrongly since
+  `0.15`.** It said the decoder derives a decoded stream from a transport one.
+  But a decoder may produce a **transport** stream (a sessionization stage), may
+  consume a **decoded** one (`capture → tls-records → http`), and may consume no
+  stream in a file at all (a TLS-terminating proxy). The paragraph also placed the
+  reassembler outside the transform family, which `0.15` ended, and counted "two"
+  transforms while the document goes on to define the pass-through, the annotator,
+  a filter and the sessionization stage.
+- **A decoder is now defined as an identity, not a stage** — the name, version and
+  parameters a `decoder_id` resolves to, declaring the layer its output is in. The
+  document already said *"`decoder_id` names a layer, not a stage"*, buried in
+  §Referencing. A decode stage may run no decoder of its own and inherit its
+  input's.
+- **`transform` is narrowed to the file → file stage, and `recode` is coined for
+  what it used to also mean.** One word was doing two jobs at two levels of the
+  model. **A decoder frames, recodes, or does both**: *framing* gives bytes
+  structure, cutting them into units with edges and a type; *recoding* changes the
+  bytes and adds none. Decompression and decryption recode. So does reassembly,
+  which is a decoder because what it did is worth recording, not because it
+  produced units.
+- **The two kinds of transform are named where they are counted.** §Conformance's
+  lead-in said "one of two ways" without naming them, the same shape that went
+  stale in §Terminology. Both sites now name the decode stage and the
+  pass-through, and `ENUMERATIONS` fails the build if a third kind is added
+  without updating them.
+
+- **Five further sites brought onto the pinned terms.** Three used `transform` for
+  the byte-changing act now called `recode`; one had the *decoder* accounting for
+  undecoded regions where the *stage* does it; one listed the Decoder Descriptor's
+  parts without `output_layer`, which the definition makes constitutive rather
+  than incidental.
+
+**The sweep found less than the counts suggested, and that is worth saying.** Of
+176 uses of `decoder`, 225 of `decoded`, 25 of `decode stage` and 52 of
+`pass-through`, six sites needed correcting. `decoded` needed none: it names a
+layer throughout, never standing in for *derived*. The defect was concentrated —
+one stale paragraph, and one word doing two jobs — rather than diffuse.
+
+`RETIRED_CLAIMS` gains the stale definition, reproducing against `v0.18-r2` and
+absent now. No rule changed and no normative keyword moved.
+
 ## [0.18] — re-issued, from 2026-09-05
 
 **The same format, in two documents instead of one.** About a third of the

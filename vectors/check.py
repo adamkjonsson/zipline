@@ -68,7 +68,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 18
+MAJOR, MINOR = 0, 19
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -130,6 +130,155 @@ NORMATIVE_V018 = {"MUST": 143, "MUST NOT": 53, "SHOULD": 27, "MAY": 54}
 # baseline from being a knob to turn when the build goes red.
 NORMATIVE_REMOVALS = (
     (
+        r"what it MUST NOT do is take the label as evidence",
+        {"MUST": 1, "MUST NOT": 1},
+        "redundant once the treatment is simply to ignore the option: a reader "
+        "that ignores a label cannot also read layer from it",
+    ),
+    (
+        r"which is one strength for\s*the whole MUST rather than one for each side",
+        {"MUST": 1},
+        "there are no longer two sides to give one strength to -- the floor's "
+        "pinned placement went, so both shapes get the same accept-and-report",
+    ),
+    (
+        r"a deliberately unusual strength\s*for a MUST NOT, which this document gives only",
+        {"MUST": 1, "MUST NOT": 1},
+        "the sentence counting the advisory MUST NOTs and naming the origin floor "
+        "as the other one; the floor is no longer among them, and a count of them "
+        "is the shape that goes stale",
+    ),
+    # 0.19, Package C. The advisory tier's PINNED REPAIRS. The tier itself
+    # survives -- a reader still accepts these files and reports -- and so does
+    # the effect of the floor, which is that an unplaceable record covers no byte.
+    # What goes is the exact range two readers were required to agree on.
+    (
+        r"\*\*The origin is a floor: a record's `seq_start` MUST NOT precede it\.\*\*",
+        {"MUST": 1, "MUST NOT": 1},
+        "restated as an effect rather than a prohibition: a record below the "
+        "origin covers no byte of the stream",
+    ),
+    (
+        r"A reader \*\*MUST\*\* treat an unplaceable record as occupying a",
+        {"MUST": 1},
+        "the pinned zero-width range at the running maximum is gone; a reader "
+        "reports what it likes, and every extent agrees regardless",
+    ),
+    (
+        r"A reader \*\*MUST NOT\*\* place a below-origin record",
+        {"MUST": 1, "MUST NOT": 1},
+        "no placement is pinned, so none is forbidden; the wrapped offset is "
+        "excluded by the record covering no byte at all",
+    ),
+    (
+        r"\*\*accepts the file\*\*, applies the rule above, and SHOULD report",
+        {"SHOULD": 1},
+        "the accept-and-report treatment survives in the replacement sentence, "
+        "which carries the one SHOULD this paragraph used to carry twice",
+    ),
+    (
+        r"the ordering MUST stores\s*that record first, so nothing can precede it",
+        {"MUST": 1},
+        "the floor's vacuous-without-isn note went with the floor; the ordering "
+        "rule it referred to is unchanged and stated where it lives",
+    ),
+    # 0.19, Package A. The rules that made pass-through a distinct derivation
+    # kind. `origin` is gone and every zpf-sourced record carries `spans`, so the
+    # three rules keyed on which option is present have nothing to key on. The
+    # "MAY isolate" survives in the replacement sentence and is not listed.
+    (
+        r"every participant MUST carry exactly one `origin`",
+        {"MUST": 1},
+        "the origin option is removed; a pass-through's provenance is an identity "
+        "span on every record, like any other derived record's",
+    ),
+    (
+        r"`origin` MUST NOT appear on a capture-sourced stream",
+        {"MUST": 1, "MUST NOT": 1},
+        "no option to bar; a capture-sourced record carries no spans and its "
+        "source_id is the whole of its provenance",
+    ),
+    (
+        r"participant \*\*MUST NOT\*\* both carry `origin` and hold records carrying",
+        {"MUST": 1, "MUST NOT": 1},
+        "the created/preserved discriminator is no longer which option is "
+        "present, so there is no pair to forbid mixing",
+    ),
+    (
+        r"\*\*And a `zpf`-sourced participant MUST be one or the other\.\*\*",
+        {"MUST": 1},
+        "replaced by the stronger and simpler rule that every zpf-sourced record "
+        "carries spans, which is stated once and binds per record",
+    ),
+    # 0.19, Package B. The four rules that made a producer justify its sequencing
+    # claim. Unlike the entry below these are not restatements being collapsed --
+    # they are rules the release DELETES, which is what a subtractive release
+    # does, and the table is what stops that being silent. Each names the sentence
+    # that went; none of them can still be in the specification.
+    (
+        r"MUST NOT\*\* mark a hint-less session `SEQUENCED` unless it",
+        {"MUST": 1, "MUST NOT": 1},
+        "SEQUENCED is a bare assertion; a producer is trusted for the basis as it "
+        "already is for the order itself",
+    ),
+    (
+        r"so the producer \*\*MUST\*\* say what the claim rests on",
+        {"MUST": 1},
+        "the basis is not recorded, so there is nothing to compel a producer to say",
+    ),
+    (
+        r"\*\*MUST\*\* also set \*\*`sequenced_basis`\*\*",
+        {"MUST": 1},
+        "the sequenced_basis option is removed from the registry",
+    ),
+    (
+        r"a reader \*\*MUST NOT\*\*\s*reject a session for an unrecognised value",
+        {"MUST": 1, "MUST NOT": 1},
+        "no value to recognise; the reader-side rule went with the option it protected",
+    ),
+    (
+        r"A consumer MAY report that, and `clock` being the common basis",
+        {"MAY": 1},
+        "the one mechanical check the basis enabled -- basis = clock without "
+        "SINGLE_CLOCK -- has neither operand left",
+    ),
+    (
+        r"the producer MUST NOT set SEQUENCED without a \*\*sound basis\*\*",
+        {"MUST": 1, "MUST NOT": 1},
+        "Conformance's restatement of the basis rule, gone with the rule",
+    ),
+    (
+        r"and it \*\*MUST\*\* record\s*which via `sequenced_basis`",
+        {"MUST": 1},
+        "Conformance's restatement of the recording rule, gone with the option",
+    ),
+    (
+        r"A reader MUST NOT reject a session merely\s*for carrying a `sequenced_basis` value",
+        {"MUST": 1, "MUST NOT": 1},
+        "Conformance's restatement of the unrecognised-value rule; no value left to recognise",
+    ),
+    (
+        # The FILE HEADER flags field's reserved-bits rule. SINGLE_CLOCK was its
+        # only defined bit, so removing the option removes the field, and the
+        # reserved-bit discipline goes with the field rather than being loosened.
+        #
+        # Anchored on SINGLE_CLOCK, because the Session Descriptor's flags field
+        # carries the same reserved-bits sentence word for word and SURVIVES. A
+        # pattern matching the sentence alone reports the wrong one -- which the
+        # check caught, and which is why removal patterns are anchored on what is
+        # unique to the site rather than on the rule being removed.
+        r"SINGLE_CLOCK.*?All other bits are reserved, MUST be written\s*0, "
+        r"and MUST be ignored on read",
+        {"MUST": 2},
+        "the File Header flags option is removed; its only defined bit was "
+        "SINGLE_CLOCK, so there is no bitfield left to reserve bits in",
+    ),
+    (
+        r"\*\*MUST\*\* be present on such a session; open vocabulary",
+        {"MUST": 1},
+        "the sequenced_basis registry row, gone with the option",
+    ),
+    (
         r"a reader MUST NOT gate parsing on `version_minor`",
         {"MUST": 1, "MUST NOT": 1},
         "Design decisions not taken restated the File Header's version-gating rule "
@@ -159,7 +308,9 @@ RULES = {
         "undecoded-in-capture",
     ),
     "per-stream-transform": (
-        "one file MAY create one stream and preserve another; the bar is per participant",
+        "one file MAY create one stream and preserve another; the distinction is "
+        "per participant, and since 0.19 it is read from the spans rather than "
+        "from which option is present",
         "mixed-derivation",
     ),
     "no-intra-file-derivation": (
@@ -225,18 +376,20 @@ RULES = {
         "stored neighbours that were never adjacent do not join, so each seam is declared",
         "reordered-decoded",
     ),
-    "discontinuity-passthrough-renumber": (
-        "a pass-through renumbers a Discontinuity but copies Undecoded verbatim",
-        "passthrough-discontinuity",
-    ),
+    # 0.19 Package A removed the asymmetry this tested. With every derived
+    # record carrying spans there is no verbatim-versus-renumbered contrast left
+    # to draw: a re-emitted Discontinuity is still renumbered into this file's
+    # ids, and that duty is stated in the block's own section rather than as half
+    # of a contrast. No vector, because nothing pairs it against.
     # 0.16's four. Each is a MUST the syntax already allowed you to break, which
     # is why each needed a vector before it needed a checker.
     "layer-consistency": (
         "every record of one participant MUST resolve to the same layer",
         "isolate-mixed-layer-participant",
     ),
-    "zpf-stream-created-or-preserved": (
-        "a zpf-sourced participant MUST carry origin or hold records with spans, never neither",
+    "zpf-sourced-record-carries-spans": (
+        "every zpf-sourced record carries spans -- a pass-through's are identity "
+        "spans, so the rule binds per record with no exception to check",
         "isolate-unbound-zpf-stream",
     ),
     "undecoded-capture-bytes-only": (
@@ -271,10 +424,12 @@ RULES = {
     # cost (bytes excluded from the space); the seq_start-less half is the
     # commoner shape and rides on a vector that has carried it since 0.12
     # without anyone saying where the record goes.
-    "unplaceable-record-placement": (
-        "an unplaceable record sits at a zero-width range at the highest off_end "
-        "reached, contributing nothing -- below the origin, or with no seq_start",
-        "advisory-below-origin-payload",
+    "unplaceable-covers-nothing": (
+        "an unplaceable record covers no byte of the stream and contributes "
+        "nothing to the extent -- below the origin, or with no seq_start on a "
+        "sequence-anchored stream. Since 0.19 the RANGE a reader reports for it "
+        "is its own affair; the extent is not",
+        "unplaceable-below-origin",
     ),
     # 0.18's one rule with a vector. The ordering MUST has never said whether
     # two records may share a seq_start; 0.17's handshake MUST makes the tie
@@ -292,13 +447,8 @@ RULES = {
         "Discontinuity; `skipped` does not, and the word is the producer's statement",
         "isolate-unmarked-drop",
     ),
-    # 0.17's floor. Like 0.16's four, a MUST the syntax already let you break --
-    # and the second MUST NOT whose violation is advisory rather than isolating.
-    "seq-start-origin-floor": (
-        "a record's seq_start MUST NOT precede the stream origin; the violation is "
-        "ADVISORY and the record is unplaceable, zero-width at the current position",
-        "advisory-seq-start-below-origin",
-    ),
+    # 0.19 removed the floor's MUST NOT with the rest of the advisory tier's
+    # pinned repairs. What survives is the EFFECT, which is the entry below.
     # Also NOT in this table, and for the same reason as #94 below: 0.18's rule
     # that a stage removing content MUST write `reason = dropped` rather than a
     # more specific word (#117). A file writing `filtered` for removed content and
@@ -410,6 +560,84 @@ RETIRED_CLAIMS = {
         "two cases are: a hole-class region between two adjacent units, and a "
         "bytes-class region carrying reason = dropped",
     ),
+    # 0.19, Package C. The advisory tier keeps its strength and loses its pinned
+    # repairs. These are the claims that said a reader MUST land on one specific
+    # answer for a malformed file.
+    "floor-is-a-must-not": (
+        (
+            r"\*\*The origin is a floor: a record's `seq_start` MUST NOT precede it\.\*\*",
+            r"a record's seq_start MUST NOT precede the stream origin",
+            # vectors/README.md, and so any harness reading it
+            r"under the rule the record is unplaceable at offset 0",
+        ),
+        "0.19",
+        None,
+        "a record below the origin covers no byte of the stream; a reader accepts "
+        "the file and SHOULD report, and the range it reports is its own affair",
+    ),
+    # 0.19, Package A. Pass-through stopped being a distinct derivation kind:
+    # every zpf-sourced record carries spans, and a preserved stream's are
+    # identity spans. These are the shapes of the rule that made it a kind apart.
+    "pass-through-carries-origin": (
+        (
+            r"every participant MUST carry exactly one `origin`",
+            r"The discriminator between the two is `spans` versus `origin`",
+            # vectors/README.md, and so any harness reading it
+            r"A pass-through preserving a transport layer: `origin`",
+        ),
+        "0.19",
+        None,
+        "every zpf-sourced record carries spans; a pass-through's are identity "
+        "spans, and which kind a stream is, is read from the spans rather than "
+        "from which option is present",
+    ),
+    # 0.19, Package B. The basis rule is gone; these are the shapes it was
+    # asserted in. Unlike a stale copy, these were all TRUE until this release --
+    # the ratchet's job here is to stop a rule the model deliberately dropped from
+    # being reintroduced by someone reading an older draft or an implementation
+    # that still carries it.
+    "sequenced-needs-a-basis": (
+        (
+            r"MUST NOT\*\* mark a hint-less session `SEQUENCED` unless",
+            r"the producer MUST NOT set SEQUENCED without a \*\*sound basis\*\*",
+            # vectors/README.md, and so any harness reading it
+            r"A hint-less `SEQUENCED` session with no `sequenced_basis`",
+        ),
+        "0.19",
+        None,
+        "SEQUENCED is a bare assertion that the stored order is a valid causal "
+        "order; the producer is trusted for the basis as it already is for the "
+        "order itself",
+    ),
+    "single-clock-flag": (
+        (
+            r"Bit `0x0001` \(\*\*SINGLE_CLOCK\*\*\)",
+            # build.py summary, and so manifest.json
+            r"\*\*SINGLE_CLOCK\*\* asserts one trustworthy clock across the file",
+        ),
+        "0.19",
+        None,
+        "the File Header flags option is removed; SINGLE_CLOCK was its only "
+        "defined bit and the per-session clock requirement it supplied is gone",
+    ),
+    # 0.19's clarification. The paragraph that DEFINED "decoder" carried the
+    # pre-0.15 model in words no existing entry matched -- the same paraphrase
+    # blindness 0.18's Phase 0 measured, on the highest-traffic paragraph in the
+    # document. `byte-run-has-no-decoder-id` below was written to stop exactly
+    # this idea returning and could not see it.
+    "decoder-derives-decoded-from-transport": (
+        (
+            r"the \*\*decoder\*\*, which derives a decoded stream from a transport one",
+            # the stale count in the same sentence: the document defines two KINDS
+            # of transform, not two transforms, and named neither of the kinds
+            r"This spec defines two:",
+        ),
+        "0.19",
+        None,
+        "a decoder is the identity a decoder_id resolves to; it may produce a "
+        "transport stream, consume a decoded one, or consume no stream in a file "
+        "at all -- and reassembly is a decoder",
+    ),
     "byte-run-has-no-decoder-id": (
         (r"A byte run carries none",),
         "0.16",
@@ -452,6 +680,20 @@ RETIRED_CLAIMS = {
 # join table's rows owe one word each. That is a wrong member, not a missing one,
 # so it is RETIRED_CLAIMS' shape and it is entered there instead.
 ENUMERATIONS = {
+    # 0.19. A transform creates a layer or preserves one, and those two kinds are
+    # the whole set. The sentence this replaces said "this spec defines two" and
+    # then named the decoder and the merge -- one kind and one instance, counted
+    # together. A third kind of transform must fail the build at every site that
+    # enumerates them, which is what nobody had when the count went stale.
+    "transform kinds": (
+        ("decode stage", "pass-through"),
+        (
+            # Terminology -- where the pair is introduced
+            "always file to file, never a layer inside a record",
+            # Conformance -- where the pair is stated
+            "the difference is whether",
+        ),
+    ),
     "transport-layer labels": (
         ("content_type", "role"),
         (
@@ -465,9 +707,10 @@ ENUMERATIONS = {
             "since a hole is expressible without one",
             # Conformance -- what a pass-through preserving a decoded layer owes (#121)
             "re-emit every Undecoded block",
-            # Annotating a decoded file -- the worked example an annotator is
-            # written from (#121)
-            "provenance is the participants' `origin`",
+            # 0.19 Package A deleted the fifth site with the section holding it:
+            # "Annotating a decoded file", the worked example an annotator was
+            # written from (#121). The set is down to five sites, all of them
+            # rules rather than examples, which is the better place for it.
             # The two that were already right when 0.18 opened, so the check is
             # exercised in both directions from the start.
             "including one emitted by a reassembly decoder",
@@ -503,7 +746,15 @@ def check_enumerations() -> list[str]:
                     f"was not stable; re-anchor it on text the fix does not touch"
                 )
                 continue
-            missing = [m for m in members if f"`{m}`" not in found[0]]
+            # A member counts only where it is MARKED -- `code` for an option or
+            # field name, **bold** for a defined prose term. Both are deliberate
+            # markup, so an incidental mention still does not count, which is the
+            # property that keeps this check free of false positives. 0.19 added
+            # the bold form when the first set of prose terms (the two kinds of
+            # transform) was declared; before that every member was an identifier.
+            missing = [
+                m for m in members if f"`{m}`" not in found[0] and f"**{m}**" not in found[0]
+            ]
             if missing:
                 out.append(
                     f"enumeration '{label}': the site at {locator!r} names "

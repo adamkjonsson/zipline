@@ -1,7 +1,8 @@
 # Release 0.19 — the simplification menu
 
-*Written 2026-09-04 against **v0.18**,
-[SIMPLIFICATION-ANALYSIS.md](SIMPLIFICATION-ANALYSIS.md), and `python-zipline`'s
+*Written 2026-09-04, revised 2026-09-05 against **`v0.18-r2`** — the re-issue that
+extracted the rationale, which is this release's baseline. Sources are
+[SIMPLIFICATION-ANALYSIS.md](SIMPLIFICATION-ANALYSIS.md) and `python-zipline`'s
 [SIMPLIFICATION-IMPACT.md](https://github.com/adamkjonsson/python-zipline/blob/main/plans/SIMPLIFICATION-IMPACT.md),
 which assesses the same five proposals from inside the only complete
 implementation. This is a working roadmap, not normative text.*
@@ -12,12 +13,30 @@ implementation. This is a working roadmap, not normative text.*
 
 ## What this release is
 
-**A subtractive release, and the first one.** Every release since `0.9` has added
-or corrected. This one deletes: an option, a rule, a section, the vectors that
-pinned them. Nothing in the repository has been built for that, and §Mechanics of
-a deletion release is the part of this plan with no precedent to copy.
+**Clarification and simplification, in that order.** The plan opened as a purely
+subtractive release. It is not, and the reason is worth stating before the
+packages: the document's terms are not pinned, so a reader spends effort
+reconciling the vocabulary before ever reaching a rule. Deleting text without
+fixing that would remove volume and leave the cost.
 
-**It takes exactly one of the five proposals.** The analysis recommends 3.1–3.3
+So the release does two things, and the first gates the second. It **pins the
+terms** and rewrites the text to use them consistently (§Terminology, Phase 0 and
+Phase 0b). Then it takes the reduction packages.
+
+***It took three: A, B and C*** — the package the analysis recommends taking
+together, arrived at one at a time. The plan below argues for taking exactly one,
+and that argument is left standing rather than rewritten, because it was not
+wrong: taking them singly is what made each one's cost visible, and each landed as
+its own commit with its own accounting. What changed is only how many were taken,
+not how.
+
+**A subtractive release, and the first one.** Every release since `0.9` has added
+or corrected. The package half deletes: an option, a rule, a section, the vectors
+that pinned them. Nothing in the repository has been built for that, and
+§Mechanics of a deletion release is the part of this plan with no precedent to
+copy.
+
+**It takes one of the five proposals at a time.** The analysis recommends 3.1–3.3
 as a package and `python-zipline` agrees, but a package is not what this document
 is for: taking them one at a time is what makes each one's cost visible, and the
 five are independent enough that any single one is a complete release. §If you
@@ -34,16 +53,21 @@ for the release that takes them.
 
 | | Package | Spec lines out | Vectors | Options | Suite code | What is lost | `python-zipline` |
 |---|---|---:|---:|---:|---:|---|---|
-| **A** | 3.1 pass-through as a kind | ~150 | −4, 2 rewritten | −1 | small | nothing of substance | support |
+| **A** | 3.1 pass-through as a kind | ~150 | −4, 2 rewritten | −1 | ~~small~~ **largest of the three** | nothing of substance | support |
 | **B** | 3.2 justify the sequencing claim | ~170 | −4 | −2 | small | a forensic hint | support |
 | **C** | 3.3 agree on non-conformant input | ~150 | −4 | 0 | small | cross-reader agreement on malformed files | support |
 | **D** | 3.4 coverage as a verifiable MUST | ~300 | −6 | −2 | medium | single-file self-verifiability; a decryptor's failure class | support **the middle path** |
 | **E** | 3.5 provenance and layer as axes | ~330 | −8 | 0 | **~630 lines** | every multi-hop transform chain's per-hop account, a reassembler's `params_digest` | **oppose** |
 
-Spec counts are estimates except where a section is deleted whole: *Annotating a
-decoded file* is 68 lines, the *decrypted tunnel* example 118, the `input_extents`
-text 66, *Sequenced files* 198 of which about 110 goes. The vector suite is at
-**59**; the column is the count each package removes.
+Vector counts are exact and the suite was at **59** when this table was written;
+it ends at **53**. The spec-lines column is an estimate kept for scale only, and
+it is **not** the basis for choosing: see scope decision 4 for what extraction did
+and did not take out of each package, and the ranking below for what replaces it.
+
+*Two cells were wrong for the packages that shipped. **A**'s vector count is −4/2
+rewritten here and was −3 removed, 3 rewritten, 1 added, because three vectors
+carrying `origin` are not in the analysis's list. And A's suite cost is not small:
+it was the largest of the three, the `chain` fixture included.*
 
 **The last column is not a full assessment for D and E.** `python-zipline` has no
 transforming decoder, so its document cannot price what those two do to
@@ -51,31 +75,172 @@ decompression and decryption. Scope decision 5 says what the suite shows instead
 and both packages carry the finding. A, B and C are unaffected and its verdicts on
 them are complete.
 
-**Take A.** It is the cheapest thing on the list that a reader of the
-specification would actually notice, it deletes an option rather than a rule, and
-it is the only package where nobody has argued anything is lost — the analysis
-says "nothing of substance", the implementation says "nothing we use". A
-subtractive release should establish its mechanics on the item where a mistake is
-recoverable, and this is that item.
+**Rank by whether the rules a package deletes serve a goal the document states**,
+not by lines. That is what simplification means here, and the Goals list can now
+carry the test: `0.18`'s re-issue added *make a decoding failure findable in the
+input's own bytes*, so the principle the analysis said was **not in the Goals
+list** partly is.
+
+| | Package | Serves a stated goal? |
+|---|---|---|
+| **B** 3.2 | sequencing basis | **no** — a forensic hint about a claim |
+| **C** 3.3 | advisory tier | **no** — it governs non-conformant input |
+| **A** 3.1 | pass-through as a kind | mixed — provenance thinly, the `origin` half is vocabulary |
+| **E** 3.5 | provenance and layer as axes | **yes** — reassembled bytes as the source of truth, and findability across hops |
+| **D** 3.4 | coverage apparatus | **yes** — findability, by name |
+
+> ***Taken: B, then A, then C*** — the three the analysis recommends as a package,
+> taken one at a time and landed as three commits.
+>
+> *B went first, chosen after a question this plan had not asked: whether the
+> property actually wanted is traceability of **where and when** a session was
+> ordered. It is, and `sequenced_basis` never provided it.*
+>
+> ***That order cost something, and the plan predicted it.*** *§If you take more
+> than one says to do C's deletion before B's vector removal or the work is done
+> twice. Doing B first meant rehousing the placement shape into a new vector, and
+> C then unpinned the rule that vector was built to demonstrate. It survives with
+> a softened `expect`, so the cost was a paragraph rather than a vector — but the
+> interaction was written down and the order taken was still the expensive one.*
+>
+> *D and E remain unstarted and their sections stand for the release that takes
+> them.*
+
+**Take B.** It deletes the one thing on this list that serves no stated goal and
+that nothing else in the format keys on: two options, four vectors, **no `RULES`
+entry**, no rule elsewhere depending on it. `python-zipline` supports it and gives
+up a guard rather than a feature. A subtractive release should establish its
+mechanics where a mistake is recoverable, and this is now that item on both tests
+— cheapest to build, and clearest that nothing of value goes.
+
+*This revises the earlier recommendation of A, which was made on line count and
+recoverability before the goal test existed. A remains a good second: nobody has
+argued anything is lost, and it deletes an option rather than a rule. It ranks
+below B only because part of what it removes does serve provenance.*
 
 The rest, ranked by what they cost to decide rather than to do:
 
-- **B** is the next-cheapest and the most self-contained: two options, four
-  vectors, no rule in `check.py`, and nothing else in the format keys on it. Take
-  it if the aim is the largest deletion per unit of argument.
+- **A** is the second choice: it deletes an option rather than a rule, and neither
+  the analysis nor the implementation has named anything lost.
 - **C** is cheap to build and expensive to decide, because it **reverses four of
   the thirteen items `0.18` shipped two days ago** — #113, #114, #115 and #116 are
   the origin floor's edges, and 3.3 deletes the paragraphs that fixed them. That
   is an argument for doing it *now* rather than later, when more will have been
   built on them, and it is also the reason to be sure.
 - **D** is the one that changes what the format promises rather than how it says
-  it, and it has a sub-choice of its own (§D.1). Do not take it in the same
-  release as its own decision.
+  it, and it has a sub-choice of its own (§D.1) that scope decision 3 now settles.
+  It argues against a stated goal, which is a higher bar than it faced when the
+  analysis ranked it.
 - **E** is opposed by the implementation it would affect, costs more suite code
   than the other four combined, and reverses a change `0.15` made because
   `zpfwire` asked for it. The analysis says to take it only if tunnels turn out to
   be rare, which nothing currently measures — and the loss is wider than tunnels
   anyway, since it lands on every chain that decrypts or decompresses hop by hop.
+
+---
+
+## Terminology: what the words mean
+
+**The document defines "decoder" once, in its first forty-five lines, and that
+definition has been wrong since `0.15`.** §Terminology says the decoder is the
+transform "which derives a decoded stream from a transport one". Three things
+elsewhere contradict it:
+
+- **A decoder may produce a transport stream.** A sessionization stage is a decode
+  stage whose decoder is the reassembler, declaring `output_layer = transport`.
+- **A decoder may consume a decoded stream.** `capture → tls-records → http` has
+  the HTTP decoder reading a decoded input.
+- **A decoder may consume no stream in a file at all.** The TLS-proxy case has a
+  decoder with no predecessor `.zpf`.
+
+The same paragraph carries two more artefacts of the pre-`0.15` model. It places
+the **reassembler outside the transform family**, as a separate producer stage,
+when reassembly is now a decoder. And it says **"this spec defines two"**
+transforms — the decoder and the merge — while the document goes on to define the
+pass-through, the annotator, the filter and the sessionization stage. That is a
+stale count in an enumeration, the defect `0.18` spent a phase on, and **this site
+is not one of the six `ENUMERATIONS` declares**.
+
+**No ratchet could have caught it.** `RETIRED_CLAIMS` already holds the pre-`0.15`
+model down: the entry retiring *"a byte run carries none"* exists to stop exactly
+this idea returning. §Terminology asserts the same superseded model in words that
+share no phrase with the pattern — the paraphrase blindness `0.18`'s Phase 0
+measured, on the highest-traffic paragraph in the document.
+
+### The definitions this release pins
+
+Grounded in what the document already says where it says it correctly, not
+invented. §Conformance carries the real definitions at line ~2680; §Terminology
+will **name** the terms and point there, never restate them, because a rule stated
+twice is what #120 is about.
+
+| Term | What it is | Stated at |
+|---|---|---|
+| **decoder** | a named, versioned, parameterised **identity** that a `decoder_id` resolves to, declaring the layer its output is in. Not a stage and not software: a claim about what a stream's units are and what produced them | Decoder Descriptor |
+| **decode stage** | a transform that **creates** a layer: its records carry `spans` and reference a `zpf-input` Source | §Conformance |
+| **pass-through** | a transform that **preserves** the layer its input had: participants carry `origin`, records carry no `spans` | §Conformance |
+| **decoded** | a **layer**, the counterpart to transport. Never a synonym for *derived* | §Layers |
+| **transform** | any file → file stage deriving a new `.zpf` from existing ones, and **only** that. Two kinds: decode stage and pass-through. A merge, annotator, filter or sessionization stage is one or the other | §Terminology |
+| **frames** | what a decoder does when it gives bytes structure: cutting them into units with edges and a type | §Terminology |
+| **recodes** | what a decoder does when it changes the bytes and adds no structure — decompressing, decrypting. Reassembly recodes | §Terminology |
+| **reassembler** | a decoder. At the head of a pipeline it reads a capture; over a `.zpf` input it is a decode stage called a sessionization stage | §Conformance |
+
+**Three decisions inside that table, each of which could have gone otherwise:**
+
+1. **`decoder` is an identity, not an operation.** The document already says so —
+   *"`decoder_id` names a layer, not a stage"* — in §Referencing, where nobody
+   looks for a definition. Foregrounding it is what makes a filter's inherited
+   `decoder_id` stop looking like a contradiction.
+2. **"Decode stage" is kept despite being a misnomer.** A filter or a reorderer is
+   a decode stage that decodes nothing; what unites the family is *creating a
+   layer*, not running a decoder. **Rename declined**: the term is in
+   `python-zipline`'s public API (`DecodeStage`), 25 sites use it, and a rename
+   buys a better word at the cost of vocabulary alignment with the only complete
+   implementation. Instead the definition says out loud that **a decode stage need
+   not run a decoder**, which is the one sentence that dissolves the confusion.
+3. **The two vocabularies are collapsed to one.** The document says
+   *decode stage / pass-through* in some places and *created / preserved* in
+   others for the same distinction. Keep both words but bind them once: a decode
+   stage **creates**, a pass-through **preserves**. They stop being two ideas.
+4. **"Transform" is narrowed to the file → file stage, and `recode` is coined for
+   what it used to also mean.** The word was doing two jobs at two levels of the
+   model — a stage that derives a `.zpf` (§Terminology) and the byte-changing act
+   inside one (*"a decoder MAY transform"*, §Typing and §Conformance). That
+   collision is why the second act had no usable name. **`recode`** takes it:
+   changing the bytes while adding no structure.
+5. **`decoder` stays broad; the narrow sense becomes a verb.** Decoding is
+   properly the act of giving unstructured data meaning and structure, which
+   would exclude decompression and decryption — and, applied consistently,
+   **excludes TCP reassembly too**, since it orders and dedupes bytes and produces
+   no units. `0.15` deliberately made reassembly a decoder so its overlap policy,
+   buffer depth and timeout had somewhere to live, and `python-zipline` and
+   `zpfwire` both rely on that; narrowing the noun would undo it, and would fight
+   the idiom that calls gzip a decoder. So the noun keeps its scope and the
+   distinction moves to what a decoder **does**: it frames, recodes, or both.
+
+| Decoder | Frames | Recodes |
+|---|---|---|
+| HTTP/1.1 | yes | no |
+| a gzip body | no | yes |
+| TCP reassembly | no | yes |
+| `wireguard-decrypt`, in `tunnel/packets.zpf` | yes | yes |
+
+The last row is the case the question came from, and the suite answers it: the
+only decryptor in the vectors emits records typed `dec:ip-packet`, one per inner
+packet. It recodes *and* frames, so it is a decoder on any reading. **A
+recode-only decoder has no vector** — a pure decryptor emitting plaintext bytes
+with no unit boundaries — and that gap is worth knowing before Package E is ever
+argued, since E's fallback turns exactly this shape into a transport stream.
+
+*Not written as a rule: framing is what gives a stream units to have a decoded
+layer over, which is why reassembly declares transport and HTTP declares decoded.
+It is a tendency rather than a rule — a gzip output has payload-concatenation
+offsets, not sequence-anchored ones — so it belongs in the rationale companion if
+anywhere.*
+
+**This is corrective, not normative.** §Terminology carries no `MUST`, `SHOULD` or
+`MAY`, so repairing it moves neither guard count — the same property that let the
+extraction ship without a version bump.
 
 ---
 
@@ -135,13 +300,41 @@ declaration.
 The remaining six goals are untouched by every package. If one appears to need a
 Goals edit, that is a signal it has grown beyond its proposal.
 
-### 4. Rationale extraction is not in this release
+### 4. Rationale extraction is done, and it changed less than it promised
 
-It is the single largest reduction available, it is orthogonal to all five, and it
-touches every section any package touches. Doing both at once makes the diff
-unreadable and makes it impossible to say afterwards which change removed what.
-It gets its own release. §Rationale extraction records the two things to settle
-before it starts.
+Shipped as the `0.18` re-issue, tagged `v0.18-r2`, format unchanged. See
+[RATIONALE-EXTRACTION-PLAN.md](RATIONALE-EXTRACTION-PLAN.md). Three things it
+leaves this release:
+
+- **Two guards now police every edit here.** Normative-sentence invariance holds
+  the specification to `v0.18` less an accounted table of removals, and anchor
+  integrity resolves every link across the whole tree. **A reduction package
+  removes rules on purpose**, so each deletion needs a `NORMATIVE_REMOVALS` entry
+  naming the statement and why — which is exactly the record a subtractive release
+  should be keeping anyway, and it is now enforced rather than remembered.
+- **`v0.18-r2` is this release's baseline**, not `v0.18`. Every
+  `RETIRED_CLAIMS` entry added here reproduces against the extracted tree.
+- **The rationale companion is where a deleted rule's argument goes.** That was
+  the strongest reason to extract first and it survived contact: the reasoning
+  behind a rule this release removes is already in a file, rather than being
+  deleted along with it.
+
+**And it did not shrink the packages.** Measured against `v0.18`, extraction took
+this much out of each package's principal sections:
+
+| Package | Principal sections | `v0.18` | After extraction |
+|---|---|---:|---:|
+| **A** 3.1 | Annotating a decoded file | 68 | **68** |
+| **B** 3.2 | Sequenced files | 198 | 185 |
+| **C** 3.3 | Referencing the source by stream offset | 209 | 203 |
+| **D** 3.4 | Undecoded, Discontinuity, Coverage honesty | 483 | 423 |
+| **E** 3.5 | Tunnel example, Conceptual model, Decoder Descriptor | 243 | 238 |
+
+**So the claim this plan made — that extraction removes most of what each package
+would remove, leaving them to be argued on capability alone — is struck.**
+Extraction moved the rationale; a package removes the rationale *and* the
+instructional text with it, because deleting a rule deletes its examples,
+definitions and consequences too. The packages are as large as they were.
 
 ---
 
@@ -226,8 +419,11 @@ sentence, so the reset is mechanical downstream rather than archaeological.
 
 ---
 
-## Phase 0 — shared by every package
+## Phase 0 — terminology, stamp, and the package choice
 
+0. **Pin the terms** per §Terminology, and rewrite §Terminology to name them and
+   point at where each is stated. Nothing else in the document changes in this
+   step, so the diff is one paragraph and the guards stay green.
 1. Choose the package. Everything below depends on it and nothing before it does.
 2. `MAJOR, MINOR = 0, 19` in `vectors/build.py`; `check.py` to match; regenerate;
    the spec's version sites; open `## [0.19] — unreleased` with a `Removed`
@@ -251,6 +447,68 @@ package's last commit, because the capability check hard-fails on an option whos
 vector is gone and vice versa. Third release running where that is the right
 state; `0.18` stopped treating it as an exception and this one should not
 reintroduce the treatment.
+
+---
+
+## Phase 0b — rewrite the text in the pinned terms
+
+Every site using the vocabulary loosely, brought onto the definitions. This is
+the clarification half, and it is larger than Phase 0 by an order of magnitude:
+**176** uses of `decoder`, **225** of `decoded`, **25** of `decode stage`, **52**
+of `pass-through`.
+
+Not a find-and-replace. Each site is one of three cases and only the third is
+work:
+
+- **Already correct.** Most of them. Leave alone.
+- **Loose but unambiguous** — `decoder` where `decode stage` is meant, or
+  `decoded` where `derived` is meant. Correct in place.
+- **Ambiguous, because the sentence was written under the old model.** These are
+  the finds. §Terminology is the first; expect others, and expect each to be a
+  small piece of genuine reasoning rather than an edit.
+
+**Three constraints, learned from the extraction:**
+
+- **Nothing normative is reworded.** The invariance guard holds the counts but
+  would not notice a `MUST` surviving in weaker words. If a rule needs its wording
+  changed to use a pinned term, that is a `Changed` entry with an argument, not a
+  terminology fix.
+- **`ENUMERATIONS` gains the site this phase found.** "This spec defines two"
+  transforms is an undeclared enumeration that went stale exactly as `0.17`'s
+  four did. Declare it — with the members it owes — in the commit that fixes it,
+  so the next transform added fails the build here.
+- **`RETIRED_CLAIMS` gains an entry for the stale definition**, with the
+  paraphrase actually found rather than one written against the sentence being
+  deleted. It reproduces against `v0.18-r2` and is absent after.
+
+**Order: Phase 0b runs before the package.** The package edits the derivation
+vocabulary, and editing it on top of a definition three releases stale is how a
+correction gets built on a misreading.
+
+***Done, and it was small — which is the finding.*** The vocabulary was **already
+consistent almost everywhere**. Of 176 uses of `decoder`, 225 of `decoded`, 25 of
+`decode stage` and 52 of `pass-through`, **six sites** needed correcting:
+
+- **Three** used `transform` for the byte-changing act now called **recode**: the
+  weaker promise when following a record's `spans`, the provenance walk crossing a
+  stage that recoded, and a recoding decoder's spans not needing to abut.
+- **One** had the *decoder* accounting for undecoded regions where the **stage**
+  does it — §Conformance's decode-stage bullet, one line below a sentence that
+  already said the stage emits those markers.
+- **One** listed the Decoder Descriptor's parts without `output_layer`, which the
+  pinned definition makes constitutive rather than incidental.
+- **One** was §Terminology itself, fixed in Phase 0.
+
+***`decoded` needed no work at all.*** It is used as a layer adjective throughout
+— *decoded record*, *decoded stream*, *decoded layer*, *decoded file* — with no
+site standing in for *derived*. The 14 apparent hits for "decoded block" are the
+tail of **Un**decoded block.
+
+***So the defect was concentrated, not diffuse.*** The document's vocabulary was
+sound; one paragraph defining it was three releases stale, and one word was doing
+two jobs. That is worth recording because the opposite conclusion — a document
+riddled with loose usage needing a sweep — is what a 176-and-225 count suggests
+before you look, and it would have justified a far larger and more dangerous edit.
 
 ---
 
@@ -318,6 +576,40 @@ main body.
    `RULES` and the registry in the same commit or the build stays red.
 5. **Changelog, `RETIRED_CLAIMS` sweep, release.**
 
+***Done, and it was the largest of the three by some way — not "small" as the
+choice table says.***
+
+***Three vectors carried `origin` that neither the analysis nor the impact
+assessment lists as affected:*** `mixed-derivation`, `isolate-self-derived`, and
+`chain/annotated.zpf`. The analysis names four vectors; six carried the option.
+All three unlisted ones are **rebuilt on identity spans rather than deleted**, and
+each reads better for it — `isolate-self-derived`'s one violation stays the one it
+is named for, and the chain fixture now shows what a preserved stream's provenance
+looks like under the new rule. The chain checker needed no change; it never read
+`origin`.
+
+***The three findings this plan added all held.*** `isolate-unbound-zpf-stream`
+was kept and its rule rewritten rather than deleted — the rule collapses to *every
+`zpf`-sourced record carries `spans`* and binds harder for having no exception.
+`mixed-derivation` was re-vendored rather than retired, because with identity
+spans it still demonstrates something real: one file creating one stream and
+preserving another, now told apart by whether the spans are identity. And the
+renumbering duty was restated in §Discontinuity's own section rather than deleted
+with the verbatim-versus-renumbered contrast.
+
+***The `ENUMERATIONS` casualty was the predicted one.*** `provenance is the
+participants' `origin`` died with the *Annotating a decoded file* example. The set
+is down to five sites, **all of them rules rather than worked examples**, which is
+the better place for it — an example is exactly the kind of site that gets deleted
+wholesale.
+
+***And a third capability was orphaned.*** `SEQUENCED` lost every vector it had:
+three to Package B and `passthrough-transport` to this one. The flag survives both
+packages and had nothing demonstrating it, which the capability check caught.
+`sequenced-session` now carries it, and carries the point the specification makes
+in prose and no vector ever did — the response stored at `ts 995` *after* the
+`ts 1000` request that caused it.
+
 ### Risks
 
 | Risk | Likelihood | Mitigation |
@@ -329,15 +621,20 @@ main body.
 
 ### Done
 
-- [ ] `origin` is out of the registry, the descriptor, and the JSONL mapping.
-- [ ] Every `zpf`-sourced record carries `spans`, stated once, with the identity
+- [x] `origin` is out of the registry, the descriptor, and the JSONL mapping.
+- [x] Every `zpf`-sourced record carries `spans`, stated once, with the identity
       span named as the pass-through case.
-- [ ] A vector fails a reader that omits the identity span.
-- [ ] `mixed-derivation`'s fate is a recorded decision, not a re-vendor.
-- [ ] The renumbering duty survives the deletion of the asymmetry.
-- [ ] `ENUMERATIONS` re-anchored; `check.py` green; **56** vectors — 55 if
-      `mixed-derivation` is retired with its rule. The analysis budgets 55 because
-      it deletes `isolate-unbound-zpf-stream`, which this package keeps.
+- [x] A vector fails a reader that omits the identity span.
+      *`isolate-unbound-zpf-stream`, kept and re-ruled rather than deleted.*
+- [x] `mixed-derivation`'s fate is a recorded decision, not a re-vendor.
+      *Re-vendored deliberately: with identity spans it still shows one file
+      creating one stream and preserving another.*
+- [x] The renumbering duty survives the deletion of the asymmetry.
+- [x] Three vectors the analysis does not list carried `origin` and are rebuilt,
+      not deleted. *`mixed-derivation`, `isolate-self-derived`,
+      `chain/annotated.zpf`.*
+- [x] `ENUMERATIONS` re-anchored; `check.py` green. ~~*56 vectors.*~~ Taken with B
+      and C, the suite ends at **53**; A alone removes three and adds one.
 
 ---
 
@@ -394,6 +691,52 @@ itself — which is the one real interaction between B and C.
 3. Registry rows and the four vectors, one commit.
 4. Changelog, `RETIRED_CLAIMS` sweep, release.
 
+***Done. Both findings held, and the guard built for the extraction is what made
+the deletion safe.***
+
+***`NORMATIVE_REMOVALS` earned its design on its first real use.*** Eleven
+entries, each naming the sentence that went, with the expected counts derived from
+the table rather than typed — so the drop from **143/53/54** to **132/48/53**
+could not be waved through, and each step of it had to be justified in writing at
+the moment it happened. A subtractive release wants exactly this and had nothing
+like it before `0.18` built it for a different purpose.
+
+***And it caught a real mistake, of the kind this repository keeps making.*** The
+removal entry for the File Header `flags` field's reserved-bits rule matched the
+**Session Descriptor's** identical sentence, which survives — so the table claimed
+a loss that had not happened, and the check said so. Re-anchored on
+`SINGLE_CLOCK`. The lesson is in the code beside the entry: **anchor a removal on
+what is unique to the site, not on the rule being removed**, which is the same
+shape as `ENUMERATIONS`' lesson that a locator inside the clause being corrected
+is not a locator.
+
+***The two rehousings both mattered, and Phase 1 was right to do them first.***
+`time_epoch` survives the package and `file-clock-metadata` was its only vector,
+so the capability check would have hard-failed on the deletion commit. The
+placement shape was subtler: `partially-hinted-sequenced` carried **two** lessons
+and only one was about sequencing, so the deletion would have taken `0.18`'s
+`seq_start`-less placement evidence with it silently — no check covers "a rule
+kept a vector but lost a *shape*". Rehoused as `unplaceable-no-seq-start`, and
+dropping the `SEQUENCED` flag from it makes the point the old vector obscured:
+**placement keys on whether a stream is sequence-anchored, not on the flag.**
+
+***Two `RETIRED_CLAIMS` entries that differ in kind from every earlier one.***
+Every previous entry retires a claim that had become *false*. These two retire
+claims that were **true until this release**. The ratchet's job here is not to
+stop a stale copy returning but to stop a rule the model deliberately dropped
+being reintroduced from an older draft or from an implementation that still
+carries it. Worth naming, because it is a second use for the mechanism and the
+comment now says so.
+
+***The forensic question reshaped the section rather than just emptying it.***
+Asked where a strange order could be traced to, the answer turned out not to be
+the basis word at all: it names a *category* of reasoning, while what a reader
+needs is which run of which tool. §Sequenced files now points at the build
+provenance of the file that set the flag — `produced_by`, `produced_at`,
+`transform_params_digest` where a merge's ordering key lives — reached by walking
+`zpf-input` Sources back. **That is a better answer than the deleted option gave**,
+and it costs no syntax.
+
 ### Risks
 
 | Risk | Likelihood | Mitigation |
@@ -405,13 +748,25 @@ itself — which is the one real interaction between B and C.
 
 ### Done
 
-- [ ] Both options out of the registry, the JSONL mapping, and `zpf info`'s notes.
-- [ ] `SEQUENCED` is stated once, as a bare assertion, with the trust it rests on
-      named in the same sentence.
-- [ ] "Hint-less" appears nowhere, or is defined where it appears.
-- [ ] `time_epoch` and the `seq_start`-less placement case both still have a
-      vector.
-- [ ] `check.py` green; **55** vectors.
+- [x] Both options out of the registry and the JSONL mapping. *36 options, from
+      38.*
+- [x] `SEQUENCED` is stated once, as a bare assertion, with the trust it rests on
+      named in the same sentence — *"the same trust it already extends to the
+      order itself, which it cannot check either."*
+- [x] "Hint-less" appears nowhere, or is defined where it appears. *Defined, and
+      the paragraph now says no rule turns on it: it is a description, not a
+      test.*
+- [x] `time_epoch` and the `seq_start`-less placement case both still have a
+      vector. *`descriptive-metadata` and `unplaceable-no-seq-start`.*
+- [x] Every normative statement removed is named in `NORMATIVE_REMOVALS` with the
+      keywords it took and why. **Eleven**, and the count is derived from the
+      table rather than typed.
+- [x] `RETIRED_CLAIMS` carries the basis rule and the `SINGLE_CLOCK` bit, both
+      reproducing against `v0.18-r2`.
+- [x] The companion keeps the deleted rule's argument, headed as removed, with
+      why it was written *and* why it was dropped.
+- [x] `check.py` green. ~~*55 vectors.*~~ **56** — the estimate did not allow for
+      `unplaceable-no-seq-start`, which the plan's own Phase 1 called for.
 
 ---
 
@@ -478,6 +833,35 @@ a vector nobody re-read.
 4. `partially-hinted-sequenced`'s `expect`, per the decision above.
 5. Changelog, `RETIRED_CLAIMS` sweep, release.
 
+***Done, and both findings changed what shipped.***
+
+***The middle course on the floor was taken, and it is not what the analysis
+proposed.*** The analysis replaces the whole block with one sentence and leaves
+placement unspecified. Finding 3 above says that returns the `seq_start`-less
+record to having **no rule at all** — the state `0.17` left and `0.18` fixed. So
+what shipped separates the two halves: the **effect** is kept as a rule (an
+unplaceable record covers no byte of the stream and contributes nothing to the
+extent) and only the **pinned range** is dropped. The cost is then exact and
+small, and the changelog states it: *two readers may differ on which range an
+unplaceable record occupies, and cannot differ on any extent, because it covers
+nothing under either reading.*
+
+***Two of the four advisory vectors stay, per finding 2.*** The transport-label
+pair exercise the *tier* — accept, report, ignore the label, round-trip — not a
+pinned repair, and the tier survives. Deleting all four would have left a live
+concept with **no vector at all**, and the capability check cannot catch that,
+because a tier is not an option. `advisory-below-origin-payload` became
+`unplaceable-below-origin` with `violations=0`: it now pins the effect rather than
+a violation, which is what remains true of it.
+
+***The removals table caught a site I had missed, and it is the shape this
+repository keeps hitting.*** The sentence calling the advisory strength
+"deliberately unusual … which this document gives only where it can say exactly
+what a reader does instead" **counted** the advisory MUST NOTs and named the
+origin floor as the other one. A count of a set, going stale as the set changes —
+`ENUMERATIONS`' own failure mode, in a sentence no enumeration declares. It went
+with the floor.
+
 ### Risks
 
 | Risk | Likelihood | Mitigation |
@@ -489,13 +873,15 @@ a vector nobody re-read.
 
 ### Done
 
-- [ ] The floor is one sentence, and it says what a reader does.
-- [ ] No MUST NOT in the document pins a repair.
-- [ ] The advisory tier still has a vector.
-- [ ] No `expect` asserts a placement the specification no longer states.
-- [ ] `RETIRED_CLAIMS` carries the floor's placement rule, reproducing against
-      `v0.18`.
-- [ ] `check.py` green; **55** or 56 vectors, depending on the tier vector kept.
+- [x] The floor says what a reader does. *And keeps the **effect** as a rule while
+      dropping the pinned range — the analysis would have dropped both.*
+- [x] No MUST NOT in the document pins a repair.
+- [x] The advisory tier still has a vector. *Two: the transport-label pair.*
+- [x] No `expect` asserts a placement the specification no longer states.
+      *`unplaceable-no-seq-start` now asserts the extent and not the range.*
+- [x] `RETIRED_CLAIMS` carries the floor's MUST NOT, reproducing against
+      **`v0.18-r2`**.
+- [x] `check.py` green. Taken with A and B, the suite ends at **53**.
 
 ---
 
@@ -799,6 +1185,18 @@ package: seven rules retired, each asserted in a vector summary and a README row
 
 Three interactions matter, and two of them are named in neither document.
 
+***All three were taken, and this section's score is one hit, one live, one
+avoided.***
+
+- **Interaction 2 hit**, in the direction the section did not name. It says do C
+  before B's vector removal; B went first, so the placement shape was rehoused
+  into a vector C then unpinned. Cost: a softened `expect`, not a wasted vector.
+- **Interaction 1 is live and unresolved.** A without D is exactly what shipped —
+  see below.
+- **Interaction 3 was half-avoided.** A killed one `ENUMERATIONS` locator, not
+  two: the pass-through carry-forward bullet survives because a pass-through still
+  re-emits Undecoded blocks. E was not taken, so the set keeps five sites.
+
 1. **A without D makes a merge owe coverage.** A merge output carrying `spans`
    *cites* an input stream, and under the current coverage MUST that makes the
    file answerable for it — every offset spanned or marked. A transport input's
@@ -806,6 +1204,13 @@ Three interactions matter, and two of them are named in neither document.
    `gap` block per hole. `python-zipline` found this and it is correct. Under
    D-clean it is a SHOULD; under **D-pair it remains a MUST**, so the work is
    real under the combination this plan recommends.
+
+   ***This is now live.*** A shipped and D did not, so a merge writing identity
+   spans cites an input stream and is answerable for every offset of it. No merge
+   vector in the suite has a holed input, so nothing fails and nothing in the tree
+   shows the obligation — but it binds a merge implementation today. **It goes in
+   the note to `python-zipline` before the tag**, because `merge_files` is theirs
+   and the plan's own §Definition of done requires telling them first.
 2. **B and C both bear on `partially-hinted-sequenced`, in opposite directions.**
    B deletes the vector and needs its placement case rehoused first; C deletes the
    placement rule and makes the rehousing unnecessary. Taking both, do C's
@@ -856,17 +1261,97 @@ learned from this repository rather than from the analysis:
 
 ## Definition of done
 
+Clarification half:
+
+- [x] **§Terminology names each term and points at where it is stated**, restating
+      no rule, and no longer says a decoder derives a decoded stream from a
+      transport one. *It is a `## Terminology` section now, so its anchor no
+      longer moves when the version does — the link guard found that at the
+      stamp.*
+- [x] **A decode stage is defined as creating a layer**, and it says out loud that
+      such a stage need not run a decoder.
+- [x] The *created/preserved* and *decode stage/pass-through* vocabularies are
+      bound to each other once, not maintained as two.
+- [x] The transform enumeration is in `ENUMERATIONS` with its members, failing the
+      build if a transform is added without updating it. *Its matcher now accepts
+      **bold** as well as `code`, this being the first set whose members are prose
+      terms rather than identifiers.*
+- [x] `RETIRED_CLAIMS` carries the stale definition, reproducing against
+      `v0.18-r2`.
+- [x] Normative counts unchanged by the clarification. *All eleven differences
+      belong to Package B and each has a `NORMATIVE_REMOVALS` entry.*
+
 Package-independent:
 
-- [ ] Exactly one of A–E is complete; the others are untouched in this file.
-- [ ] `CHANGELOG.md` `[0.19]` has a `Removed` section naming every deleted option,
+- [x] Each package taken is complete on its own, in its own commit, with its own
+      accounting. ~~*Exactly one of A–E.*~~ **Three: B, A, C.** D and E are
+      untouched in this file.
+- [x] `CHANGELOG.md` `[0.19]` has a `Removed` section naming every deleted option,
       rule and vector, the vectors as a list.
-- [ ] Every `RETIRED_CLAIMS` entry added by the release reproduces against `v0.18`
-      and is absent now.
-- [ ] `ENUMERATIONS` passes, with any dead locator re-anchored rather than
-      deleted quietly.
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.19`.
-- [ ] `ruff check` and `ruff format` clean.
-- [ ] The package's own Done list above, complete.
-- [ ] `python-zipline` is told which package landed before the tag, not after —
-      its `v0.3.0` plan sequences work that three of the five packages delete.
+- [x] Every `RETIRED_CLAIMS` entry added by the release reproduces against
+      **`v0.18-r2`** and is absent now. *Five entries: two for the clarification,
+      two for B, one each for A and C.*
+- [x] `ENUMERATIONS` passes, with any dead locator re-anchored rather than
+      deleted quietly. *2 sets, 8 sites.*
+- [x] `python3 vectors/check.py` green; every vector stamps `0.19`, and
+      `reject-unknown-minor` rolled to `0/20` out of its own bytes. **53 vectors,
+      from 59. 35 options, from 38. 121 `MUST`, from 143** — every one of the 23
+      removals named in `NORMATIVE_REMOVALS`.
+- [x] `ruff check` and `ruff format` clean.
+- [x] The package's own Done list above, complete.
+- [x] `python-zipline` is told which packages landed **before** the tag, not after
+      — its `v0.3.0` plan sequences work that three of the five packages delete.
+      *[python-zipline#65](https://github.com/adamkjonsson/python-zipline/issues/65),
+      leading with the merge coverage obligation, since that one needs action
+      rather than awareness.*
+- [ ] Tag `v0.19`.
+
+---
+
+## What execution changed
+
+Recorded because a plan only ever read forwards teaches nothing. Five things this
+document got wrong.
+
+- **The release was scoped as purely subtractive and is not.** The terms were
+  never pinned, and one paragraph had defined `decoder` wrongly since `0.15` —
+  found by a question this plan did not think to ask. Clarification became the
+  first half and gated the second, which was the right order: Package B edits the
+  sequencing vocabulary, and editing it on a stale foundation is how a correction
+  gets built on a misreading.
+- **The clarification sweep was budgeted as the large half and was the small
+  one.** Counts of 176 `decoder` and 225 `decoded` suggested a document riddled
+  with loose usage; six sites needed correcting and `decoded` needed none. The
+  defect was concentrated — one stale paragraph, one word doing two jobs — and
+  believing the counts would have justified a far larger and more dangerous edit.
+- **The guard the extraction built for one purpose is what made the deletion
+  safe.** `NORMATIVE_REMOVALS` was designed to catch a rule leaving *by accident*
+  during extraction. Its first real use was a release removing rules *on purpose*,
+  where it forced eleven written justifications and caught one entry that claimed
+  a loss which had not happened.
+- **The vector estimate was low again**, for the fourth release running. Budgeted
+  55, shipped 56: the plan's own Phase 1 called for rehousing the placement shape
+  and the estimate did not count the vector that rehousing needs.
+- **Deleting vectors keeps orphaning capabilities that survive**, and this is the
+  finding to carry into any future subtractive release. It happened **three
+  times**: `time_epoch`, the `seq_start`-less placement shape, and `SEQUENCED`
+  itself, which lost every vector it had across two packages. The capability check
+  caught each one, and would not have caught the middle case — no check knows that
+  a rule kept a vector but lost a *shape*. Budget a rehousing phase per package,
+  as Package B's Phase 1 did by accident.
+- **Package A was not "small".** The choice table calls its suite cost small; it
+  was the largest of the three, because three vectors carried `origin` that
+  neither source document lists — including the `chain` fixture. The lesson is
+  narrow and useful: **grep the tree for the option, do not trust the analysis's
+  vector list.**
+- **Twice the analysis proposed deleting more than shipped, and both times the
+  plan's own findings were right to keep something.** C would have dropped the
+  floor's effect along with its pinned range, returning the `seq_start`-less
+  record to having no rule; and all four advisory vectors, leaving the surviving
+  tier with none. A subtractive release needs a standing question at every
+  deletion: *does a rule survive this in weaker form, and does it keep a vector?*
+- **Two guards reported things no human would have found**, both in this release:
+  a link into a section that had moved, and a link into the document's own title
+  after the version stamp changed it. Neither is visible in a rendered page. The
+  second produced a real improvement — Terminology is a section with a stable
+  anchor now, rather than a bold lead-in reachable only through the title.
