@@ -1,7 +1,8 @@
 # Release 0.19 — the simplification menu
 
-*Written 2026-09-04 against **v0.18**,
-[SIMPLIFICATION-ANALYSIS.md](SIMPLIFICATION-ANALYSIS.md), and `python-zipline`'s
+*Written 2026-09-04, revised 2026-09-05 against **`v0.18-r2`** — the re-issue that
+extracted the rationale, which is this release's baseline. Sources are
+[SIMPLIFICATION-ANALYSIS.md](SIMPLIFICATION-ANALYSIS.md) and `python-zipline`'s
 [SIMPLIFICATION-IMPACT.md](https://github.com/adamkjonsson/python-zipline/blob/main/plans/SIMPLIFICATION-IMPACT.md),
 which assesses the same five proposals from inside the only complete
 implementation. This is a working roadmap, not normative text.*
@@ -40,12 +41,10 @@ for the release that takes them.
 | **D** | 3.4 coverage as a verifiable MUST | ~300 | −6 | −2 | medium | single-file self-verifiability; a decryptor's failure class | support **the middle path** |
 | **E** | 3.5 provenance and layer as axes | ~330 | −8 | 0 | **~630 lines** | every multi-hop transform chain's per-hop account, a reassembler's `params_digest` | **oppose** |
 
-Vector counts are exact. The spec-lines column is retained for scale only and is
-not the basis for choosing: see scope decision 4, and §What simplification means
-in the extraction plan.
-decoded file* is 68 lines, the *decrypted tunnel* example 118, the `input_extents`
-text 66, *Sequenced files* 198 of which about 110 goes. The vector suite is at
-**59**; the column is the count each package removes.
+Vector counts are exact and the suite is at **59**. The spec-lines column is an
+estimate kept for scale only, and it is **not** the basis for choosing: see scope
+decision 4 for what extraction did and did not take out of each package, and the
+ranking below for what replaces it.
 
 **The last column is not a full assessment for D and E.** `python-zipline` has no
 transforming decoder, so its document cannot price what those two do to
