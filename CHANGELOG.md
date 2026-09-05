@@ -97,6 +97,18 @@ what a conformant file is.*
   pass-through, and `ENUMERATIONS` fails the build if a third kind is added
   without updating them.
 
+- **Five further sites brought onto the pinned terms.** Three used `transform` for
+  the byte-changing act now called `recode`; one had the *decoder* accounting for
+  undecoded regions where the *stage* does it; one listed the Decoder Descriptor's
+  parts without `output_layer`, which the definition makes constitutive rather
+  than incidental.
+
+**The sweep found less than the counts suggested, and that is worth saying.** Of
+176 uses of `decoder`, 225 of `decoded`, 25 of `decode stage` and 52 of
+`pass-through`, six sites needed correcting. `decoded` needed none: it names a
+layer throughout, never standing in for *derived*. The defect was concentrated —
+one stale paragraph, and one word doing two jobs — rather than diffuse.
+
 `RETIRED_CLAIMS` gains the stale definition, reproducing against `v0.18-r2` and
 absent now. No rule changed and no normative keyword moved.
 

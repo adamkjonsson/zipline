@@ -456,6 +456,31 @@ work:
 vocabulary, and editing it on top of a definition three releases stale is how a
 correction gets built on a misreading.
 
+***Done, and it was small — which is the finding.*** The vocabulary was **already
+consistent almost everywhere**. Of 176 uses of `decoder`, 225 of `decoded`, 25 of
+`decode stage` and 52 of `pass-through`, **six sites** needed correcting:
+
+- **Three** used `transform` for the byte-changing act now called **recode**: the
+  weaker promise when following a record's `spans`, the provenance walk crossing a
+  stage that recoded, and a recoding decoder's spans not needing to abut.
+- **One** had the *decoder* accounting for undecoded regions where the **stage**
+  does it — §Conformance's decode-stage bullet, one line below a sentence that
+  already said the stage emits those markers.
+- **One** listed the Decoder Descriptor's parts without `output_layer`, which the
+  pinned definition makes constitutive rather than incidental.
+- **One** was §Terminology itself, fixed in Phase 0.
+
+***`decoded` needed no work at all.*** It is used as a layer adjective throughout
+— *decoded record*, *decoded stream*, *decoded layer*, *decoded file* — with no
+site standing in for *derived*. The 14 apparent hits for "decoded block" are the
+tail of **Un**decoded block.
+
+***So the defect was concentrated, not diffuse.*** The document's vocabulary was
+sound; one paragraph defining it was three releases stale, and one word was doing
+two jobs. That is worth recording because the opposite conclusion — a document
+riddled with loose usage needing a sweep — is what a 176-and-225 count suggests
+before you look, and it would have justified a far larger and more dangerous edit.
+
 ---
 
 ## Package A — 3.1 pass-through as a distinct derivation kind

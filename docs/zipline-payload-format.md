@@ -992,9 +992,11 @@ predecessor changes. It is `source → object` with a Makefile dependency, not a
 
 ### Decoder Descriptor (which decoding)
 
-The decoder is a first-class, referenceable entity: a `decoder_id` (referenced
-per-record), a `name` (e.g. `http/1.1`), a `version`, and a `params_digest` (hash
-of the decoder config, so the decode is reproducible).
+The decoder is a first-class, referenceable **identity**: a `decoder_id`
+(referenced per-record), a `name` (e.g. `http/1.1`), a `version`, a
+`params_digest` (hash of the decoder config, so the decode is reproducible), and
+an `output_layer` naming the layer its output is in. It is not the stage that ran
+it, in the sense [Terminology](#zipline-payload-format-v018) gives both words.
 
 Every record produced by a decoder carries an **explicit** `decoder_id` — there is
 no implicit "primary" default. Its presence names the decoder; what **layer** the
@@ -2033,7 +2035,7 @@ Either way the bytes are not in *this* file. What the class promises is the byte
 **of the region the span names**, in the file it names them in — one level down.
 That is exact for an Undecoded block, whose region was by definition not decoded.
 Following a *record's* `spans` is a weaker thing, because a decoder may have
-transformed: it yields the input region the record corresponds to, which is the
+**recoded**: it yields the input region the record corresponds to, which is the
 provenance of the record's bytes rather than a second copy of them. See
 [Recovering the bytes](#undecoded-0x21) below.
 
@@ -2084,9 +2086,9 @@ referenced span is itself Undecoded in `source_id`, it recurses — until it rea
 the capture-sourced file that holds the bytes of the region it arrived at.
 
 **Those need not be the bytes it set out to find.** Each hop the walk crosses a
-*transforming* decode stage, what it recovers is the corresponding input, not the
-same content in another file: chasing a plaintext HTTP region down through a TLS
-stage reaches ciphertext, and through a gzip stage, compressed bytes. That is the
+stage whose decoder **recoded**, what it recovers is the corresponding input, not
+the same content in another file: chasing a plaintext HTTP region down through a
+TLS stage reaches ciphertext, and through a gzip stage, compressed bytes. That is the
 honest answer — the plaintext exists nowhere upstream, and re-deriving it means
 re-running the stage, which needs its `params_digest` config and, for a key-gated
 stage, its key. A consumer that reports the recovered bytes as the region's
@@ -2217,7 +2219,7 @@ every record header, nonce and tag accounted for without decoding them, and its
 plaintext joins perfectly, so a rule keyed on unspanned input bytes would demand a
 block that says something false. Not `spans` adjacency either — `spans` assert
 [correspondence, not identity](#tlv-option-framing--id-registry), so a
-transforming decoder's spans need not abut where its output is continuous, and
+**recoding** decoder's spans need not abut where its output is continuous, and
 they may legally overlap or run downward. The question is only whether content
 that belonged between these two units failed to reach the output, or was never
 between them at all.
@@ -2696,7 +2698,7 @@ A `zpf`-sourced stream is produced by one of the two kinds of transform — a
 - A **decode stage** creates a layer. It runs decoders over its input's streams
   and emits records whose `spans` name the input ranges they **correspond to**,
   plus [Undecoded](#undecoded-0x21) markers for every region it did not decode.
-  A decoder accounts for regions it could not parse by reference, never by
+  The stage accounts for regions it could not parse by reference, never by
   copying bytes forward. Its records' bytes need not appear in its input: a
   decoder MAY recode (see
   [Typing a decoded record](#typing-a-decoded-record)).
