@@ -1906,14 +1906,18 @@ vector(
 vector(
     "descriptive-metadata",
     "accept",
-    "Four optional descriptive options that no vector carried before 0.14, one "
-    "per block that defines one: link_type on a capture Source, flow_key on a "
-    "Session, identity on a Participant, ts_first on a Record. None changes "
+    "Five optional descriptive options, one per block that defines one: "
+    "time_epoch on the File Header, link_type on a capture Source, flow_key on "
+    "a Session, identity on a Participant, ts_first on a Record. None changes "
     "how anything else is read -- they project straight through, and the point "
-    "is that a converter carries them rather than dropping them.",
+    "is that a converter carries them rather than dropping them. time_epoch "
+    "arrived here in 0.19: it moves the clock ORIGIN, so wall time is "
+    "(time_epoch + timestamp) / tick_hz, and it was previously carried only by "
+    "file-clock-metadata, whose other half was the SINGLE_CLOCK flag that 0.19 "
+    "removed. The option outlived its vector.",
     "TLV option framing & id registry",
     [
-        file_header(),
+        file_header(options=[o_time_epoch(1719500000)]),
         source(1, 0, [o_uri("c.pcap"), o_link_type(1)]),
         session(7, [o_proto("tcp"), o_flow_key("10.0.0.1:51000 <-> 93.184.216.34:80")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_identity("alice@example.com")]),
@@ -1923,7 +1927,7 @@ vector(
         end_block(),
     ],
     jsonl=[
-        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000, "time_epoch": 1719500000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap", "link_type": 1},
         {
             "type": "session",
@@ -2887,6 +2891,75 @@ vector(
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "mixed.pcap"},
         {"type": "session", "session_id": 9, "proto": "udp", "sequenced": True},
+        {"type": "participant", "session_id": 9, "pid": 0, "endpoint": ["10.0.0.1:5000"]},
+        {"type": "participant", "session_id": 9, "pid": 1, "endpoint": ["10.0.0.2:5000"]},
+        {
+            "type": "record",
+            "session_id": 9,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3000,
+            "payload": b64(b"hinted"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 9,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 3100,
+            "payload": b64(b"plain"),
+        },
+        {
+            "type": "record",
+            "session_id": 9,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3200,
+            "payload": b64(b"plain2"),
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. The .jsonl file is the expected projection. On placement: "
+    "pid 0's first record is at [0,6) and its second carries no seq_start "
+    "on a stream whose first record has one, so it is UNPLACEABLE -- a "
+    "zero-width range at the highest off_end reached, offset 6, "
+    "contributing nothing, so the extent stays 6 and those six bytes are "
+    "in no offset at all. A reader that appended them at [6,12) is "
+    "reading an offset the file does not state. pid 1 is NOT this rule's "
+    "case: no record of that participant carries a seq_start, so its "
+    "stream is not sequence-anchored to begin with.",
+    violations=0,
+)
+
+vector(
+    "unplaceable-no-seq-start",
+    "accept",
+    "The COMMONER unplaceable shape, on its own: a record with no seq_start on "
+    "a stream whose earlier record has one, so the offset space cannot say "
+    "where it belongs. 0.17 stated a placement rule for a below-origin record "
+    "and left this shape silent; 0.18 stated one rule for both and pinned this "
+    "half inside partially-hinted-sequenced, which 0.19 removed with the "
+    "sequencing basis. The shape has nothing to do with SEQUENCED -- placement "
+    "keys on whether a stream is sequence-anchored, not on the flag -- so it is "
+    "carried here by an ordinary session, which is where it always belonged. "
+    "Its twin is advisory-below-origin-payload, the other shape of one rule.",
+    "Referencing the source by stream offset",
+    [
+        file_header(),
+        source(1, 0, [o_uri("mixed.pcap")]),
+        session(9, [o_proto("udp")]),
+        participant(9, 0, [o_endpoint("10.0.0.1:5000")]),
+        participant(9, 1, [o_endpoint("10.0.0.2:5000")]),
+        record(9, 0, 1, 3000, b"hinted", options=[o_seq_start(1001)]),
+        record(9, 1, 1, 3100, b"plain"),
+        record(9, 0, 1, 3200, b"plain2"),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "mixed.pcap"},
+        {"type": "session", "session_id": 9, "proto": "udp"},
         {"type": "participant", "session_id": 9, "pid": 0, "endpoint": ["10.0.0.1:5000"]},
         {"type": "participant", "session_id": 9, "pid": 1, "endpoint": ["10.0.0.2:5000"]},
         {

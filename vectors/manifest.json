@@ -590,7 +590,7 @@
       "name": "descriptive-metadata",
       "tier": "accept",
       "violations": 0,
-      "bytes": 248,
+      "bytes": 260,
       "blocks": [
         "0x01",
         "0x02",
@@ -600,6 +600,7 @@
         "0x41"
       ],
       "options": [
+        "0x0010",
         "0x0020",
         "0x0022",
         "0x0050",
@@ -608,7 +609,7 @@
         "0x0062",
         "0x0073"
       ],
-      "summary": "Four optional descriptive options that no vector carried before 0.14, one per block that defines one: link_type on a capture Source, flow_key on a Session, identity on a Participant, ts_first on a Record. None changes how anything else is read -- they project straight through, and the point is that a converter carries them rather than dropping them.",
+      "summary": "Five optional descriptive options, one per block that defines one: time_epoch on the File Header, link_type on a capture Source, flow_key on a Session, identity on a Participant, ts_first on a Record. None changes how anything else is read -- they project straight through, and the point is that a converter carries them rather than dropping them. time_epoch arrived here in 0.19: it moves the clock ORIGIN, so wall time is (time_epoch + timestamp) / tick_hz, and it was previously carried only by file-clock-metadata, whose other half was the SINGLE_CLOCK flag that 0.19 removed. The option outlived its vector.",
       "spec_section": "TLV option framing & id registry",
       "expect": "Accept. The .jsonl file is the expected projection.",
       "has_jsonl": true
@@ -970,6 +971,30 @@
       ],
       "summary": "A SEQUENCED session where ONE record carries seq_start and the rest carry no hints at all. Under 0.12's definition a single hint anywhere means the session is not hint-less, so no sequenced_basis is required -- even though most of the order rests on timestamps. This vector pins that answer. Since 0.18 it also carries the OTHER unplaceable shape: pid 0's second record has no seq_start on a stream whose first record has one, so the offset space cannot say where it belongs. 0.17 stated a placement rule for a below-origin record and left this shape silent, and it is the commoner of the two.",
       "spec_section": "Merge algorithm -- hint-less",
+      "expect": "Accept. The .jsonl file is the expected projection. On placement: pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- a zero-width range at the highest off_end reached, offset 6, contributing nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with.",
+      "has_jsonl": true
+    },
+    {
+      "name": "unplaceable-no-seq-start",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 308,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0060",
+        "0x0070"
+      ],
+      "summary": "The COMMONER unplaceable shape, on its own: a record with no seq_start on a stream whose earlier record has one, so the offset space cannot say where it belongs. 0.17 stated a placement rule for a below-origin record and left this shape silent; 0.18 stated one rule for both and pinned this half inside partially-hinted-sequenced, which 0.19 removed with the sequencing basis. The shape has nothing to do with SEQUENCED -- placement keys on whether a stream is sequence-anchored, not on the flag -- so it is carried here by an ordinary session, which is where it always belonged. Its twin is advisory-below-origin-payload, the other shape of one rule.",
+      "spec_section": "Referencing the source by stream offset",
       "expect": "Accept. The .jsonl file is the expected projection. On placement: pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- a zero-width range at the highest off_end reached, offset 6, contributing nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with.",
       "has_jsonl": true
     },
