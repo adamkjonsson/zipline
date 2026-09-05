@@ -111,10 +111,32 @@ RATIONALE = os.path.join(HERE, os.pardir, "docs", "zipline-payload-format-ration
 # includes the `MUST NOT`s; both are counted so that a MUST silently weakened to a
 # MUST NOT (or the reverse) still moves a number.
 #
-# Lowering one of these is a deliberate act belonging to a release that changes
-# what the format requires. It is not part of extraction, and it is not a knob to
-# turn when the check goes red.
-NORMATIVE_BASELINE = {"MUST": 143, "MUST NOT": 53, "SHOULD": 27, "MAY": 54}
+# This dict is frozen: it is what v0.18 said, and it is never edited.
+NORMATIVE_V018 = {"MUST": 143, "MUST NOT": 53, "SHOULD": 27, "MAY": 54}
+
+# Normative statements deliberately removed from the specification, with the
+# keywords each took and why.
+#
+# Phase 1 found the case the count invariant could not have anticipated, and it is
+# the good kind: extraction SURFACES rules stated twice. A sentence that restates a
+# rule whose home is elsewhere reads as ordinary prose until the section around it
+# moves and the duplicate stands alone. Every entry here has that one shape -- a
+# restatement replaced by a cross-reference to where the rule actually lives -- and
+# an entry of any other shape is a normative change wearing extraction's clothes.
+#
+# The expected counts are DERIVED from this table rather than typed, so a count
+# cannot be lowered without naming the sentence that went, and a named sentence
+# still present in the specification fails the check. That is what keeps the
+# baseline from being a knob to turn when the build goes red.
+NORMATIVE_REMOVALS = (
+    (
+        r"a reader MUST NOT gate parsing on `version_minor`",
+        {"MUST": 1, "MUST NOT": 1},
+        "Design decisions not taken restated the File Header's version-gating rule "
+        "while arguing against a re-stamp option; the section moved to the companion "
+        "and the restatement became a cross-reference to the rule's home",
+    ),
+)
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
 # Session fan-out shipped in 0.13 as a Clarified item with nothing exercising it,
@@ -800,34 +822,41 @@ def check_anchor_links() -> list[str]:
 def check_normative_split() -> list[str]:
     """Keep every rule in the specification, and let only the argument move.
 
-    Two halves, and the second is the one that matters. The specification's
-    normative keyword counts must match the `v0.18` baseline, so a MUST cannot
-    leave with the paragraph that explains it. And the companion must carry **no**
-    normative keyword at all: a reader who finds a MUST in the rationale document
-    has found one the specification lost.
+    Three parts. The specification's normative keyword counts must match `v0.18`
+    less whatever `NORMATIVE_REMOVALS` accounts for, so a MUST cannot leave with
+    the paragraph that explains it. Every removal it names must genuinely be gone,
+    so the table cannot be padded to absorb a loss it does not describe. And the
+    companion must carry **no** normative keyword at all: a reader who finds a MUST
+    in the rationale document has found one the specification lost.
 
-    This is the guard for the whole re-issue, and it is stated as counts rather
-    than as a regenerated list of sentences on purpose. A list you regenerate when
-    it goes red is a record of what happened, not a check on it.
+    Counts rather than a regenerated list of sentences, on purpose. A list you
+    regenerate when it goes red is a record of what happened, not a check on it.
     """
     out = []
     spec = read_text(SPEC)
-    for kw, want in sorted(NORMATIVE_BASELINE.items()):
+
+    for pattern, _kws, why in NORMATIVE_REMOVALS:
+        if re.search(pattern, re.sub(r"\s+", " ", spec)):
+            out.append(
+                f"removal '{pattern[:48]}...' names a sentence still in the specification "
+                f"-- the table accounts for a loss that did not happen ({why[:60]}...)"
+            )
+
+    for kw, base in sorted(NORMATIVE_V018.items()):
+        want = base - sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_REMOVALS)
         got = len(re.findall(r"\b" + kw.replace(" ", r"\s+") + r"\b", spec))
         if got != want:
             verb = "lost" if got < want else "gained"
             out.append(
-                f"specification {verb} a normative keyword: {kw} is {got}, baseline {want} "
-                f"-- extraction moves the argument and leaves the rule"
+                f"specification {verb} a normative keyword: {kw} is {got}, expected {want} "
+                f"(v0.18 had {base}) -- extraction moves the argument and leaves the rule"
             )
 
     if os.path.exists(RATIONALE):
         allowed = [p for p, _ in RATIONALE_QUOTES]
         for n, line in enumerate(read_text(RATIONALE).split("\n"), 1):
             kws = {
-                k
-                for k in NORMATIVE_BASELINE
-                if re.search(r"\b" + k.replace(" ", r"\s+") + r"\b", line)
+                k for k in NORMATIVE_V018 if re.search(r"\b" + k.replace(" ", r"\s+") + r"\b", line)
             }
             if kws and not any(re.search(p, line) for p in allowed):
                 out.append(
@@ -836,9 +865,15 @@ def check_normative_split() -> list[str]:
                 )
 
     if not out:
-        counts = ", ".join(f"{k} {v}" for k, v in sorted(NORMATIVE_BASELINE.items()))
+        counts = ", ".join(
+            f"{k} {v - sum(x.get(k, 0) for _p, x, _w in NORMATIVE_REMOVALS)}"
+            for k, v in sorted(NORMATIVE_V018.items())
+        )
         home = "companion clean" if os.path.exists(RATIONALE) else "no companion yet"
-        print(f"  normative split: {counts} -- unchanged from v0.18, {home}")
+        print(
+            f"  normative split: {counts} -- v0.18 less "
+            f"{len(NORMATIVE_REMOVALS)} accounted removal(s), {home}"
+        )
     return out
 
 

@@ -112,6 +112,28 @@ validates every guard this repository has. The re-issue is tagged `v0.18-r2` and
   the suite. Measured before it was taken: of 480 paragraphs, 11 recount a
   superseded rule and none matches a retired spelling, so the allowlist is empty.
 
+### Moved to the rationale companion
+
+Each of these left the specification whole and unedited except for its links.
+Nothing in them binds a reader or a writer.
+
+- **Prior art this borrows from**, **Open questions**, and **Design decisions not
+  taken** — the document's whole tail, 164 lines. The specification now ends with
+  a pointer to the companion, and the two references from its body into *Design
+  decisions not taken* resolve across the two files.
+
+### Changed
+
+- **One restatement became a cross-reference.** *Design decisions not taken*
+  argued against a re-stamp option by restating the File Header's rule that a
+  reader does not gate parsing on `version_minor`. The rule's home is the File
+  Header section and always was; the copy in the moved text now points there
+  instead of asserting it again. This is the only sentence in the re-issue whose
+  wording changed, it removes no rule, and it is recorded in `NORMATIVE_REMOVALS`
+  with the keywords it accounted for — the specification's counts are derived from
+  that table rather than typed, so no count can be lowered without naming the
+  sentence that went.
+
 ## [0.18] — 2026-09-02
 
 **A corrective release, like `0.11`, `0.12`, `0.14` and `0.16`.** `0.17` decided

@@ -294,6 +294,52 @@ under real content.
 hard to navigate at 135 lines, its structure is wrong and the cost of fixing it
 never gets lower.
 
+***Done, and the pilot earned its place: it found the flaw in the guard rather
+than in the text.***
+
+***Three sections moved, not one, because they are the document's whole tail.***
+*Prior art this borrows from*, *Open questions* and *Design decisions not taken*
+run contiguously to the end of the file, so the move is one cut: **164 lines**,
+specification 3 526 → 3 367, companion 78 → 242. Fifteen anchor links inside the
+moved text became cross-file links; two links in the specification body that
+pointed *into* the moved sections now point at the companion. The specification
+ends with a pointer to the companion, because a reader who wants to know why a
+rule exists needs to be told where that went.
+
+***The count invariant was wrong, and Phase 1 is where it had to break.***
+*Design decisions not taken* carries one `MUST NOT`, so moving it whole dropped
+the specification to 142/52 and the guard failed — correctly, and with no way to
+proceed that was not either a lie or a knob. The sentence turned out to be a
+**restatement**: "a reader MUST NOT gate parsing on `version_minor`", argued
+inside a rejected-option entry, whose home is the File Header section. So the
+finding is the good kind — **extraction surfaces rules stated twice**, which is
+the failure mode #120 is about, and it stays invisible until the text around the
+duplicate moves.
+
+The fix keeps the guard honest rather than relaxing it. `NORMATIVE_REMOVALS`
+names each deliberately removed statement, the keywords it took and why; the
+expected counts are **derived** from that table rather than typed. So a count
+cannot be lowered without naming the sentence that went, and a named sentence
+still present in the specification fails the check — verified by trying it: a
+fabricated entry naming a live rule is reported twice over, once as a bad entry
+and once as a count that no longer adds up. Every entry has one shape, and an
+entry of any other shape is a normative change wearing extraction's clothes.
+
+***An automated reflow corrupted the list structure and was thrown away.*** The
+link substitution stretched twelve lines past the house wrap, and a paragraph-
+rewrapping pass merged consecutive list items into single paragraphs — `- -
+**pcapng**` and the rest. Reverted and replaced with a **split-only** fixer that
+breaks a long line and never joins two, so list structure cannot collapse
+whatever the input. The general rule, and it is the second-order lesson of this
+phase: *a text tool that can merge lines can destroy structure; one that can only
+split cannot.*
+
+***The read-back says the structure holds.*** The companion is seven empty
+placeholder sections followed by three full ones, which looks front-loaded with
+nothing — but the emptiness is the point the plan argued for, and the filled
+sections sit last because the specification's did. Nothing needs restructuring
+before Phase 2.
+
 ### Phase 2 — the mixed sections, one per commit
 
 In descending order of rationale share, and **one section per commit** so a
