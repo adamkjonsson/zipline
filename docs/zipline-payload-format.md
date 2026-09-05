@@ -53,6 +53,14 @@ which combines separately-captured directions into one sequenced `.zpf` (see
   is a *separate stream*, derived and held in its own file, not a layer inside the
   record (see
   [Layers](#layers-transport-and-decoded-live-in-separate-streams)).
+- Make a **decoding failure findable in the input's own bytes**. Every decoded
+  unit cites the range it was built from, and every region a decoder declined or
+  could not parse is declared with a reason rather than dropped — so a tool that
+  knows nothing about the protocol can locate each place the decoder's model of
+  it broke, follow the reference back to the captured bytes, and re-derive just
+  those ranges. A decoder for a protocol nobody fully understands is a
+  hypothesis, and this is what makes its failures countable rather than silent
+  (see [Coverage honesty](#coverage-honesty-undecoded-blocks)).
 - Be **append-only / streamable** so a writer can flush a finished session and
   forget it, keeping memory bounded on unbounded input — and so a reader can do
   the same, dropping a session's state at its
