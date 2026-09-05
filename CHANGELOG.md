@@ -60,7 +60,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.19] — unreleased
+## [0.19] — 2026-09-05
 
 **Clarification and simplification, in that order.** The terms are pinned first,
 the text is brought onto them, and then one reduction package lands. Scope and
@@ -2051,6 +2051,7 @@ the designation changed; the bytes never did.
   semantic violation → MAY isolate), truncation and completeness rules, and a
   byte-annotated worked example of a complete 196-byte raw file.
 
+[0.19]: https://github.com/adamkjonsson/zipline/compare/v0.18-r2...v0.19
 [0.18]: https://github.com/adamkjonsson/zipline/compare/v0.17...v0.18
 [0.17]: https://github.com/adamkjonsson/zipline/compare/v0.16...v0.17
 [0.16]: https://github.com/adamkjonsson/zipline/compare/v0.15...v0.16

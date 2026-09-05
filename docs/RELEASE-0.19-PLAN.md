@@ -1304,7 +1304,7 @@ Package-independent:
       *[python-zipline#65](https://github.com/adamkjonsson/python-zipline/issues/65),
       leading with the merge coverage obligation, since that one needs action
       rather than awareness.*
-- [ ] Tag `v0.19`.
+- [x] Tag `v0.19`, on the merge commit, where `v0.18` sits.
 
 ---
 
