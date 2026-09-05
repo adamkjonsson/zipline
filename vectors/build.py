@@ -2648,13 +2648,15 @@ vector(
     ],
     expect="Accept. The .jsonl file is the expected projection. On placement: "
     "pid 0's first record is at [0,6) and its second carries no seq_start "
-    "on a stream whose first record has one, so it is UNPLACEABLE -- a "
-    "zero-width range at the highest off_end reached, offset 6, "
-    "contributing nothing, so the extent stays 6 and those six bytes are "
-    "in no offset at all. A reader that appended them at [6,12) is "
-    "reading an offset the file does not state. pid 1 is NOT this rule's "
-    "case: no record of that participant carries a seq_start, so its "
-    "stream is not sequence-anchored to begin with.",
+    "on a stream whose first record has one, so it is UNPLACEABLE -- it "
+    "covers no byte of the stream and contributes nothing, so the extent "
+    "stays 6 and those six bytes are in no offset at all. A reader that "
+    "appended them at [6,12) is reading an offset the file does not "
+    "state. Since 0.19 the RANGE a reader reports for the unplaceable "
+    "record is not pinned, so two readers may differ there while both "
+    "give extent 6. pid 1 is NOT this rule's case: no record of that "
+    "participant carries a seq_start, so its stream is not "
+    "sequence-anchored to begin with.",
     violations=0,
 )
 
@@ -3298,112 +3300,6 @@ vector(
     violations=0,
 )
 
-vector(
-    "advisory-seq-start-below-origin",
-    "accept",
-    "A zero-length syn record whose seq_start is the isn rather than isn + 1, "
-    "which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit "
-    "below it. handshake-at-origin is the same record written correctly, and the "
-    "two are one story read from either end. This is the shape found in the wild "
-    "-- a converter writing the handshake at the isn -- and it is worth seeing "
-    "what it costs, because the "
-    "arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) "
-    "is modular, so the syn record lands at offset 4294967295 and the stream "
-    "measures 4294967295 bytes where its data ends at 12. Every coverage check "
-    "against this participant then fails for a file that is otherwise correct. "
-    "WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other "
-    "byte is exactly where it was, so the damage is bounded and the document "
-    "can say precisely what to do instead -- the record occupies a ZERO-WIDTH "
-    "range at the stream's current position (here 0, it being first), covers no "
-    "byte, and contributes nothing to the extent. Isolating the session would "
-    "discard a whole capture to fix one offset. "
-    "The manifest marks it advisory: true, so it declares 1 violation on the "
-    "ACCEPT tier.",
-    "Referencing the source by stream offset -- the origin is a floor",
-    [
-        file_header(),
-        source(1, 0, [o_uri("tcp.pcap")]),
-        session(7, [o_proto("tcp")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
-        # THE VIOLATION: the handshake record sits at the isn, one below the
-        # origin. isn + 1 is where it belongs -- the SYN consumes a sequence
-        # number but delivers no byte.
-        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1000)]),
-        # Three ordinary data records from the origin. Their offsets are
-        # [0,4) [4,8) [8,12), and the extent is 12 -- unchanged by the record
-        # above, which is the point of the zero-width rule.
-        record(7, 0, 1, 2000, b"AAAA", flags=0x0001, options=[o_seq_start(1001)]),
-        record(7, 0, 1, 3000, b"BBBB", flags=0x0001, options=[o_seq_start(1005)]),
-        record(7, 0, 1, 4000, b"CCCC", flags=0x0001, options=[o_seq_start(1009)]),
-        end_block(),
-    ],
-    jsonl=[
-        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
-        {"type": "source", "source_id": 1, "kind": "capture", "uri": "tcp.pcap"},
-        {"type": "session", "session_id": 7, "proto": "tcp"},
-        {
-            "type": "participant",
-            "session_id": 7,
-            "pid": 0,
-            "endpoint": ["10.0.0.1:51000"],
-            "isn": 1000,
-            "tcp_role": "initiator",
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 1000,
-            "flags": ["syn"],
-            "payload": "",
-            "seq_start": 1000,
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 2000,
-            "flags": ["psh"],
-            "payload": b64(b"AAAA"),
-            "seq_start": 1001,
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 3000,
-            "flags": ["psh"],
-            "payload": b64(b"BBBB"),
-            "seq_start": 1005,
-        },
-        {
-            "type": "record",
-            "session_id": 7,
-            "sender_pid": 0,
-            "source_id": 1,
-            "ts": 4000,
-            "flags": ["psh"],
-            "payload": b64(b"CCCC"),
-            "seq_start": 1009,
-        },
-        {"type": "end"},
-    ],
-    expect="ACCEPT, and REPORT. Place the syn record at zero width at the "
-    "stream's current position -- offset 0 here -- so the participant's "
-    "extent is 12, the length of its data. A reader that instead computes "
-    "(1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent "
-    "to match; that is the defect this vector exists to catch, and it is "
-    "the number a real converter produced. Rejecting or isolating this "
-    "file is NOT conformant: the advisory strength is stated in "
-    "Referencing the source by stream offset. The record is not deleted -- "
-    "its timestamp, flags and payload stay readable, and only its "
-    "PLACEMENT is refused.",
-    violations=1,
-    advisory=True,
-)
 
 vector(
     "advisory-transport-role",
@@ -3505,21 +3401,18 @@ vector(
 )
 
 vector(
-    "advisory-below-origin-payload",
+    "unplaceable-below-origin",
     "accept",
-    "A below-origin record CARRYING PAYLOAD, which is the shape whose cost the "
-    "rule has to state out loud. advisory-seq-start-below-origin's offending "
-    "record is a zero-length syn, so placing it at zero width loses nothing and "
-    "a reader that instead DROPPED it would give the same answers. Here it has "
-    "eight bytes, and the two readings stop agreeing: under the rule the record "
-    "is unplaceable, occupies a zero-width range at offset 0, and its eight "
-    "bytes are outside the offset space -- excluded from the extent and from "
-    "every coverage answer this file supports -- while the record itself stays "
-    "readable, its timestamp, flags and payload intact. "
-    "THE COST IS DELIBERATE, and this vector is where a reader can see it: the "
-    "alternative is to trust the wrapped offset, which puts those bytes near "
-    "2**32 and corrupts the extent for every other record too. The shape is what "
-    "a converter with an off-by-one on isn produces for its first record.",
+    "A below-origin record CARRYING PAYLOAD: seq_start 1000 on a stream whose "
+    "origin is isn + 1 = 1001. Since 0.19 that is not a violation -- the floor "
+    "stopped being a MUST NOT when the advisory tier stopped pinning repairs -- "
+    "but the EFFECT survives and is what this vector pins: the record is "
+    "UNPLACEABLE, so it covers no byte of the stream and its eight bytes are "
+    "outside the offset space, excluded from the extent and from every coverage "
+    "answer. What 0.19 dropped is the exact range a reader reports for it; two "
+    "readers may differ there and still agree on every extent. A reader that "
+    "trusts the wrapped offset places it near 2**32 and corrupts the extent for "
+    "every other record, which is the reading this vector exists to fail.",
     "Referencing the source by stream offset -- unplaceable records",
     [
         file_header(),
@@ -3588,8 +3481,7 @@ vector(
     "and reports an extent to match, the other drops it and reports two "
     "records where the file has three. Rejecting or isolating is NOT "
     "conformant.",
-    violations=1,
-    advisory=True,
+    violations=0,
 )
 
 vector(

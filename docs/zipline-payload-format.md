@@ -715,72 +715,32 @@ handshake and the first captured byte are the leading hole `[0, K)`
 is no room below the first captured byte, so a pre-first-byte loss simply is not
 representable — one more reason `isn` is mandatory once the handshake is seen.
 
-**The origin is a floor: a record's `seq_start` MUST NOT precede it.** The origin
-is `isn + 1` where the participant carries an `isn`, and the first captured byte
-otherwise. Everything above measures from it — the leading hole is
-`first seq_start − (isn + 1)`, and a record's offset is `seq_start − (isn + 1)` —
-so a record below the origin has a negative offset in a space with none, and the
-modular subtraction does not report that. It returns a number just under 2³²
-instead: one zero-length record at `isn` rather than `isn + 1` puts that record at
-offset 4294967295 and makes the stream measure 4294967295 bytes, whatever its data
-actually spans.
+**A record below the origin covers no byte of the stream.** The origin is
+`isn + 1` where the participant carries an `isn`, and the first captured byte
+otherwise; everything above measures from it. A record whose `seq_start` precedes
+the origin therefore has a negative offset in a space that has none, and the
+modular subtraction does not report that — it returns a number just under 2³²,
+which would make the stream measure 4294967295 bytes whatever its data actually
+spans.
 
-**The floor binds meaningfully only on an `isn`-anchored participant.** Without an
-`isn` the origin *is* the first record's `seq_start`, and the ordering MUST stores
-that record first, so nothing can precede it and the rule cannot be violated. It
-is stated for both cases anyway, because the rule is about the origin rather than
-about `isn` — but an implementer who writes the check and cannot make it fire on
-an unanchored stream should know the rule is unreachable there by construction,
-not that they have misread the origin.
+Such a record is **unplaceable**, and so is one carrying **no `seq_start`** on a
+stream whose other records carry them. An unplaceable record contributes nothing
+to the extent and covers no byte of the stream, whatever range a reader reports
+for it. A reader accepts the file and SHOULD report the record; where this
+document once pinned the exact range, it now does not, so two readers may report
+different ranges for the same unplaceable record while agreeing on every extent
+and every other record.
 
-**Unplaceable records, and where they go.** A record is **unplaceable** when this
-offset space cannot say where it belongs. Two shapes are: one whose `seq_start`
-precedes the origin, and one carrying **no `seq_start`** on a stream whose other
-records carry them. A reader **MUST** treat an unplaceable record as occupying a
-**zero-width range at the highest `off_end` any earlier record of that participant
-reached** — `0` where there is none — contributing nothing to the extent and
-covering no byte of the stream. A reader **MUST NOT** place a below-origin record
-at the wrapped offset the arithmetic yields.
+Zero width is not *deletion* — the record's `timestamp`, `flags` and payload
+remain readable, and a consumer indexing by anything other than offset still sees
+it. Where such a record carries payload those bytes are excluded from the extent
+and from every coverage answer the file supports, which is the price of not
+trusting the wrapped offset.
 
-The position is a **running maximum** rather than "where the previous record
-ended", and the two differ: records within a participant may overlap — the
-favor-old policy exists for exactly that — so the record stored last is not always
-the one that reached furthest. A run of unplaceable records is well defined by the same
-sentence: each contributes nothing, so each sits where the last placed record
-left off.
-
-**Violating the floor is advisory, not isolating**, the treatment
-[`content_type` at the transport layer](#typing-a-decoded-record) gets: the reader
-**accepts the file**, applies the rule above, and SHOULD report. This is the
-specific rule for this violation, in the sense [Conformance](#conformance) gives
-that phrase, and it binds instead of the general licence to isolate. The reason is
-the reason that licence exists — isolation is for damage a reader cannot bound,
-and here it can: one record is unplaceable and every other byte of the stream is
-exactly where it was. A reader that discarded the session over it would lose the
-whole capture to fix one offset, and two readers taking different options would
-disagree about the stream, which is what this rule exists to stop.
-
-Zero width is not *deletion* — the record's `timestamp`, `flags` and payload remain readable, and a
-consumer indexing by anything other than offset still sees it.
-
-**Where such a record carries payload, this costs bytes, and the cost is
-deliberate.** A handshake record written one below the origin is zero-length and
-loses nothing. A converter with an off-by-one on `isn` instead produces a
-below-origin record *with a payload*, and those bytes are then excluded from the
-extent and from every coverage answer the file supports: they are not in the
-offset space at all. The alternative is to trust the wrapped offset, which places
-them near 2³² and corrupts the extent for every other record too — so the bytes
-are kept and only their **placement** is refused. "Data must never vanish
-silently" is discharged by the SHOULD-report and by the record remaining readable,
-not by pretending it was placed.
-
-**The floor is decidable only within the serial-arithmetic half-space.** The
+The floor is only decidable within the serial-arithmetic half-space: the
 comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
 `seq_start` comparison uses, so a `seq_start` more than 2³¹ below the origin is
-indistinguishable from one above it and no checker can raise it. That is a
-property of the sequence space, not a gap in this rule: the same limit governs
-record ordering and every `ack` edge, and it is far beyond any distance real
-traffic travels.
+indistinguishable from one above it.
 
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
@@ -1004,16 +964,10 @@ neutralise; labelling an arbitrary window `prim:bytes` asserts it is a unit when
 is a slice. It would also type identical bytes differently by provenance, since a
 capture-sourced reassembler declaring itself is only a SHOULD.
 
-**Violating this is advisory, not isolating** — a deliberately unusual strength
-for a MUST NOT, which this document gives only where it can say exactly what a
-reader does instead (the [origin floor](#referencing-the-source-by-stream-offset)
-is the other). Dropping the label loses nothing and the record stays
-fully readable, so there is no unit a reader could soundly discard and nothing it
-would gain by discarding one — the treatment `tcp_role` gets, not the one an
-`origin` on a capture-sourced stream gets. A reader meeting one **MUST ignore the
-label** and SHOULD report it; what it MUST NOT do is take the label as evidence
-that the stream is decoded after all, which would put every later offset in that
-participant in the wrong space.
+**Violating this is advisory, not isolating.** Dropping the label loses nothing
+and the record stays fully readable, so there is no unit a reader could soundly
+discard and nothing it would gain by discarding one — the treatment `tcp_role`
+gets. A reader meeting one **MUST ignore the label** and SHOULD report it.
 
 Absent already says the right thing, and says something new here: the fallback is
 the decoder `name`, so a consumer that used to report nothing about how a stream
@@ -1745,16 +1699,10 @@ the [floor rule](#referencing-the-source-by-stream-offset) — the SYN consumes 
 sequence number but delivers no byte, which is exactly why the origin is `isn + 1`
 and not `isn`.
 
-**Violating this is advisory wherever the record sits**, which is one strength for
-the whole MUST rather than one for each side of it. *Below* the origin the record
-is unplaceable and the floor rule places it. *Above* the origin — `isn + 7`, say —
-it is placeable and ordinary arithmetic places it: a zero-length record a few bytes
-up, covering nothing. Either way a reader **accepts the file**, places the record,
-and SHOULD report; what it loses is the handshake's timing and nothing else, and
-the origin it might have been tempted to re-derive is fixed by `isn` rather than by
-this record. Isolating over a misplaced zero-length record would be the strength
-inverted — discarding a session for the mild shape while the shape that wrecks the
-whole offset space is accepted and repaired.
+**Violating this is advisory wherever the record sits.** A reader accepts the
+file and SHOULD report; what it loses is the handshake's timing and nothing else,
+and the origin it might have been tempted to re-derive is fixed by `isn` rather
+than by this record.
 
 Two neighbouring shapes follow from the same reasoning. A `syn`-flagged record
 carrying **no** `seq_start` is unplaceable like any other and placed by the same
@@ -2770,10 +2718,10 @@ readers in two tiers, split by what the violation poisons:
   [width-mismatch rule](#enums), the
   [origin floor](#referencing-the-source-by-stream-offset)), that rule
   **displaces this licence**: a reader applies the stated rule instead, whether it
-  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and the
-  origin floor both keep the record, ignore the part that is wrong, and report —
-  so reading them as instances of a tier headed *the reader MAY isolate* gets them
-  backwards.
+  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and a
+  transport-layer label both keep the record, ignore the part that is wrong, and
+  report — so reading them as instances of a tier headed *the reader MAY isolate*
+  gets them backwards.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**

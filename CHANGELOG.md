@@ -95,6 +95,35 @@ mechanically cheaper than the rule it replaces, and it is what
 demonstrate — three vectors neither the analysis nor the impact assessment listed
 as affected.
 
+**Package C: readers need only agree on conformant files.** The advisory tier
+keeps its strength — a reader accepts the file, ignores what is wrong, and reports
+— and loses its **pinned repairs**, the clauses that made two readers land on one
+specific answer for a malformed file.
+
+- **The origin floor stops being a MUST NOT.** A record whose `seq_start` precedes
+  the origin is no longer a violation; what survives is the **effect**, which is
+  that such a record is unplaceable, covers no byte of the stream and contributes
+  nothing to the extent. Two readers may now report different ranges for it while
+  agreeing on every extent and every other record.
+- **The pinned placement is gone**: the zero-width range at the running maximum,
+  and the bar on placing a below-origin record at the wrapped offset.
+- **The handshake MUST's two-sided treatment** collapses to one accept-and-report,
+  and §Typing loses the clause forbidding a reader to read layer from a
+  transport-layer label — redundant once the treatment is simply to ignore it.
+- **Vectors**: `advisory-seq-start-below-origin` removed;
+  `advisory-below-origin-payload` becomes **`unplaceable-below-origin`**, an
+  ordinary accept vector pinning the effect that survives.
+
+**The two transport-label advisory vectors stay**, and that is a decision rather
+than an omission. They exercise the *tier* — accept, report, ignore the label,
+round-trip — and not a pinned repair, so deleting all four would have left a live
+concept with no vector at all, which the capability check cannot catch because a
+tier is not an option.
+
+**What this costs, stated plainly.** Two readers handed the same malformed file
+may disagree about which range an unplaceable record occupies. They will not
+disagree about any extent, because the record covers nothing under either reading.
+
 **Package B: a producer no longer justifies its sequencing claim.** `SEQUENCED`
 becomes what it always was in practice — an assertion that the stored order is a
 valid causal order, taken on the same trust a reader already extends to the order
@@ -143,7 +172,7 @@ first file marking the session. §Sequenced files now says so.
 - **`time_epoch` moves to `descriptive-metadata`.** It survives the package and
   `file-clock-metadata` was its only vector. Five descriptive options there now.
 
-*54 vectors, from 59.*
+*53 vectors, from 59.*
 
 ### Clarified
 

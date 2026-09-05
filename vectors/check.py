@@ -129,6 +129,59 @@ NORMATIVE_V018 = {"MUST": 143, "MUST NOT": 53, "SHOULD": 27, "MAY": 54}
 # still present in the specification fails the check. That is what keeps the
 # baseline from being a knob to turn when the build goes red.
 NORMATIVE_REMOVALS = (
+    (
+        r"what it MUST NOT do is take the label as evidence",
+        {"MUST": 1, "MUST NOT": 1},
+        "redundant once the treatment is simply to ignore the option: a reader "
+        "that ignores a label cannot also read layer from it",
+    ),
+    (
+        r"which is one strength for\s*the whole MUST rather than one for each side",
+        {"MUST": 1},
+        "there are no longer two sides to give one strength to -- the floor's "
+        "pinned placement went, so both shapes get the same accept-and-report",
+    ),
+    (
+        r"a deliberately unusual strength\s*for a MUST NOT, which this document gives only",
+        {"MUST": 1, "MUST NOT": 1},
+        "the sentence counting the advisory MUST NOTs and naming the origin floor "
+        "as the other one; the floor is no longer among them, and a count of them "
+        "is the shape that goes stale",
+    ),
+    # 0.19, Package C. The advisory tier's PINNED REPAIRS. The tier itself
+    # survives -- a reader still accepts these files and reports -- and so does
+    # the effect of the floor, which is that an unplaceable record covers no byte.
+    # What goes is the exact range two readers were required to agree on.
+    (
+        r"\*\*The origin is a floor: a record's `seq_start` MUST NOT precede it\.\*\*",
+        {"MUST": 1, "MUST NOT": 1},
+        "restated as an effect rather than a prohibition: a record below the "
+        "origin covers no byte of the stream",
+    ),
+    (
+        r"A reader \*\*MUST\*\* treat an unplaceable record as occupying a",
+        {"MUST": 1},
+        "the pinned zero-width range at the running maximum is gone; a reader "
+        "reports what it likes, and every extent agrees regardless",
+    ),
+    (
+        r"A reader \*\*MUST NOT\*\* place a below-origin record",
+        {"MUST": 1, "MUST NOT": 1},
+        "no placement is pinned, so none is forbidden; the wrapped offset is "
+        "excluded by the record covering no byte at all",
+    ),
+    (
+        r"\*\*accepts the file\*\*, applies the rule above, and SHOULD report",
+        {"SHOULD": 1},
+        "the accept-and-report treatment survives in the replacement sentence, "
+        "which carries the one SHOULD this paragraph used to carry twice",
+    ),
+    (
+        r"the ordering MUST stores\s*that record first, so nothing can precede it",
+        {"MUST": 1},
+        "the floor's vacuous-without-isn note went with the floor; the ordering "
+        "rule it referred to is unchanged and stated where it lives",
+    ),
     # 0.19, Package A. The rules that made pass-through a distinct derivation
     # kind. `origin` is gone and every zpf-sourced record carries `spans`, so the
     # three rules keyed on which option is present have nothing to key on. The
@@ -371,10 +424,12 @@ RULES = {
     # cost (bytes excluded from the space); the seq_start-less half is the
     # commoner shape and rides on a vector that has carried it since 0.12
     # without anyone saying where the record goes.
-    "unplaceable-record-placement": (
-        "an unplaceable record sits at a zero-width range at the highest off_end "
-        "reached, contributing nothing -- below the origin, or with no seq_start",
-        "advisory-below-origin-payload",
+    "unplaceable-covers-nothing": (
+        "an unplaceable record covers no byte of the stream and contributes "
+        "nothing to the extent -- below the origin, or with no seq_start on a "
+        "sequence-anchored stream. Since 0.19 the RANGE a reader reports for it "
+        "is its own affair; the extent is not",
+        "unplaceable-below-origin",
     ),
     # 0.18's one rule with a vector. The ordering MUST has never said whether
     # two records may share a seq_start; 0.17's handshake MUST makes the tie
@@ -392,13 +447,8 @@ RULES = {
         "Discontinuity; `skipped` does not, and the word is the producer's statement",
         "isolate-unmarked-drop",
     ),
-    # 0.17's floor. Like 0.16's four, a MUST the syntax already let you break --
-    # and the second MUST NOT whose violation is advisory rather than isolating.
-    "seq-start-origin-floor": (
-        "a record's seq_start MUST NOT precede the stream origin; the violation is "
-        "ADVISORY and the record is unplaceable, zero-width at the current position",
-        "advisory-seq-start-below-origin",
-    ),
+    # 0.19 removed the floor's MUST NOT with the rest of the advisory tier's
+    # pinned repairs. What survives is the EFFECT, which is the entry below.
     # Also NOT in this table, and for the same reason as #94 below: 0.18's rule
     # that a stage removing content MUST write `reason = dropped` rather than a
     # more specific word (#117). A file writing `filtered` for removed content and
@@ -509,6 +559,21 @@ RETIRED_CLAIMS = {
         98,
         "two cases are: a hole-class region between two adjacent units, and a "
         "bytes-class region carrying reason = dropped",
+    ),
+    # 0.19, Package C. The advisory tier keeps its strength and loses its pinned
+    # repairs. These are the claims that said a reader MUST land on one specific
+    # answer for a malformed file.
+    "floor-is-a-must-not": (
+        (
+            r"\*\*The origin is a floor: a record's `seq_start` MUST NOT precede it\.\*\*",
+            r"a record's seq_start MUST NOT precede the stream origin",
+            # vectors/README.md, and so any harness reading it
+            r"under the rule the record is unplaceable at offset 0",
+        ),
+        "0.19",
+        None,
+        "a record below the origin covers no byte of the stream; a reader accepts "
+        "the file and SHOULD report, and the range it reports is its own affair",
     ),
     # 0.19, Package A. Pass-through stopped being a distinct derivation kind:
     # every zpf-sourced record carries spans, and a preserved stream's are

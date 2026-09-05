@@ -841,7 +841,7 @@
       ],
       "summary": "The COMMONER unplaceable shape, on its own: a record with no seq_start on a stream whose earlier record has one, so the offset space cannot say where it belongs. 0.17 stated a placement rule for a below-origin record and left this shape silent; 0.18 stated one rule for both and pinned this half inside partially-hinted-sequenced, which 0.19 removed with the sequencing basis. The shape has nothing to do with SEQUENCED -- placement keys on whether a stream is sequence-anchored, not on the flag -- so it is carried here by an ordinary session, which is where it always belonged. Its twin is advisory-below-origin-payload, the other shape of one rule.",
       "spec_section": "Referencing the source by stream offset",
-      "expect": "Accept. The .jsonl file is the expected projection. On placement: pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- a zero-width range at the highest off_end reached, offset 6, contributing nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with.",
+      "expect": "Accept. The .jsonl file is the expected projection. On placement: pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- it covers no byte of the stream and contributes nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. Since 0.19 the RANGE a reader reports for the unplaceable record is not pinned, so two readers may differ there while both give extent 6. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with.",
       "has_jsonl": true
     },
     {
@@ -1288,33 +1288,6 @@
       "has_jsonl": true
     },
     {
-      "name": "advisory-seq-start-below-origin",
-      "tier": "accept",
-      "violations": 1,
-      "advisory": true,
-      "bytes": 328,
-      "blocks": [
-        "0x01",
-        "0x02",
-        "0x10",
-        "0x11",
-        "0x20",
-        "0x41"
-      ],
-      "options": [
-        "0x0020",
-        "0x0050",
-        "0x0060",
-        "0x0061",
-        "0x0063",
-        "0x0070"
-      ],
-      "summary": "A zero-length syn record whose seq_start is the isn rather than isn + 1, which 0.17 makes a MUST NOT: the origin is a floor and nothing may sit below it. handshake-at-origin is the same record written correctly, and the two are one story read from either end. This is the shape found in the wild -- a converter writing the handshake at the isn -- and it is worth seeing what it costs, because the arithmetic does not report the error, it absorbs it. seq_start - (isn + 1) is modular, so the syn record lands at offset 4294967295 and the stream measures 4294967295 bytes where its data ends at 12. Every coverage check against this participant then fails for a file that is otherwise correct. WHY ADVISORY AND NOT ISOLATE: one record is unplaceable and every other byte is exactly where it was, so the damage is bounded and the document can say precisely what to do instead -- the record occupies a ZERO-WIDTH range at the stream's current position (here 0, it being first), covers no byte, and contributes nothing to the extent. Isolating the session would discard a whole capture to fix one offset. The manifest marks it advisory: true, so it declares 1 violation on the ACCEPT tier.",
-      "spec_section": "Referencing the source by stream offset -- the origin is a floor",
-      "expect": "ACCEPT, and REPORT. Place the syn record at zero width at the stream's current position -- offset 0 here -- so the participant's extent is 12, the length of its data. A reader that instead computes (1000 - 1001) mod 2**32 reports an offset of 4294967295 and an extent to match; that is the defect this vector exists to catch, and it is the number a real converter produced. Rejecting or isolating this file is NOT conformant: the advisory strength is stated in Referencing the source by stream offset. The record is not deleted -- its timestamp, flags and payload stay readable, and only its PLACEMENT is refused.",
-      "has_jsonl": true
-    },
-    {
       "name": "advisory-transport-role",
       "tier": "accept",
       "violations": 1,
@@ -1350,10 +1323,9 @@
       "has_jsonl": true
     },
     {
-      "name": "advisory-below-origin-payload",
+      "name": "unplaceable-below-origin",
       "tier": "accept",
-      "violations": 1,
-      "advisory": true,
+      "violations": 0,
       "bytes": 304,
       "blocks": [
         "0x01",
@@ -1371,7 +1343,7 @@
         "0x0063",
         "0x0070"
       ],
-      "summary": "A below-origin record CARRYING PAYLOAD, which is the shape whose cost the rule has to state out loud. advisory-seq-start-below-origin's offending record is a zero-length syn, so placing it at zero width loses nothing and a reader that instead DROPPED it would give the same answers. Here it has eight bytes, and the two readings stop agreeing: under the rule the record is unplaceable, occupies a zero-width range at offset 0, and its eight bytes are outside the offset space -- excluded from the extent and from every coverage answer this file supports -- while the record itself stays readable, its timestamp, flags and payload intact. THE COST IS DELIBERATE, and this vector is where a reader can see it: the alternative is to trust the wrapped offset, which puts those bytes near 2**32 and corrupts the extent for every other record too. The shape is what a converter with an off-by-one on isn produces for its first record.",
+      "summary": "A below-origin record CARRYING PAYLOAD: seq_start 1000 on a stream whose origin is isn + 1 = 1001. Since 0.19 that is not a violation -- the floor stopped being a MUST NOT when the advisory tier stopped pinning repairs -- but the EFFECT survives and is what this vector pins: the record is UNPLACEABLE, so it covers no byte of the stream and its eight bytes are outside the offset space, excluded from the extent and from every coverage answer. What 0.19 dropped is the exact range a reader reports for it; two readers may differ there and still agree on every extent. A reader that trusts the wrapped offset places it near 2**32 and corrupts the extent for every other record, which is the reading this vector exists to fail.",
       "spec_section": "Referencing the source by stream offset -- unplaceable records",
       "expect": "ACCEPT, and REPORT. The first record is unplaceable: zero-width at offset 0, contributing nothing to the extent and covering no byte, so the participant's stream is [0,16) -- the two later records -- and the eight bytes of the first are in no offset at all. It is NOT deleted: a reader still lists it, still reports its timestamp and payload, and a consumer indexing by anything but offset still sees it. Two wrong readings diverge visibly here and not on advisory-seq-start-below-origin: one places the record at 4294967295 and reports an extent to match, the other drops it and reports two records where the file has three. Rejecting or isolating is NOT conformant.",
       "has_jsonl": true
