@@ -40,7 +40,9 @@ for the release that takes them.
 | **D** | 3.4 coverage as a verifiable MUST | ~300 | −6 | −2 | medium | single-file self-verifiability; a decryptor's failure class | support **the middle path** |
 | **E** | 3.5 provenance and layer as axes | ~330 | −8 | 0 | **~630 lines** | every multi-hop transform chain's per-hop account, a reassembler's `params_digest` | **oppose** |
 
-Spec counts are estimates except where a section is deleted whole: *Annotating a
+Vector counts are exact. The spec-lines column is retained for scale only and is
+not the basis for choosing: see scope decision 4, and §What simplification means
+in the extraction plan.
 decoded file* is 68 lines, the *decrypted tunnel* example 118, the `input_extents`
 text 66, *Sequenced files* 198 of which about 110 goes. The vector suite is at
 **59**; the column is the count each package removes.
@@ -51,26 +53,45 @@ decompression and decryption. Scope decision 5 says what the suite shows instead
 and both packages carry the finding. A, B and C are unaffected and its verdicts on
 them are complete.
 
-**Take A.** It is the cheapest thing on the list that a reader of the
-specification would actually notice, it deletes an option rather than a rule, and
-it is the only package where nobody has argued anything is lost — the analysis
-says "nothing of substance", the implementation says "nothing we use". A
-subtractive release should establish its mechanics on the item where a mistake is
-recoverable, and this is that item.
+**Rank by whether the rules a package deletes serve a goal the document states**,
+not by lines. That is what simplification means here, and the Goals list can now
+carry the test: `0.18`'s re-issue added *make a decoding failure findable in the
+input's own bytes*, so the principle the analysis said was **not in the Goals
+list** partly is.
+
+| | Package | Serves a stated goal? |
+|---|---|---|
+| **B** 3.2 | sequencing basis | **no** — a forensic hint about a claim |
+| **C** 3.3 | advisory tier | **no** — it governs non-conformant input |
+| **A** 3.1 | pass-through as a kind | mixed — provenance thinly, the `origin` half is vocabulary |
+| **E** 3.5 | provenance and layer as axes | **yes** — reassembled bytes as the source of truth, and findability across hops |
+| **D** 3.4 | coverage apparatus | **yes** — findability, by name |
+
+**Take B.** It deletes the one thing on this list that serves no stated goal and
+that nothing else in the format keys on: two options, four vectors, **no `RULES`
+entry**, no rule elsewhere depending on it. `python-zipline` supports it and gives
+up a guard rather than a feature. A subtractive release should establish its
+mechanics where a mistake is recoverable, and this is now that item on both tests
+— cheapest to build, and clearest that nothing of value goes.
+
+*This revises the earlier recommendation of A, which was made on line count and
+recoverability before the goal test existed. A remains a good second: nobody has
+argued anything is lost, and it deletes an option rather than a rule. It ranks
+below B only because part of what it removes does serve provenance.*
 
 The rest, ranked by what they cost to decide rather than to do:
 
-- **B** is the next-cheapest and the most self-contained: two options, four
-  vectors, no rule in `check.py`, and nothing else in the format keys on it. Take
-  it if the aim is the largest deletion per unit of argument.
+- **A** is the second choice: it deletes an option rather than a rule, and neither
+  the analysis nor the implementation has named anything lost.
 - **C** is cheap to build and expensive to decide, because it **reverses four of
   the thirteen items `0.18` shipped two days ago** — #113, #114, #115 and #116 are
   the origin floor's edges, and 3.3 deletes the paragraphs that fixed them. That
   is an argument for doing it *now* rather than later, when more will have been
   built on them, and it is also the reason to be sure.
 - **D** is the one that changes what the format promises rather than how it says
-  it, and it has a sub-choice of its own (§D.1). Do not take it in the same
-  release as its own decision.
+  it, and it has a sub-choice of its own (§D.1) that scope decision 3 now settles.
+  It argues against a stated goal, which is a higher bar than it faced when the
+  analysis ranked it.
 - **E** is opposed by the implementation it would affect, costs more suite code
   than the other four combined, and reverses a change `0.15` made because
   `zpfwire` asked for it. The analysis says to take it only if tunnels turn out to
@@ -135,13 +156,41 @@ declaration.
 The remaining six goals are untouched by every package. If one appears to need a
 Goals edit, that is a signal it has grown beyond its proposal.
 
-### 4. Rationale extraction is not in this release
+### 4. Rationale extraction is done, and it changed less than it promised
 
-It is the single largest reduction available, it is orthogonal to all five, and it
-touches every section any package touches. Doing both at once makes the diff
-unreadable and makes it impossible to say afterwards which change removed what.
-It gets its own release. §Rationale extraction records the two things to settle
-before it starts.
+Shipped as the `0.18` re-issue, tagged `v0.18-r2`, format unchanged. See
+[RATIONALE-EXTRACTION-PLAN.md](RATIONALE-EXTRACTION-PLAN.md). Three things it
+leaves this release:
+
+- **Two guards now police every edit here.** Normative-sentence invariance holds
+  the specification to `v0.18` less an accounted table of removals, and anchor
+  integrity resolves every link across the whole tree. **A reduction package
+  removes rules on purpose**, so each deletion needs a `NORMATIVE_REMOVALS` entry
+  naming the statement and why — which is exactly the record a subtractive release
+  should be keeping anyway, and it is now enforced rather than remembered.
+- **`v0.18-r2` is this release's baseline**, not `v0.18`. Every
+  `RETIRED_CLAIMS` entry added here reproduces against the extracted tree.
+- **The rationale companion is where a deleted rule's argument goes.** That was
+  the strongest reason to extract first and it survived contact: the reasoning
+  behind a rule this release removes is already in a file, rather than being
+  deleted along with it.
+
+**And it did not shrink the packages.** Measured against `v0.18`, extraction took
+this much out of each package's principal sections:
+
+| Package | Principal sections | `v0.18` | After extraction |
+|---|---|---:|---:|
+| **A** 3.1 | Annotating a decoded file | 68 | **68** |
+| **B** 3.2 | Sequenced files | 198 | 185 |
+| **C** 3.3 | Referencing the source by stream offset | 209 | 203 |
+| **D** 3.4 | Undecoded, Discontinuity, Coverage honesty | 483 | 423 |
+| **E** 3.5 | Tunnel example, Conceptual model, Decoder Descriptor | 243 | 238 |
+
+**So the claim this plan made — that extraction removes most of what each package
+would remove, leaving them to be argued on capability alone — is struck.**
+Extraction moved the rationale; a package removes the rationale *and* the
+instructional text with it, because deleting a rule deletes its examples,
+definitions and consequences too. The packages are as large as they were.
 
 ---
 
