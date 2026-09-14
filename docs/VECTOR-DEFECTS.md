@@ -4,10 +4,11 @@ A running list of vectors found to be wrong, and what fixed them. Defects 1 and 
 were found while porting `0.9 → 0.12` against `vectors/` at tag `v0.12` (commit
 `c291afc`); the list is appended to as later reviews reach further into the tree.
 
-**Status: 4 defects, affecting 6 vectors and the vectors README. All fixed.**
+**Status: 6 defects, affecting 9 vectors and the vectors README. All fixed.**
 Defect 2 by commit `a52c717` and defect 1 by the `0.13` version-stamp commit,
-which regenerated the three vectors; defect 3 in `0.16`; defect 4 in `0.17`. The
-file is kept as the record of what was wrong and why.
+which regenerated the three vectors; defect 3 in `0.16`; defect 4 in `0.17`;
+defects 5 and 6 in `0.20`. The file is kept as the record of what was wrong and
+why.
 
 Ground rule 2 says a vector that disagrees with the specification is the thing
 that is wrong, and defects 1 and 2 were vector-side under it. **Defect 3 is the
@@ -248,6 +249,125 @@ a body field's or a registered option's canonical name, *except* where the alias
 table gives it a shorter one — so the check subtracts the aliased binary names,
 and that subtraction is the whole of what sees the defect. It reproduced all three
 sites from the tree before the fix landed.
+
+---
+
+## Defect 5 — `handshake-at-origin` and `unplaceable-below-origin` write `tcp_role` one below the value their `.jsonl` names
+
+**→ FIXED in `0.20`** ([#141](https://github.com/adamkjonsson/zipline/issues/141)),
+vector-side under ground rule 2: the `.jsonl` was right and the bytes were wrong.
+
+Found by `python-zipline` in the first hour of its `0.16 → 0.19` port, by
+projecting every vendored `.zpf` through its JSONL face and diffing against the
+shipped `.jsonl`. 40 files carry both faces; three disagreed, and this is two of
+them.
+
+**Affected:**
+
+| Vector | Tier | The `.zpf` held | The `.jsonl` says | Since |
+|--------|------|-----------------|-------------------|-------|
+| `handshake-at-origin` | `accept` | `tcp_role` 0 then 1 | `initiator` then `responder`, so 1 then 2 | `0.18` |
+| `unplaceable-below-origin` | `accept` | `tcp_role` 0 | `initiator`, so 1 | `0.19` |
+
+Consequence: **fails a correct reader**. A reader that projects the enum as the
+specification's table says — `0` unknown, `1` initiator, `2` responder — cannot
+round-trip either file, and `handshake-at-origin` is the vector for the
+non-descending ordering MUST (#124), the rule whose absence rejects every real
+capture. It was held out of `python-zipline`'s ratchet for a projection defect
+unrelated to what it tests.
+
+### What was wrong
+
+Semantics settle which face is right. `handshake-at-origin`'s pid 0 sends the
+first SYN at `ts 1000` with no `ack`, and pid 1 answers at `ts 1100` with
+`ack 1001`: pid 0 is the initiator and pid 1 the responder, which is what the
+`.jsonl` says and what the vector's own summary describes. The bytes said
+*unknown* and *initiator* — the enum shifted down by one:
+
+```
+participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
+participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(1)]),
+```
+
+`o_tcp_role` takes the wire value, so those should have read `o_tcp_role(1)` and
+`o_tcp_role(2)`. `unplaceable-below-origin` carried the same shift on its single
+participant. `escape-unknown-enum` writes `o_tcp_role(7)` against
+`"tcp_role": 7` and was correct, which is why the helper itself was not at fault.
+
+**Everything else about them is right.** The `seq_start` tie
+`handshake-at-origin` exists for is in the bytes and correct; the below-origin
+placement `unplaceable-below-origin` exists for has nothing to do with
+`tcp_role`. Only the projection was wrong.
+
+### The fix
+
+The three values in `build.py`; the two `.zpf` and `.hex` files regenerated; no
+`.jsonl` changed.
+
+**Why nothing upstream caught it, and what does now.** The `.hex` is generated
+from the same description as the `.zpf`, so it faithfully reproduced the wrong
+byte and annotated it — `option 0x0063 tcp_role, len = 1  (0)`. `check.py`
+cannot see it by design: ground rule 2 keeps it from parsing block bodies, and
+comparing the two faces is exactly that. The capability check saw `0x0063`
+present and was satisfied. So `.zpf` ↔ `.jsonl` agreement was unguarded by
+construction, and this is the third release running in which such a disagreement
+surfaced downstream (defect 4 was the last). `0.20` makes `build.py` compare
+the two faces at registration — every option and block now carries the logical
+value it wrote, a projector renders that by the mapping, and `vector()` refuses
+a vector whose projection is not its `.jsonl` — so a disagreement fails the
+build rather than a port. It was seen to refuse both of these on a scratch
+revert before it was trusted.
+
+---
+
+## Defect 6 — `mixed-derivation` writes its identity span's `session_id` and `pid` swapped
+
+**→ FIXED in `0.20`** ([#141](https://github.com/adamkjonsson/zipline/issues/141)),
+vector-side under ground rule 2, the third of the three faces that port found
+disagreeing.
+
+**Affected:** `mixed-derivation` (`accept`). Consequence: **fails a correct
+reader**. Its session 11 record's `.jsonl` says the span cites
+`session_id 8, pid 0`; the bytes said `pid 8, session_id 0`.
+
+### What was wrong
+
+Session 11 preserves a stream from the input, and the input session is 8 with
+participant 0 — its sibling span in the same file cites `(source 1, session 7,
+pid 0)` correctly. A participant id of 8 in a file whose participants are all
+pid 0 is not a reading anyone intended.
+
+The proximate cause was sharper than a typo. `o_spans` took its triple in
+**byte order**, `(source_id, pid, session_id, …)`, because the two u16s lead the
+u64 only for alignment — while every prose statement of the same triple, in the
+specification and in the JSONL, puts `session_id` before `pid`:
+
+```
+o_spans([(1, 0, 7, 0, 40)])   # session 10: source 1, pid 0, session 7   ✓
+o_spans([(1, 8, 0, 0, 10)])   # session 11: source 1, pid 8, session 0   ✗ meant (1, 0, 8, …)
+```
+
+A positional helper whose argument order deliberately differs from every prose
+statement of the same triple is a trap that keeps catching people; the author
+wrote the logical order.
+
+**The summary was stale too, and the issue did not mention it.** The same
+vector's summary and its README row still said session 11's *participant carries
+origin, its records carry no spans*, and restated the rule that a participant
+*MUST NOT both carry origin and hold records carrying spans* — the rule `0.19`'s
+Package A deleted, in a spelling the `RETIRED_CLAIMS` guard did not match. That
+is the paraphrase blindness `0.18` measured, on the very vector `0.19`'s plan
+flagged as the likeliest place for it.
+
+### The fix
+
+The one value in `build.py`; the `.zpf` and `.hex` regenerated; no `.jsonl`
+changed. The summary and README row now say *identity span*, and the stale
+spellings are in `RETIRED_CLAIMS`, where they reproduce against `v0.19`. With
+the structural fix, `0.20` also changes `o_spans` and `o_input_extents` to take
+their triples in logical order, `(source, session, pid, …)`, so the class of
+mistake goes with the instance — and the face check was seen to refuse this
+defect too, on a scratch revert.
 
 ---
 

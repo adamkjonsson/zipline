@@ -60,6 +60,156 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.20] — 2026-09-14
+
+**A repair-and-vector release, and two implementations are waiting on it.**
+Three vectors whose bytes and projection disagreed, one flags row that read two
+ways, and a suite that could not see a wrong computed value or a merge's
+uncovered hole. No option and no block is added. Scope and reasoning in
+[docs/RELEASE-0.20-PLAN.md](docs/RELEASE-0.20-PLAN.md).
+
+### Fixed
+
+- **Three vectors' `.zpf` disagreed with their `.jsonl`, and the `.jsonl` was
+  right** ([#141](https://github.com/adamkjonsson/zipline/issues/141); defects 5
+  and 6 in [docs/VECTOR-DEFECTS.md](docs/VECTOR-DEFECTS.md)). `handshake-at-origin`
+  and `unplaceable-below-origin` wrote `tcp_role` one below the enum value their
+  projections name — *unknown* for *initiator*, *initiator* for *responder*
+  (defect 5). `mixed-derivation`'s identity span had its `session_id` and `pid`
+  swapped, the author having written the triple in the logical order every prose
+  statement uses where `o_spans` took byte order (defect 6). The bytes and `.hex`
+  are regenerated; no `.jsonl` changed. Found by `python-zipline` projecting every
+  vendored `.zpf` and diffing — the third release running in which a
+  `.zpf`/`.jsonl` disagreement surfaced downstream.
+- **`mixed-derivation`'s summary and README row still described the `origin`
+  model** `0.19` deleted — *its participant carries origin, its records carry no
+  spans* — in a spelling `RETIRED_CLAIMS` did not match. Three softer spellings
+  of the same model in `filtered-decoded`, `isolate-unbound-zpf-stream` and
+  `proxy-decoded` went with it, `o_origin` is deleted from `build.py`, and the
+  five spellings are now in `RETIRED_CLAIMS`, reproducing against `v0.19`.
+- **The specification itself still carried `0.19`'s deletions in thirteen
+  places.** `origin` — removed from the registry in `0.19` — was still written on
+  both participants of the merge worked example in §Sequenced files, still
+  defined in the JSONL mapping and its alias table, still named in the Conformance
+  violation list, and still **required by a MUST** in the Conformance pass-through
+  bullet, which said a pass-through *carries no `spans`*. Every site now says what
+  `0.19` meant: identity spans. The example's two records carry theirs. The
+  pass-through bullet's MUST now binds to the live rule — *cite, on every record,
+  the input range it was re-emitted from* — so the keyword count does not move,
+  and the guard cannot see a MUST change subject; this line is the record that it
+  did. Likewise the `single_clock` alias row and the flag-bitfield mapping rule
+  (the File Header `flags` option went with `SINGLE_CLOCK`), the File Header
+  options line that still listed `flags`, and the §Sequenced files opener that
+  said a hint-less session *needs a basis — see below* with nothing below. The
+  companion's present-tense list of conditionally mandatory options cited two
+  that no longer exist. Six spellings join `RETIRED_CLAIMS`, each reproducing
+  against `v0.19`.
+
+### Changed
+
+- **`retransmit` names the sender's act, not the reassembler's**
+  ([#142](https://github.com/adamkjonsson/zipline/issues/142)). The flags row
+  said *retransmission/overlap was resolved inside this record*, and two
+  passages used *retransmit* for anything the reassembler threw away. The two
+  readings agree on every capture the format had been tested against and come
+  apart on a **duplicated capture** — a mirror port, a two-interface capture, a
+  veth pair, where every packet is seen twice and the sender resent nothing:
+  under one reading no record carries the flag, under the other every record
+  does. The row now says the flag means the **sender resent** bytes of the
+  record's range. A copy of one transmission is not a retransmission and does
+  not set it; what the reassembler *discarded*, retransmitted or duplicated, is
+  an Undecoded block against the `capture` source, which it always was — so the
+  flag says what the sender did and the block says what the reassembler dropped,
+  and nothing is lost. Decided against packeteer's `tcp_dup_ts.pcap` (10
+  duplicates, same TSval) and `tcp_lossy_ts.pcap` (16 retransmissions, later
+  TSval). The row does not name TSval — that is one producer's method and the
+  option is not always negotiated. **New keyword:** a producer that *cannot* tell
+  a copy from a retransmission **SHOULD** treat the repeat as a retransmission,
+  which is what every producer did under the old row; the entry is in
+  `NORMATIVE_ADDITIONS`. The timestamp rule, §Undecoded and the Caveats bullet
+  now say *retransmitted or duplicated* where they said *retransmit*, and two
+  vector summaries follow. `undecoded-in-capture`'s `reason: overlap-discarded`
+  is unchanged — it names the reassembler's act, which is what the block is for.
+  No vector: a reader treats the bit identically either way.
+
+### Clarified
+
+- **A SHOULD-report on a clean vector is not tested, and the two `unplaceable-*`
+  vectors now say so** ([#140](https://github.com/adamkjonsson/zipline/issues/140)
+  part 1). `unplaceable-below-origin`'s `expect` opened *ACCEPT, and REPORT* on
+  a `violations: 0` vector, and the manifest had no way to say *breaks no rule
+  and is still reported*. It gets a README sentence rather than a key: a SHOULD
+  has no conformant failure mode, so a key asserting the report would promote it
+  to a MUST through the manifest — the second normative authority ground rule 2
+  forbids. Both `expect` strings now state the report as the SHOULD it is, agree
+  with each other (§Referencing's one sentence names both shapes, and only one
+  of them mentioned it), and say silence is conformant. No text in the
+  specification changes.
+- **A pass-through preserving a transport stream MUST mark each hole of its
+  input** ([#133](https://github.com/adamkjonsson/zipline/issues/133)). `0.19`'s
+  Package A made every `zpf`-sourced record carry `spans`; a merge writes
+  identity spans; an identity span cites the input; and the coverage guarantee
+  makes a file answerable for every offset of a stream it cites. So a merge owes
+  an Undecoded `gap` block per hole in its input, and before `0.19` it owed
+  nothing of the kind. The consequence was derivable from two rules three
+  sections apart and stated nowhere — and the guarantee's own statement was
+  scoped to *a decode stage's output* in §Coverage honesty and the Conformance
+  decoded-record bullet, while §Session End and §Layers stated it for every
+  input offset. The pass-through bullet of §Conformance now states it once, as
+  a MUST (in `NORMATIVE_ADDITIONS`), and §Coverage honesty says *a derived
+  file's output — a decode stage's, or a pass-through's*. The design fork was
+  real: a transport-layer pass-through's own sequence numbers carry the same
+  gap, and one could argue the block restates them. That would be an exemption
+  — a new rule shape in a release that adds none — and the one implementation
+  with a `merge_files` has already built to the obligation as written. If the
+  blocks prove pure noise on real merges, the fixture is what will show it.
+
+### Added
+
+- **The `merge/` fixture and its negative twin `isolate-merge-unmarked-hole`**
+  ([#133](https://github.com/adamkjonsson/zipline/issues/133)). Two
+  single-direction capture-sourced inputs, `a.zpf` with a real hole in its
+  sequence numbers, merged into one SEQUENCED session whose every record carries
+  an identity span and which marks the hole with an Undecoded `gap` block. The
+  twin omits the block and is a single file on the isolate tier, because
+  `input_extents` on the Session End makes the uncovered range visible from the
+  output alone — the property Package D-pair would trade away. `RULES` gains
+  `pass-through-marks-input-holes`; `check.py` gains `check_merge`, the third
+  pair check, and the three now share one digest check, one extent arithmetic
+  and one coverage union rather than two copies of each. **55 vectors, 35
+  options, 27 rules.**
+
+- **`extents` in `manifest.json`, mandatory on every single-file accept vector**
+  ([#140](https://github.com/adamkjonsson/zipline/issues/140) part 2). A list of
+  `{session_id, pid, extent}` per participant stream — the `input_extents` entry
+  shape, so no new vocabulary — declared in `build.py` as `violations` is, never
+  computed, and checked by `check.py` for shape only: every declared participant
+  has one and nothing else does. It is the accept tier's assertion about what a
+  reader *computes*; `violations` only sees the wrong reading that produces a
+  finding, and a reader that skips a Discontinuity's `width` or trusts a wrapped
+  offset is wrong silently. 31 vectors, 37 streams; the three the issue names
+  state their number in their summaries — 16, 105 and 160 — and the zero-length
+  and hint-less cases are each a reading of §Referencing: a handshake record's
+  stream measures from `isn + 1` to the end of its last placeable record, a
+  never-anchored stream is the accumulation of its payloads, a decoded stream
+  is payloads plus declared widths. `chain` and `tunnel` declare none, being
+  verified against their inputs already.
+
+- **The suite compares a vector's two faces at registration** — a note on the
+  suite, not the format. Every option and block `build.py` emits now carries
+  the logical value it wrote; a projector renders it by the mapping, including
+  the four escapes; and `vector()` refuses a vector whose projection is not its
+  hand-written `.jsonl`, naming the block, the key and both values. The `.jsonl`
+  files stay hand-authored — single-sourcing them would have removed the
+  disagreement by removing the second opinion. Validated by reverting each of
+  #141's three defects on a scratch copy and seeing the build refuse each.
+  `o_spans` and `o_input_extents` now take `(source, session, pid, …)`, the
+  logical order every prose statement uses, rather than the bytes' alignment
+  order that caught defect 6. Three dead helpers for options `0.19` removed —
+  `o_origin`, `o_file_flags`, `o_seq_basis` — are gone.
+
+---
+
 ## [0.19] — 2026-09-05
 
 **Clarification and simplification, in that order.** The terms are pinned first,

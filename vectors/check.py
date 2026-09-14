@@ -68,7 +68,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 19
+MAJOR, MINOR = 0, 20
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -287,6 +287,58 @@ NORMATIVE_REMOVALS = (
     ),
 )
 
+# Normative statements deliberately ADDED to the specification, with the keywords
+# each brought and why. The other half of the table above.
+#
+# The guard was built for a subtractive release, and until 0.20 a keyword
+# arriving failed the build the same as one leaving. That was an accident of when
+# it was built, not a policy: the guard exists so a rule cannot leave with the
+# paragraph that explained it, and a rule arriving deserves the same record, not
+# a prohibition. So this table has the removals' shape exactly -- a pattern that
+# must be PRESENT in the specification, the keywords it brought, and the argument
+# -- and the expected counts are derived from both tables. A keyword cannot be
+# added without naming the sentence that brought it, and a named sentence absent
+# from the specification fails the check, which is what keeps this from being a
+# knob to turn when the build goes red the other way.
+#
+# The review question for every entry is whether the sentence states a rule the
+# document did not already imply. An entry that spells out a consequence two
+# existing rules already force is a Clarified line; one that binds a producer to
+# something no existing rule binds it to is a Changed line. Both belong here, but
+# the why must say which.
+NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
+    # 0.20 (#142). The retransmit flag's row read two ways -- the sender resent,
+    # or the reassembler discarded an overlap -- and they come apart on a
+    # duplicated capture, where every packet is seen twice and the sender resent
+    # nothing. The row now says it names the sender's act; this is the sentence
+    # for the producer that cannot tell a copy from a retransmission.
+    (
+        r"a producer that \*\*cannot\*\* tell them apart SHOULD treat the repeat as a "
+        r"retransmission",
+        {"SHOULD": 1},
+        "the document did not say which act the flag names, so it could not say "
+        "what to do when the producer cannot tell; treating the repeat as a "
+        "retransmission is what every producer did under the old row, and the "
+        "SHOULD keeps that the default rather than making silence the answer",
+    ),
+    # 0.20 (#133). The consequence of 0.19's Package A that no fixture pinned:
+    # a merge's identity spans cite its inputs, and the coverage guarantee makes
+    # a file answerable for every offset of a stream it cites. The guarantee's
+    # own statement was scoped to "a decode stage's output" in two places and
+    # unscoped in two others, so this pins a reading the document leaned to
+    # rather than stating a rule it did not imply. python-zipline is building
+    # to it; merge/ and isolate-merge-unmarked-hole vector it.
+    (
+        r"a pass-through preserving a transport stream \*\*MUST mark each hole of "
+        r"its input\*\*",
+        {"MUST": 1},
+        "the pass-through bullet had every premise -- identity spans, the "
+        "citation, the coverage guarantee -- and left the conclusion to be "
+        "derived from two rules three sections apart, with the guarantee's "
+        "scope stated inconsistently; the MUST states the consequence once",
+    ),
+)
+
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
 # Session fan-out shipped in 0.13 as a Clarified item with nothing exercising it,
 # and nobody noticed until an implementation reviewed the release -- so a purely
@@ -391,6 +443,16 @@ RULES = {
         "every zpf-sourced record carries spans -- a pass-through's are identity "
         "spans, so the rule binds per record with no exception to check",
         "isolate-unbound-zpf-stream",
+    ),
+    # 0.20 (#133). A consequence of the entry above and the coverage guarantee
+    # that 0.19 created without a fixture: an identity span cites the input, so
+    # a merge answers for every offset of the streams it re-emits, holes
+    # included. Could not be added before the vector existed -- a rule with no
+    # vector fails the build, which is the mechanism working.
+    "pass-through-marks-input-holes": (
+        "a pass-through preserving a transport stream marks each hole of its "
+        "input with an Undecoded gap block, as any uncovered input range is marked",
+        "merge",
     ),
     "undecoded-capture-bytes-only": (
         "against a capture source the hole class is unavailable -- "
@@ -584,6 +646,26 @@ RETIRED_CLAIMS = {
             r"The discriminator between the two is `spans` versus `origin`",
             # vectors/README.md, and so any harness reading it
             r"A pass-through preserving a transport layer: `origin`",
+            # 0.20 (#141). mixed-derivation's summary survived 0.19 saying all of
+            # this in a spelling without the bold and the backticks -- the
+            # paraphrase blindness 0.18 measured, on the vector 0.19's plan
+            # flagged as the default action. build.py, and so manifest.json:
+            r"participant carries origin, its records carry no spans",
+            r"a participant MUST NOT both carry origin and hold records",
+            # vectors/README.md
+            r"session 11's participant carries `origin`",
+            # The softer spellings the same grep found: the test named by the
+            # option that is gone, and a violation described as its absence.
+            r"the spans-versus-origin test",
+            r"participant carries no origin",
+            # 0.20. The SPECIFICATION kept thirteen references to the option
+            # 0.19 removed -- the merge worked example still wrote it, the
+            # mapping still defined it, and Conformance still required it with
+            # a MUST. None matched the three spellings above. These are the
+            # three that state the rule rather than mention the word.
+            r"`origin` plus offset preservation is its provenance",
+            r"MUST put exactly one\s+\[`origin`\]",
+            r"\*\*`origin`\*\* → a JSON object",
         ),
         "0.19",
         None,
@@ -602,6 +684,9 @@ RETIRED_CLAIMS = {
             r"the producer MUST NOT set SEQUENCED without a \*\*sound basis\*\*",
             # vectors/README.md, and so any harness reading it
             r"A hint-less `SEQUENCED` session with no `sequenced_basis`",
+            # 0.20: the Sequenced-files opener still said so, pointing "below"
+            # at a paragraph 0.19 had deleted
+            r"a hint-less one needs a basis",
         ),
         "0.19",
         None,
@@ -614,6 +699,10 @@ RETIRED_CLAIMS = {
             r"Bit `0x0001` \(\*\*SINGLE_CLOCK\*\*\)",
             # build.py summary, and so manifest.json
             r"\*\*SINGLE_CLOCK\*\* asserts one trustworthy clock across the file",
+            # 0.20: the JSONL alias table and the flag-bitfield mapping rule
+            # still rendered the bit 0.19 removed
+            r"`single_clock`\s*\| File Header `flags` bit",
+            r'`"single_clock"` on `file`',
         ),
         "0.19",
         None,
@@ -644,6 +733,27 @@ RETIRED_CLAIMS = {
         91,
         "a reassembly record is a byte run AND carries a decoder_id; the "
         "distinction is the layer, not the presence of the field",
+    ),
+    # 0.20 (#142). The flags row said "retransmission/overlap", and two passages
+    # used "retransmit" for anything the reassembler threw away -- which on a
+    # duplicated capture flags a session in which the sender resent nothing.
+    "retransmit-means-overlap-resolved": (
+        (
+            r"retransmission/overlap was resolved inside this record",
+            r"a later retransmit that contributes no",
+            # the specification, build.py and so manifest.json
+            r"an overlapping retransmit the reassembler discarded",
+            # build.py, and so manifest.json
+            r"overlapping retransmit it could not resolve",
+            # vectors/README.md
+            r"declaring an overlapping retransmit it discarded",
+        ),
+        "0.20",
+        142,
+        "retransmit names the sender's act: the sender resent bytes of this "
+        "record's range. A copy of one transmission is not a retransmission and "
+        "does not set it; what the reassembler discarded, retransmitted or "
+        "duplicated, is an Undecoded block against the capture source",
     ),
 }
 
@@ -1099,10 +1209,12 @@ def check_anchor_links() -> list[str]:
 def check_normative_split() -> list[str]:
     """Keep every rule in the specification, and let only the argument move.
 
-    Three parts. The specification's normative keyword counts must match `v0.18`
-    less whatever `NORMATIVE_REMOVALS` accounts for, so a MUST cannot leave with
-    the paragraph that explains it. Every removal it names must genuinely be gone,
-    so the table cannot be padded to absorb a loss it does not describe. And the
+    Four parts. The specification's normative keyword counts must match `v0.18`
+    less whatever `NORMATIVE_REMOVALS` accounts for plus whatever
+    `NORMATIVE_ADDITIONS` accounts for, so a MUST cannot leave with the paragraph
+    that explains it, and cannot arrive without an argument. Every removal it
+    names must genuinely be gone, and every addition genuinely present, so
+    neither table can be padded to absorb a change it does not describe. And the
     companion must carry **no** normative keyword at all: a reader who finds a MUST
     in the rationale document has found one the specification lost.
 
@@ -1111,22 +1223,32 @@ def check_normative_split() -> list[str]:
     """
     out = []
     spec = read_text(SPEC)
+    flat = re.sub(r"\s+", " ", spec)
 
     for pattern, _kws, why in NORMATIVE_REMOVALS:
-        if re.search(pattern, re.sub(r"\s+", " ", spec)):
+        if re.search(pattern, flat):
             out.append(
                 f"removal '{pattern[:48]}...' names a sentence still in the specification "
                 f"-- the table accounts for a loss that did not happen ({why[:60]}...)"
             )
 
+    for pattern, _kws, why in NORMATIVE_ADDITIONS:
+        if not re.search(pattern, flat):
+            out.append(
+                f"addition '{pattern[:48]}...' names a sentence not in the specification "
+                f"-- the table accounts for a gain that did not happen ({why[:60]}...)"
+            )
+
     for kw, base in sorted(NORMATIVE_V018.items()):
-        want = base - sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_REMOVALS)
+        want = expected_normative(kw)
         got = len(re.findall(r"\b" + kw.replace(" ", r"\s+") + r"\b", spec))
         if got != want:
-            verb = "lost" if got < want else "gained"
+            verb, table = (
+                ("lost", "NORMATIVE_REMOVALS") if got < want else ("gained", "NORMATIVE_ADDITIONS")
+            )
             out.append(
                 f"specification {verb} a normative keyword: {kw} is {got}, expected {want} "
-                f"(v0.18 had {base}) -- extraction moves the argument and leaves the rule"
+                f"(v0.18 had {base}) -- name the sentence in {table}, with why"
             )
 
     if os.path.exists(RATIONALE):
@@ -1142,16 +1264,28 @@ def check_normative_split() -> list[str]:
                 )
 
     if not out:
-        counts = ", ".join(
-            f"{k} {v - sum(x.get(k, 0) for _p, x, _w in NORMATIVE_REMOVALS)}"
-            for k, v in sorted(NORMATIVE_V018.items())
-        )
+        counts = ", ".join(f"{k} {expected_normative(k)}" for k in sorted(NORMATIVE_V018))
         home = "companion clean" if os.path.exists(RATIONALE) else "no companion yet"
         print(
             f"  normative split: {counts} -- v0.18 less "
-            f"{len(NORMATIVE_REMOVALS)} accounted removal(s), {home}"
+            f"{len(NORMATIVE_REMOVALS)} accounted removal(s) plus "
+            f"{len(NORMATIVE_ADDITIONS)} accounted addition(s), {home}"
         )
     return out
+
+
+def expected_normative(kw: str) -> int:
+    """Return how many of one keyword the specification should carry today.
+
+    `v0.18`'s frozen count, less what the removals table names, plus what the
+    additions table names. Derived, never typed, so neither table can move a
+    number without a sentence and a reason beside it.
+    """
+    return (
+        NORMATIVE_V018[kw]
+        - sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_REMOVALS)
+        + sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_ADDITIONS)
+    )
 
 
 def spec_tables() -> tuple[dict[str, str], dict[str, str]]:
@@ -1236,45 +1370,63 @@ def walk(raw: bytes) -> Iterator[tuple[int, int, int]]:
         raise Corrupt("trailing bytes")
 
 
-def chain_lines(d: str, n: str) -> list[dict]:
-    """Read one chain file's JSONL projection."""
+def fixture_lines(d: str, n: str) -> list[dict]:
+    """Read one fixture file's JSONL projection."""
     text = read_text(os.path.join(d, f"{n}.jsonl"))
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-def check_chain_digests(d: str) -> list[str]:
-    """Check every declared digest is the real SHA-256 of the file it names."""
+def fixture_digests(
+    d: str, label: str, files: tuple[str, ...], citing: tuple[str, ...]
+) -> list[str]:
+    """Check every digest a fixture's files declare is the real SHA-256 of the sibling named."""
     import hashlib
 
     real = {
         f"{n}.zpf": "sha256:" + hashlib.sha256(read_bytes(os.path.join(d, f"{n}.zpf"))).hexdigest()
-        for n in ("raw", "decoded", "annotated")
+        for n in files
     }
     out = []
-    for n in ("decoded", "annotated"):
-        for o in chain_lines(d, n):
+    for n in citing:
+        for o in fixture_lines(d, n):
             if o.get("type") == "source" and "digest" in o:
                 want = real.get(o["uri"])
                 if want is None:
-                    out.append(f"chain/{n}: cites unknown file {o['uri']}")
+                    out.append(f"{label}/{n}: cites unknown file {o['uri']}")
                 elif o["digest"] != want:
-                    out.append(f"chain/{n}: digest for {o['uri']} is stale")
+                    out.append(f"{label}/{n}: digest for {o['uri']} is stale")
     return out
 
 
-def chain_raw_extents(d: str) -> dict[int, int]:
-    """Reconstruct raw.zpf's per-stream extents from seq_start - (isn + 1)."""
+def anchored_extents(lines: list[dict]) -> dict[tuple[int, int], int]:
+    """Reconstruct each sequence-anchored stream's extent from seq_start - (isn + 1).
+
+    Keyed by (session_id, pid). This is what proves a fixture's hole is really in
+    the sequence numbers rather than merely asserted in a comment, and it is the
+    one arithmetic the three pair checks share: chain's raw.zpf, tunnel's
+    inner.zpf and merge's two inputs are each verified this way against what the
+    next hop cites or declares.
+    """
+    ext: dict[tuple[int, int], int] = {}
+    for k, _start, end in anchored_ranges(lines, keyed=True):
+        ext[k] = max(ext.get(k, 0), end)
+    return ext
+
+
+def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
+    """Each record's [start, end) in its stream's offset space, from seq_start - (isn + 1)."""
     import base64
 
-    isn, ext = {}, {}
-    for o in chain_lines(d, "raw"):
-        if o.get("type") == "participant":
-            isn[o["pid"]] = o["isn"]
-        elif o.get("type") == "record":
-            off = o["seq_start"] - (isn[o["sender_pid"]] + 1)
-            end = off + len(base64.b64decode(o["payload"]))
-            ext[o["sender_pid"]] = max(ext.get(o["sender_pid"], 0), end)
-    return ext
+    isn, out = {}, []
+    for o in lines:
+        if o.get("type") == "participant" and "isn" in o:
+            isn[(o["session_id"], o["pid"])] = o["isn"]
+        elif o.get("type") == "record" and "seq_start" in o:
+            k = (o["session_id"], o["sender_pid"])
+            start = o["seq_start"] - (isn[k] + 1)
+            end = start + len(base64.b64decode(o["payload"]))
+            out.append((k, start, end) if keyed else (start, end))
+    return out
 
 
 def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -1288,21 +1440,34 @@ def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return merged
 
 
-def check_chain_coverage(d: str, ext: dict[int, int]) -> list[str]:
-    """Confirm decoded.zpf accounts for every byte raw.zpf holds."""
-    cov: dict[int, list[tuple[int, int]]] = {}
-    for o in chain_lines(d, "decoded"):
-        for s in o.get("spans", []):
-            cov.setdefault(s["pid"], []).append((s["off_start"], s["off_end"]))
-        if o.get("type") == "undecoded":
-            cov.setdefault(o["pid"], []).append((o["off_start"], o["off_end"]))
+def covers(
+    label: str, lines: list[dict], sess: int, pid: int, want_end: int, source_id: int | None = None
+) -> list[str]:
+    """Confirm one hop accounts for every offset of the input stream it reads.
 
-    out = []
-    for pid, want_end in sorted(ext.items()):
-        merged = merge_ranges(cov.get(pid, []))
-        if merged != [(0, want_end)]:
-            out.append(f"chain: pid {pid} covered {merged}, raw stream is [0,{want_end})")
-    return out
+    Accumulated across the WHOLE file rather than per output session: under
+    fan-out one input stream feeds several output sessions and no single one
+    covers it, which is the property tunnel/inner.zpf exists to show. `source_id`
+    narrows to one input where a hop reads several, as merged.zpf does.
+    """
+    cov: list[tuple[int, int]] = []
+    for o in lines:
+        for sp in o.get("spans", []):
+            if (sp["session_id"], sp["pid"]) == (sess, pid) and source_id in (
+                None,
+                sp["source_id"],
+            ):
+                cov.append((sp["off_start"], sp["off_end"]))
+        if (
+            o.get("type") == "undecoded"
+            and (o["session_id"], o["pid"]) == (sess, pid)
+            and source_id in (None, o["source_id"])
+        ):
+            cov.append((o["off_start"], o["off_end"]))
+    merged = merge_ranges(cov)
+    if merged != [(0, want_end)]:
+        return [f"{label}: covers {merged} of session {sess} pid {pid}, want [0,{want_end})"]
+    return []
 
 
 def check_chain() -> list[str]:
@@ -1313,79 +1478,17 @@ def check_chain() -> list[str]:
     d = os.path.join(HERE, "chain")
     if not os.path.isdir(d):
         return ["chain/ missing"]
-    ext = chain_raw_extents(d)
-    out = check_chain_digests(d) + check_chain_coverage(d, ext)
+    ext = anchored_extents(fixture_lines(d, "raw"))
+    out = fixture_digests(d, "chain", ("raw", "decoded", "annotated"), ("decoded", "annotated"))
+    decoded = fixture_lines(d, "decoded")
+    for (sess, pid), end in sorted(ext.items()):
+        out += covers("chain/decoded", decoded, sess, pid, end)
     if not out:
         print(
             f"  chain: 3 files, digests match, coverage complete "
-            f"({', '.join(f'pid {p} [0,{e})' for p, e in sorted(ext.items()))})"
+            f"({', '.join(f'pid {p} [0,{e})' for (_s, p), e in sorted(ext.items()))})"
         )
     return out
-
-
-def tunnel_lines(d: str, n: str) -> list[dict]:
-    """Read one tunnel file's JSONL projection."""
-    text = read_text(os.path.join(d, f"{n}.jsonl"))
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
-
-
-def tunnel_digests(d: str) -> list[str]:
-    """Check each hop cites the real SHA-256 of the file before it."""
-    import hashlib
-
-    real = {
-        f"{n}.zpf": "sha256:" + hashlib.sha256(read_bytes(os.path.join(d, f"{n}.zpf"))).hexdigest()
-        for n in ("outer", "packets", "inner", "http")
-    }
-    out = []
-    for n in ("packets", "inner", "http"):
-        for o in tunnel_lines(d, n):
-            if o.get("type") == "source" and "digest" in o:
-                want = real.get(o["uri"])
-                if want is None:
-                    out.append(f"tunnel/{n}: cites unknown file {o['uri']}")
-                elif o["digest"] != want:
-                    out.append(f"tunnel/{n}: digest for {o['uri']} is stale")
-    return out
-
-
-def tunnel_covers(d: str, stage: str, sess: int, pid: int, want_end: int) -> list[str]:
-    """Confirm one hop accounts for every offset of the input stream it reads.
-
-    Accumulated across the WHOLE file rather than per output session: under
-    fan-out one input stream feeds several output sessions and no single one
-    covers it, which is the property inner.zpf exists to show.
-    """
-    cov: list[tuple[int, int]] = []
-    for o in tunnel_lines(d, stage):
-        for s in o.get("spans", []):
-            if (s["session_id"], s["pid"]) == (sess, pid):
-                cov.append((s["off_start"], s["off_end"]))
-        if o.get("type") == "undecoded" and (o["session_id"], o["pid"]) == (sess, pid):
-            cov.append((o["off_start"], o["off_end"]))
-    merged = merge_ranges(cov)
-    if merged != [(0, want_end)]:
-        return [f"tunnel/{stage}: covers {merged} of session {sess} pid {pid}, want [0,{want_end})"]
-    return []
-
-
-def tunnel_inner_extent(d: str, sess: int, pid: int) -> int:
-    """Reconstruct one inner stream's extent from seq_start - (isn + 1).
-
-    The same arithmetic chain_raw_extents() does, one level further down: it is
-    what proves inner.zpf's hole is really in the sequence numbers rather than
-    merely asserted in a comment.
-    """
-    import base64
-
-    isn, end = None, 0
-    for o in tunnel_lines(d, "inner"):
-        if o.get("type") == "participant" and (o["session_id"], o["pid"]) == (sess, pid):
-            isn = o["isn"]
-        elif o.get("type") == "record" and (o["session_id"], o["sender_pid"]) == (sess, pid):
-            off = o["seq_start"] - (isn + 1)
-            end = max(end, off + len(base64.b64decode(o["payload"])))
-    return end
 
 
 def check_tunnel() -> list[str]:
@@ -1398,20 +1501,23 @@ def check_tunnel() -> list[str]:
     if not os.path.isdir(d):
         return ["tunnel/ missing"]
 
-    out = tunnel_digests(d)
+    out = fixture_digests(
+        d, "tunnel", ("outer", "packets", "inner", "http"), ("packets", "inner", "http")
+    )
     # outer -> packets: the whole capture stream, framing included.
-    out += tunnel_covers(d, "packets", 1, 0, 320)
+    out += covers("tunnel/packets", fixture_lines(d, "packets"), 1, 0, 320)
     # packets -> inner: the union across BOTH output sessions, not either alone.
-    out += tunnel_covers(d, "inner", 5, 0, 150)
+    out += covers("tunnel/inner", fixture_lines(d, "inner"), 5, 0, 150)
     # inner -> http: flow A only; session 11 is not an input to that hop.
-    out += tunnel_covers(d, "http", 10, 0, 110)
+    http = fixture_lines(d, "http")
+    out += covers("tunnel/http", http, 10, 0, 110)
 
     # The inner stream's own extent, re-derived from the sequence numbers, must
     # agree with what the next hop declares it to be.
-    derived = tunnel_inner_extent(d, 10, 0)
+    derived = anchored_extents(fixture_lines(d, "inner"))[(10, 0)]
     declared = [
         e["extent"]
-        for o in tunnel_lines(d, "http")
+        for o in http
         if o.get("type") == "session_end"
         for e in o.get("input_extents", [])
         if (e["session_id"], e["pid"]) == (10, 0)
@@ -1426,6 +1532,57 @@ def check_tunnel() -> list[str]:
         print(
             f"  tunnel: 4 files, digests match, coverage complete "
             f"(outer [0,320) -> packets [0,150) fan-out -> inner flow A [0,{derived}))"
+        )
+    return out
+
+
+def check_merge() -> list[str]:
+    """Verify the merge against its inputs: digests, the hole, and its coverage.
+
+    The third pair check, and the one #133 asked for. Each input's stream extent
+    is re-derived from its own isn and seq_start; a.zpf's records must NOT cover
+    that extent on their own, or the fixture has no hole and proves nothing;
+    merged.zpf's identity spans plus its Undecoded block must cover each input
+    stream exactly, per source; and what its Session End declares must be the
+    derived number. All of it from the projections -- nothing here parses a
+    block body.
+    """
+    d = os.path.join(HERE, "merge")
+    if not os.path.isdir(d):
+        return ["merge/ missing"]
+
+    out = fixture_digests(d, "merge", ("a", "b", "merged"), ("merged",))
+    inputs = {1: fixture_lines(d, "a"), 2: fixture_lines(d, "b")}
+    merged = fixture_lines(d, "merged")
+    ext = {src: anchored_extents(lines) for src, lines in inputs.items()}
+
+    # The hole must be real: a.zpf's own records leave part of [0,50) uncovered.
+    a_cov = merge_ranges(anchored_ranges(inputs[1]))
+    (_a_key, a_end), *_ = ext[1].items()
+    if a_cov == [(0, a_end)]:
+        out.append("merge/a: its records cover its whole stream -- there is no hole to mark")
+    hole = [(x, y) for (_, x), (y, _) in zip(a_cov, a_cov[1:], strict=False)]
+
+    declared = {
+        (e["source_id"], e["session_id"], e["pid"]): e["extent"]
+        for o in merged
+        if o.get("type") == "session_end"
+        for e in o.get("input_extents", [])
+    }
+    for src, streams in sorted(ext.items()):
+        for (sess, pid), end in sorted(streams.items()):
+            out += covers("merge/merged", merged, sess, pid, end, source_id=src)
+            if declared.get((src, sess, pid)) != end:
+                out.append(
+                    f"merge/merged: input stream (source {src}, session {sess}, pid {pid}) "
+                    f"is [0,{end}) by seq_start - (isn + 1), but Session End declares "
+                    f"{declared.get((src, sess, pid))}"
+                )
+
+    if not out:
+        print(
+            f"  merge: 3 files, digests match, a.zpf's hole {hole} is in its sequence "
+            f"numbers, merged.zpf covers both inputs exactly and declares their extents"
         )
     return out
 
@@ -1501,6 +1658,48 @@ def check_violations(v: dict) -> list[str]:
             f"vector so it carries only the one it was built for."
         ]
     return []
+
+
+def check_extents(v: dict) -> list[str]:
+    """Check a vector's declared extents are shaped right, and name real streams.
+
+    `extents` is the accept tier's assertion about what a reader COMPUTES, the
+    way `violations` is its assertion about what a reader reports (#140): three
+    accept vectors carried their whole lesson in a number no field stated, and a
+    reader that got it wrong passed all three silently. Every single-file accept
+    entry declares one per participant stream. The values are the author's
+    reading of the specification and are checked by nobody here -- this compares
+    nothing against the bytes, for the same reason `violations` does not -- but
+    each entry must name a session and pid the vector's own projection declares,
+    and every declared participant must have one, so a stream cannot be left
+    out and a number cannot name a stream that is not there.
+
+    Multi-file fixtures carry none: their extents are already verified against
+    their inputs by the bespoke checks, and a declared copy would be a second
+    statement of the same number.
+    """
+    name, tier = v["name"], v["tier"]
+    if "files" in v or tier != "accept":
+        return (
+            [f"{name}: declares extents off the single-file accept tier"] if "extents" in v else []
+        )
+    if "extents" not in v:
+        return [f"{name}: a single-file accept vector declares extents"]
+    out = []
+    keys = {"session_id", "pid", "extent"}
+    for e in v["extents"]:
+        if set(e) != keys or not all(isinstance(e[k], int) and e[k] >= 0 for k in keys):
+            out.append(
+                f"{name}: extents entry {e} is not {{session_id, pid, extent}} of non-negative ints"
+            )
+    if out:
+        return out
+    jl = fixture_lines(os.path.join(HERE, name), name)
+    declared = sorted((o["session_id"], o["pid"]) for o in jl if o.get("type") == "participant")
+    named = sorted((e["session_id"], e["pid"]) for e in v["extents"])
+    if named != declared:
+        out.append(f"{name}: extents name streams {named} but the projection declares {declared}")
+    return out
 
 
 def check_jsonl(label: str, path: str, block_count: int) -> list[str]:
@@ -1594,10 +1793,12 @@ def main() -> int:
     failures = []
     for v in manifest["vectors"]:
         failures += check_violations(v)
+        failures += check_extents(v)
         failures += check_vector(v)
 
     failures += check_chain()
     failures += check_tunnel()
+    failures += check_merge()
     failures += check_capability_coverage(manifest)
     failures += check_jsonl_keys()
     failures += check_retired_claims()
@@ -1610,6 +1811,12 @@ def main() -> int:
         for f in failures:
             print("  " + f)
         return 1
+    n_ext = sum(1 for v in manifest["vectors"] if "extents" in v)
+    streams = sum(len(v.get("extents", ())) for v in manifest["vectors"])
+    print(
+        f"  extents: {n_ext} accept vectors declare {streams} stream extents -- "
+        f"shape checked, values are the author's"
+    )
     print(f"\nall {len(manifest['vectors'])} vectors consistent")
     return 0
 

@@ -9,7 +9,9 @@ Every block is spelled out field by field, with an annotation per field. The
 binary and the annotated hex dump come from that one description, so the dump
 can never drift from the bytes. The expected JSONL is written separately, by
 hand, so that the two faces of each vector are independent statements about the
-same file rather than derivations of one another.
+same file rather than derivations of one another -- and since 0.20 the two are
+compared at registration, so a vector whose bytes do not project to its JSONL
+fails here rather than in a downstream port (#141).
 
 Usage:  python3 build.py          # regenerate every vector
         python3 build.py --check  # verify the tree matches (no writes)
@@ -41,7 +43,7 @@ def read_text(path: str) -> str:
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 19
+MAJOR, MINOR = 0, 20
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -75,18 +77,54 @@ def pad4(n: int) -> int:
 # A "piece" is (bytes, annotation). Annotation "" means it is padding or a
 # continuation line and needs no separate explanation.
 Piece = tuple[bytes, str]
-Opt = list[Piece]  # what an o_*() helper returns
-Blk = list[Piece]  # what a block builder returns
+
+
+class Opt(list):
+    """A TLV option: its pieces, plus the logical value the projection renders.
+
+    The pieces are what the bytes and the hex dump are built from. `value` is
+    what the .jsonl face is expected to say for this option -- the string, the
+    integer, the raw bytes, or for a packed option its entries as dicts -- and is
+    what `project()` reads. Until 0.20 a helper returned bare pieces, so the
+    builder knew every byte it wrote and nothing of what it meant, and the two
+    faces of a vector could disagree with nothing to notice (#141).
+    """
+
+    def __init__(self, pieces: list[Piece], oid: int, name: str, value: object) -> None:
+        super().__init__(pieces)
+        self.oid = oid
+        self.name = name
+        self.value = value
+
+
+class Blk(list):
+    """A block: its pieces, plus the body fields and options the projection renders.
+
+    `fields` maps each body field's CANONICAL binary name to its logical value;
+    `project()` applies the brevity aliases and the value encodings. `None` marks
+    a block of a type this version does not define, which projects through the
+    unknown-block escape and has no fields to name.
+    """
+
+    def __init__(
+        self, pieces: list[Piece], btype: int, fields: dict | None, options: list[Opt]
+    ) -> None:
+        super().__init__(pieces)
+        self.btype = btype
+        self.fields = fields
+        self.options = options
 
 
 def P(b: bytes, ann: str = "") -> Piece:
     return (b, ann)
 
 
-def option(oid: int, value: bytes, name: str, note: str = "") -> Opt:
+def option(oid: int, value: bytes, name: str, note: str = "", *, logical: object = None) -> Opt:
     """TLV option: id u16, len u16, value, padded to a 4-byte boundary.
 
     len counts the value only, never the 4-byte option header or the padding.
+    `logical` is the value the projection renders; it defaults to the raw bytes,
+    which is right for a `bytes`-typed option and for an unregistered one.
     """
     ann = f"option 0x{oid:04X} {name}, len = {len(value)}"
     if note:
@@ -97,7 +135,7 @@ def option(oid: int, value: bytes, name: str, note: str = "") -> Opt:
     pad = pad4(4 + len(value))
     if pad:
         out.append(P(b"\x00" * pad, "value padding"))
-    return out
+    return Opt(out, oid, name, value if logical is None else logical)
 
 
 def _describe(value: bytes) -> str:
@@ -111,7 +149,12 @@ def _describe(value: bytes) -> str:
 
 
 def block(
-    btype: int, name: str, body: list[Piece], options: tuple[Opt, ...] | list[Opt] = ()
+    btype: int,
+    name: str,
+    body: list[Piece],
+    options: tuple[Opt, ...] | list[Opt] = (),
+    *,
+    fields: dict | None,
 ) -> Blk:
     """Frame a block: type u16, reserved u16, length u32, then content.
 
@@ -133,7 +176,7 @@ def block(
         P(u16(0), "reserved"),
         P(u32(size), f"length = {size}"),
     ]
-    return head + content
+    return Blk(head + content, btype, fields, list(options))
 
 
 # --------------------------------------------------------------- block kinds
@@ -152,20 +195,21 @@ def file_header(
         P(u16(minor), f"version_minor = {minor}"),
         P(u64(tick_hz), f"tick_hz = {tick_hz:_}"),
     ]
-    return block(0x01, "File Header", body, options)
+    # `format` is the alias for the version pair; magic is framing and does not
+    # project.
+    fields = {"format": f"zipline-payload/{major}.{minor}", "tick_hz": tick_hz}
+    return block(0x01, "File Header", body, options, fields=fields)
 
 
 def source(source_id: int, kind: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
-    kind_name = {0: "capture", 1: "zpf-input"}.get(kind, "UNDEFINED")
+    kind_name = ENUMS["kind"].get(kind, "UNDEFINED")
     body = [
         P(u16(source_id), f"source_id = {source_id}"),
         P(u8(kind), f"kind = {kind}  ({kind_name})"),
         P(u8(0), "_reserved"),
     ]
-    return block(0x02, "Source Descriptor", body, options)
-
-
-_LAYER = {0: "decoded", 1: "transport"}
+    fields = {"source_id": source_id, "kind": kind}
+    return block(0x02, "Source Descriptor", body, options, fields=fields)
 
 
 def decoder(
@@ -178,22 +222,24 @@ def decoder(
     changing a byte of any file written before it existed -- every one of those
     holds 0 there, and every one of them meant decoded.
     """
+    layer_name = ENUMS["output_layer"].get(output_layer, "?")
     body = [
         P(u16(decoder_id), f"decoder_id = {decoder_id}"),
-        P(u8(output_layer), f"output_layer = {output_layer}  ({_LAYER.get(output_layer, '?')})"),
+        P(u8(output_layer), f"output_layer = {output_layer}  ({layer_name})"),
         P(u8(0), "_reserved"),
     ]
-    return block(0x03, "Decoder Descriptor", body, options)
+    fields = {"decoder_id": decoder_id, "output_layer": output_layer}
+    return block(0x03, "Decoder Descriptor", body, options, fields=fields)
 
 
 def session(session_id: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [P(u64(session_id), f"session_id = {session_id}  (u64)")]
-    return block(0x10, "Session Descriptor", body, options)
+    return block(0x10, "Session Descriptor", body, options, fields={"session_id": session_id})
 
 
 def session_end(session_id: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
     body = [P(u64(session_id), f"session_id = {session_id}  (u64)")]
-    return block(0x12, "Session End", body, options)
+    return block(0x12, "Session End", body, options, fields={"session_id": session_id})
 
 
 def participant(session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
@@ -202,7 +248,8 @@ def participant(session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt] 
         P(u16(pid), f"participant_id = {pid}"),
         P(u16(0), "_reserved"),
     ]
-    return block(0x11, "Participant Descriptor", body, options)
+    fields = {"session_id": session_id, "participant_id": pid}
+    return block(0x11, "Participant Descriptor", body, options, fields=fields)
 
 
 def record(
@@ -235,7 +282,17 @@ def record(
         pad = pad4(len(payload))
         if pad:
             body.append(P(b"\x00" * pad, "payload padding"))
-    return block(0x20, "Record", body, options)
+    # payload_len is framing and does not project; the base64 payload's own
+    # length stands in for it.
+    fields = {
+        "session_id": session_id,
+        "sender_pid": sender_pid,
+        "source_id": source_id,
+        "timestamp": timestamp,
+        "flags": flags,
+        "payload": payload,
+    }
+    return block(0x20, "Record", body, options, fields=fields)
 
 
 def undecoded(
@@ -268,7 +325,14 @@ def undecoded(
         ),
         P(u64(off_end), f"off_end   = {off_end}" + ("  (capture byte offset)" if capture else "")),
     ]
-    return block(0x21, "Undecoded", body, options)
+    fields = {
+        "source_id": source_id,
+        "participant_id": pid,
+        "session_id": session_id,
+        "off_start": off_start,
+        "off_end": off_end,
+    }
+    return block(0x21, "Undecoded", body, options, fields=fields)
 
 
 def discontinuity(session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
@@ -282,7 +346,8 @@ def discontinuity(session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt
         P(u16(pid), f"participant_id = {pid}  (in THIS file)"),
         P(u16(0), "_reserved"),
     ]
-    return block(0x22, "Discontinuity", body, options)
+    fields = {"session_id": session_id, "participant_id": pid}
+    return block(0x22, "Discontinuity", body, options, fields=fields)
 
 
 def name_block(session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
@@ -291,7 +356,8 @@ def name_block(session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt] =
         P(u16(pid), f"participant_id = {pid}"),
         P(u16(0), "_reserved"),
     ]
-    return block(0x30, "Name/Identity Resolution", body, options)
+    fields = {"session_id": session_id, "participant_id": pid}
+    return block(0x30, "Name/Identity Resolution", body, options, fields=fields)
 
 
 def custom(pen: int, subtype: int, payload: bytes) -> Blk:
@@ -307,12 +373,13 @@ def custom(pen: int, subtype: int, payload: bytes) -> Blk:
         P(u16(0), "_reserved"),
         P(payload, _describe(payload)),
     ]
-    return block(0xFF, "Custom", body)
+    fields = {"pen": pen, "subtype": subtype, "payload": payload}
+    return block(0xFF, "Custom", body, fields=fields)
 
 
 def end_block() -> Blk:
     body = [P(u32(0x5A454E44), 'end_magic = 0x5A454E44  ("ZEND")')]
-    return block(0x41, "End of file", body)
+    return block(0x41, "End of file", body, fields={})
 
 
 def unknown_block(btype: int, content_bytes: bytes) -> Blk:
@@ -320,7 +387,9 @@ def unknown_block(btype: int, content_bytes: bytes) -> Blk:
 
     The forward-compatibility case a reader must skip by length.
     """
-    return block(btype, "UNKNOWN to this version", [P(content_bytes, "opaque content")])
+    return block(
+        btype, "UNKNOWN to this version", [P(content_bytes, "opaque content")], fields=None
+    )
 
 
 # ------------------------------------------------------------ option helpers
@@ -331,168 +400,323 @@ def s(x: str) -> bytes:
 
 
 def o_comment(v: str) -> Opt:
-    return option(0x0001, s(v), "comment")
+    return option(0x0001, s(v), "comment", logical=v)
 
 
 def o_creator(v: str) -> Opt:
-    return option(0x0011, s(v), "creator")
+    return option(0x0011, s(v), "creator", logical=v)
 
 
 def o_produced_by(v: str) -> Opt:
-    return option(0x0012, s(v), "produced_by")
+    return option(0x0012, s(v), "produced_by", logical=v)
 
 
-def o_produced_at(v: str) -> Opt:
-    return option(0x0013, i64(v), "produced_at", str(v))
-
-
-def o_file_flags(v: str) -> Opt:
-    return option(0x0014, u16(v), "flags", f"0x{v:04X}")
+def o_produced_at(v: int) -> Opt:
+    return option(0x0013, i64(v), "produced_at", str(v), logical=v)
 
 
 def o_transform_params_digest(v: str) -> Opt:
-    return option(0x0015, s(v), "transform_params_digest")
+    return option(0x0015, s(v), "transform_params_digest", logical=v)
 
 
 def o_uri(v: str) -> Opt:
-    return option(0x0020, s(v), "uri")
+    return option(0x0020, s(v), "uri", logical=v)
 
 
 def o_digest(v: str) -> Opt:
-    return option(0x0021, s(v), "digest")
+    return option(0x0021, s(v), "digest", logical=v)
 
 
 def o_dec_name(v: str) -> Opt:
-    return option(0x0041, s(v), "name")
+    return option(0x0041, s(v), "name", logical=v)
 
 
 def o_dec_version(v: str) -> Opt:
-    return option(0x0042, s(v), "version")
+    return option(0x0042, s(v), "version", logical=v)
 
 
 def o_params_digest(v: str) -> Opt:
-    return option(0x0043, s(v), "params_digest")
+    return option(0x0043, s(v), "params_digest", logical=v)
 
 
 def o_proto(v: str) -> Opt:
-    return option(0x0050, s(v), "proto")
+    return option(0x0050, s(v), "proto", logical=v)
 
 
 def o_flow_key(v: str) -> Opt:
-    return option(0x0051, s(v), "flow_key")
+    return option(0x0051, s(v), "flow_key", logical=v)
 
 
-def o_sess_flags(v: str) -> Opt:
-    return option(0x0052, u16(v), "flags", f"0x{v:04X}")
+def o_sess_flags(v: int) -> Opt:
+    return option(0x0052, u16(v), "flags", f"0x{v:04X}", logical=v)
 
 
-def o_seq_basis(v: str) -> Opt:
-    return option(0x0053, s(v), "sequenced_basis")
-
-
-def o_external_sid(v: str) -> Opt:
+def o_external_sid(v: bytes) -> Opt:
     return option(0x0054, v, "external_session_id", f"{len(v)} opaque bytes")
 
 
 def o_endpoint(v: str) -> Opt:
-    return option(0x0060, s(v), "endpoint")
+    return option(0x0060, s(v), "endpoint", logical=v)
 
 
-def o_time_epoch(v: str) -> Opt:
-    return option(0x0010, i64(v), "time_epoch", str(v))
+def o_time_epoch(v: int) -> Opt:
+    return option(0x0010, i64(v), "time_epoch", str(v), logical=v)
 
 
-def o_link_type(v: str) -> Opt:
-    return option(0x0022, u16(v), "link_type", str(v))
+def o_link_type(v: int) -> Opt:
+    return option(0x0022, u16(v), "link_type", str(v), logical=v)
 
 
 def o_identity(v: str) -> Opt:
-    return option(0x0062, s(v), "identity")
+    return option(0x0062, s(v), "identity", logical=v)
 
 
-def o_ts_first(v: str) -> Opt:
-    return option(0x0073, i64(v), "ts_first", str(v))
+def o_ts_first(v: int) -> Opt:
+    return option(0x0073, i64(v), "ts_first", str(v), logical=v)
 
 
-def o_isn(v: str) -> Opt:
-    return option(0x0061, u32(v), "isn", str(v))
+def o_isn(v: int) -> Opt:
+    return option(0x0061, u32(v), "isn", str(v), logical=v)
 
 
-def o_tcp_role(v: str) -> Opt:
-    return option(0x0063, u8(v), "tcp_role", str(v))
+def o_tcp_role(v: int) -> Opt:
+    return option(0x0063, u8(v), "tcp_role", str(v), logical=v)
 
 
-def o_origin(src: int, pid: int, sess: int) -> Opt:
-    return option(
-        0x0064,
-        u16(src) + u16(pid) + u64(sess),
-        "origin",
-        f"source {src}, pid {pid}, session {sess}",
-    )
+def o_seq_start(v: int) -> Opt:
+    return option(0x0070, u32(v), "seq_start", str(v), logical=v)
 
 
-def o_seq_start(v: str) -> Opt:
-    return option(0x0070, u32(v), "seq_start", str(v))
-
-
-def o_ack(v: str) -> Opt:
-    return option(0x0072, u32(v), "ack", str(v))
+def o_ack(v: int) -> Opt:
+    return option(0x0072, u32(v), "ack", str(v), logical=v)
 
 
 def o_spans(entries: list[tuple[int, int, int, int, int]]) -> Opt:
+    """Build a spans option from `(source_id, session_id, pid, off_start, off_end)` tuples.
+
+    The tuple is in LOGICAL order -- the order every prose statement of the
+    triple uses, and the order the JSONL spells it. The bytes put the two u16s
+    first, for alignment only, and until 0.20 so did this helper's argument
+    list: `(source, pid, session, ...)`, an order a reader had to know NOT to
+    assume. mixed-derivation was written in logical order against it and
+    shipped a span citing pid 8 of session 0 (#141, defect 6).
+    """
     packed = b"".join(
-        u16(sr) + u16(pid) + u64(se) + u64(a) + u64(b) for sr, pid, se, a, b in entries
+        u16(src) + u16(pid) + u64(sess) + u64(a) + u64(b) for src, sess, pid, a, b in entries
     )
-    return option(0x0080, packed, "spans", f"{len(entries)} entry/entries")
+    logical = [
+        {"source_id": src, "session_id": sess, "pid": pid, "off_start": a, "off_end": b}
+        for src, sess, pid, a, b in entries
+    ]
+    return option(0x0080, packed, "spans", f"{len(entries)} entry/entries", logical=logical)
 
 
-def o_decoder_id(v: str) -> Opt:
-    return option(0x0090, u16(v), "decoder_id", str(v))
+def o_decoder_id(v: int) -> Opt:
+    return option(0x0090, u16(v), "decoder_id", str(v), logical=v)
 
 
 def o_content_type(v: str) -> Opt:
-    return option(0x0091, s(v), "content_type")
+    return option(0x0091, s(v), "content_type", logical=v)
 
 
 def o_role(v: str) -> Opt:
-    return option(0x0092, s(v), "role")
+    return option(0x0092, s(v), "role", logical=v)
 
 
 def o_reason(v: str) -> Opt:
-    return option(0x00A0, s(v), "reason")
+    return option(0x00A0, s(v), "reason", logical=v)
 
 
 def o_reason_class(v: str) -> Opt:
-    return option(0x00A1, s(v), "reason_class")
+    return option(0x00A1, s(v), "reason_class", logical=v)
 
 
 def o_end_reason(v: str) -> Opt:
-    return option(0x00C0, s(v), "reason")
+    return option(0x00C0, s(v), "reason", logical=v)
 
 
 def o_input_extents(entries: list[tuple[int, int, int, int]]) -> Opt:
-    packed = b"".join(u16(src) + u16(pid) + u64(sess) + u64(ext) for src, pid, sess, ext in entries)
-    return option(0x00C1, packed, "input_extents", f"{len(entries)} entry/entries")
+    """Build an input_extents option from `(source_id, session_id, pid, extent)` tuples.
+
+    Logical order, as o_spans: the u16s lead in the bytes only for alignment.
+    """
+    packed = b"".join(u16(src) + u16(pid) + u64(sess) + u64(ext) for src, sess, pid, ext in entries)
+    logical = [
+        {"source_id": src, "session_id": sess, "pid": pid, "extent": ext}
+        for src, sess, pid, ext in entries
+    ]
+    return option(0x00C1, packed, "input_extents", f"{len(entries)} entry/entries", logical=logical)
 
 
-def o_width(v: str) -> Opt:
-    return option(0x00D0, u64(v), "width", str(v))
+def o_width(v: int) -> Opt:
+    return option(0x00D0, u64(v), "width", str(v), logical=v)
 
 
 def o_disc_reason(v: str) -> Opt:
-    return option(0x00D1, s(v), "reason")
+    return option(0x00D1, s(v), "reason", logical=v)
 
 
 def o_label(v: str) -> Opt:
-    return option(0x00B0, s(v), "label")
+    return option(0x00B0, s(v), "label", logical=v)
 
 
 def o_name_kind(v: str) -> Opt:
-    return option(0x00B1, s(v), "kind")
+    return option(0x00B1, s(v), "kind", logical=v)
 
 
 def o_unregistered(oid: int, v: bytes) -> Opt:
     return option(oid, v, "UNREGISTERED")
+
+
+# ----------------------------------------------------------------- projection
+
+# The JSONL <-> binary mapping, as build.py knows it: the `type` strings, the
+# brevity aliases, the enum labels and the flag tokens the specification's
+# mapping section and enum tables define. This is the ONE place the builder
+# says what its bytes mean, and it exists so that the hand-authored .jsonl can
+# be checked against the description that emitted the bytes rather than trusted
+# beside it. Three vectors shipped with the two faces disagreeing (#141, defects
+# 5 and 6); nothing could see it, because the .hex is generated from the same
+# description as the .zpf and check.py parses no block body by design.
+#
+# The .jsonl files stay hand-written. Generating them from this projector would
+# remove the disagreement by removing the second opinion -- a wrong value would
+# produce two matching wrong faces. Comparing keeps the second opinion, and the
+# 40 hand-authored projections are this projector's test suite as much as it is
+# theirs.
+
+TYPE_NAMES = {
+    0x01: "file",
+    0x02: "source",
+    0x03: "decoder",
+    0x10: "session",
+    0x11: "participant",
+    0x12: "session_end",
+    0x20: "record",
+    0x21: "undecoded",
+    0x22: "discontinuity",
+    0x30: "name",
+    0x41: "end",
+    0xFF: "custom",
+}
+
+ALIASES = {"timestamp": "ts", "participant_id": "pid", "flow_key": "key"}
+
+ENUMS = {
+    "kind": {0: "capture", 1: "zpf-input"},
+    "output_layer": {0: "decoded", 1: "transport"},
+    "tcp_role": {1: "initiator", 2: "responder"},  # 0 = unknown, and is omitted
+}
+
+FLAG_TOKENS = {
+    0x0001: "psh",
+    0x0002: "fin",
+    0x0004: "rst",
+    0x0008: "syn",
+    0x0010: "urg",
+    0x0040: "retransmit",
+    0x0080: "message",
+}
+
+# Options whose repetition is a list (endpoint) or chunking (spans,
+# input_extents): each projects as one array, always, over every occurrence.
+REPEATABLE = {"endpoint"}
+CHUNKED = {"spans", "input_extents"}
+
+
+def flag_tokens(flags: int) -> list[str]:
+    """Render a Record's flags as set-bit tokens, ascending; a bit with no token as hex."""
+    return [FLAG_TOKENS.get(1 << i, f"0x{1 << i:04X}") for i in range(16) if flags & (1 << i)]
+
+
+def project(blk: Blk) -> dict:
+    """Project one block to its JSONL object, by the mapping.
+
+    Body fields always project; an absent option is an omitted key; a zero
+    bitfield is omitted; and each of the four escapes has its form -- an unknown
+    block type, an unregistered option, an enum value with no label, a flag bit
+    with no token.
+    """
+    if blk.fields is None:
+        # Unknown block type: the whole content field, opaque, and no other key.
+        content = b"".join(b for b, _ in blk)[8:]
+        return {"type": f"0x{blk.btype:04X}", "content": b64(content)}
+    out: dict = {"type": TYPE_NAMES[blk.btype]}
+    for name, v in blk.fields.items():
+        if name == "flags":
+            if v:
+                out["flags"] = flag_tokens(v)
+            continue
+        out[ALIASES.get(name, name)] = _render(name, v)
+    for opt in blk.options:
+        _project_option(out, opt)
+    return out
+
+
+def _project_option(out: dict, opt: Opt) -> None:
+    """Add one option to a block's projection: its key, its encoding, its escape."""
+    if opt.name == "UNREGISTERED":
+        out.setdefault("options", []).append({"id": f"0x{opt.oid:04X}", "value": b64(opt.value)})
+        return
+    if opt.name == "flags":  # the Session flags bitfield
+        if opt.value & ~0x0001:
+            raise ValueError(f"session flags 0x{opt.value:04X}: only SEQUENCED is defined")
+        if opt.value:
+            out["sequenced"] = True
+        return
+    if opt.name == "tcp_role" and opt.value == 0:
+        return  # unknown: omitted
+    key = ALIASES.get(opt.name, opt.name)
+    v = _render(opt.name, opt.value)
+    if opt.name in CHUNKED:
+        out.setdefault(key, []).extend(v)
+    elif opt.name in REPEATABLE:
+        out.setdefault(key, []).append(v)
+    elif key in out:
+        raise ValueError(f"option {opt.name} repeats, and is not repeatable")
+    else:
+        out[key] = v
+
+
+def _render(name: str, v: object) -> object:
+    """Encode one logical value: enum label (or raw number), base64 bytes, or as is."""
+    if name in ENUMS:
+        return ENUMS[name].get(v, v)
+    if isinstance(v, bytes):
+        return b64(v)
+    return v
+
+
+def check_faces(label: str, blocks: list[Blk], jsonl: list[dict]) -> None:
+    """Refuse a vector whose bytes and hand-written projection disagree.
+
+    Compared per block, as objects: key order is free (ground rule 3), values
+    are not. The message names the block and every key that differs, with both
+    faces' values, because which face is wrong is a question for the author --
+    the .jsonl was right in all three of #141's defects.
+    """
+    if len(blocks) != len(jsonl):
+        raise ValueError(
+            f"{label}: {len(blocks)} blocks but {len(jsonl)} .jsonl lines -- "
+            "the two faces describe different files"
+        )
+    for i, (blk, want) in enumerate(zip(blocks, jsonl, strict=True)):
+        got = project(blk)
+        if got == want:
+            continue
+
+        def side(d: dict, k: str) -> str:
+            return repr(d[k]) if k in d else "<absent>"
+
+        diffs = [
+            f"  {k}: .jsonl says {side(want, k)}, the bytes project {side(got, k)}"
+            for k in sorted(set(got) | set(want))
+            if got.get(k) != want.get(k) or (k in got) != (k in want)
+        ]
+        raise ValueError(
+            f"{label}: block {i} ({got['type']}) -- the .zpf and the .jsonl disagree:\n"
+            + "\n".join(diffs)
+        )
 
 
 # ------------------------------------------------------------------- vectors
@@ -518,6 +742,7 @@ def vector(
     *,
     violations: int,
     advisory: bool = False,
+    extents: list[tuple[int, int, int]] | None = None,
 ) -> None:
     """Register a vector.
 
@@ -534,9 +759,28 @@ def vector(
     transport layer. Such a vector declares 1 violation, not 0. It is a flag on
     accept rather than a fourth tier because a tier names what a READER does, and
     a reader accepts these completely.
+
+    A vector with a `jsonl` face is refused unless the bytes project to it, block
+    for block (`check_faces`). The two faces stay independently authored -- that
+    is what makes their agreement mean something -- and since 0.20 they are
+    compared here rather than by the first downstream port to diff them (#141).
+
+    `extents` is required on the accept tier, for the reason `violations` is
+    required everywhere: a number an author must confront is one that gets
+    checked, and a default is a number nobody looked at. It declares each
+    participant stream's extent in its own offset space, as `(session_id, pid,
+    extent)`, and is the accept tier's assertion about what a reader COMPUTES --
+    `violations` catches only the wrong reading that produces a finding, and a
+    reader that skips a Discontinuity's width, or trusts a wrapped offset, is
+    wrong silently (#140). Every declared participant is named, and nothing else
+    is: each number is the author's reading of the specification, and a wrong
+    one is caught by the first implementation that disagrees, which is the loop
+    the suite lacked. Nothing here computes it.
     """
     if advisory and tier != "accept":
         raise ValueError(f"{name}: advisory is meaningless off the accept tier")
+    if jsonl is not None:
+        check_faces(name, blocks, jsonl)
     VECTORS.append(
         {
             "name": name,
@@ -548,8 +792,31 @@ def vector(
             "expect": expect,
             "violations": violations,
             "advisory": advisory,
+            "extents": check_extents(name, tier, blocks, extents),
         }
     )
+
+
+def check_extents(
+    name: str, tier: str, blocks: list[Blk], extents: list[tuple[int, int, int]] | None
+) -> list[dict] | None:
+    """Require `extents` on the accept tier, naming exactly the declared participants."""
+    if tier != "accept":
+        if extents is not None:
+            raise ValueError(f"{name}: extents is declared on the accept tier only")
+        return None
+    if extents is None:
+        raise TypeError(f"{name}: an accept vector declares extents, one per participant stream")
+    declared = [
+        (b.fields["session_id"], b.fields["participant_id"]) for b in blocks if b.btype == 0x11
+    ]
+    named = [(sess, pid) for sess, pid, _ext in extents]
+    if sorted(named) != sorted(declared):
+        raise ValueError(
+            f"{name}: extents name {sorted(named)} but the file declares "
+            f"participants {sorted(declared)}"
+        )
+    return [{"session_id": sess, "pid": pid, "extent": ext} for sess, pid, ext in extents]
 
 
 # --- baseline -------------------------------------------------------------
@@ -593,6 +860,7 @@ vector(
         },
     ],
     violations=0,
+    extents=[(7, 0, 18)],
 )
 
 vector(
@@ -617,7 +885,7 @@ vector(
             1,
             1000,
             b"REQ",
-            options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 18)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 18)]), o_content_type("dec:request")],
         ),
         record(
             7,
@@ -625,12 +893,12 @@ vector(
             1,
             995,
             b"RESP",
-            options=[o_decoder_id(1), o_spans([(1, 1, 7, 0, 100)]), o_content_type("dec:response")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 1, 0, 100)]), o_content_type("dec:response")],
         ),
         undecoded(1, 1, 7, 100, 139, [o_reason("undecodable"), o_decoder_id(1)]),
         # Extents make the coverage guarantee checkable from this file alone:
         # pid 0 spans [0,18), pid 1 spans [0,100) + undecoded [100,139).
-        session_end(7, [o_end_reason("fin"), o_input_extents([(1, 0, 7, 18), (1, 1, 7, 139)])]),
+        session_end(7, [o_end_reason("fin"), o_input_extents([(1, 7, 0, 18), (1, 7, 1, 139)])]),
         end_block(),
     ],
     jsonl=[
@@ -703,6 +971,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 3), (7, 1, 4)],
 )
 
 vector(
@@ -743,7 +1012,7 @@ vector(
             struct.pack("<I", 1),
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 30, 0, 4)]),
+                o_spans([(1, 30, 0, 0, 4)]),
                 o_content_type("prim:u32"),
                 o_role("version"),
             ],
@@ -756,7 +1025,7 @@ vector(
             struct.pack("<I", 16),
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 30, 4, 8)]),
+                o_spans([(1, 30, 0, 4, 8)]),
                 o_content_type("prim:u32"),
                 o_role("length"),
             ],
@@ -772,7 +1041,7 @@ vector(
             struct.pack("<I", 0xDEADBEEF),
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 30, 8, 12)]),
+                o_spans([(1, 30, 0, 8, 12)]),
                 o_content_type("prim:u32"),
                 o_role("checksum"),
             ],
@@ -785,12 +1054,12 @@ vector(
             struct.pack("<I", 42),
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 30, 12, 16)]),
+                o_spans([(1, 30, 0, 12, 16)]),
                 o_content_type("prim:u32"),
                 o_role("seq_no"),
             ],
         ),
-        session_end(31, [o_input_extents([(1, 0, 30, 16)])]),
+        session_end(31, [o_input_extents([(1, 30, 0, 16)])]),
         end_block(),
     ],
     jsonl=[
@@ -875,6 +1144,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(31, 0, 16)],
 )
 
 
@@ -901,6 +1171,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[],
 )
 
 vector(
@@ -934,6 +1205,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 vector(
@@ -963,6 +1235,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 0)],
 )
 
 vector(
@@ -996,6 +1269,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 # --- 0.10 constructs -------------------------------------------------------
@@ -1027,10 +1301,10 @@ vector(
             1,
             1000,
             b"REQ",
-            options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 18)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 18)]), o_content_type("dec:request")],
         ),
         undecoded(1, 0, 7, 18, 60, [o_reason("undecodable"), o_decoder_id(1)]),
-        session_end(7, [o_input_extents([(1, 0, 7, 60)])]),
+        session_end(7, [o_input_extents([(1, 7, 0, 60)])]),
         end_block(),
     ],
     jsonl=[
@@ -1097,6 +1371,7 @@ vector(
     "this vector trivially and has tested nothing -- the distinction is "
     "only observable in a consumer that recovers bytes.",
     violations=0,
+    extents=[(7, 0, 3)],
 )
 
 vector(
@@ -1116,7 +1391,7 @@ vector(
         session(7, [o_proto("http")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
         undecoded(1, 0, 7, 0, 3, [o_reason("skipped"), o_decoder_id(1), o_comment("UTF-8 BOM")]),
-        record(7, 0, 1, 1000, b"body", options=[o_decoder_id(1), o_spans([(1, 0, 7, 3, 7)])]),
+        record(7, 0, 1, 1000, b"body", options=[o_decoder_id(1), o_spans([(1, 7, 0, 3, 7)])]),
         end_block(),
     ],
     jsonl=[
@@ -1167,6 +1442,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 4)],
 )
 
 vector(
@@ -1218,6 +1494,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 0)],
 )
 
 vector(
@@ -1239,12 +1516,12 @@ vector(
         decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
         session(7, [o_proto("tls")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
-        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
+        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 100)])]),
         # The input-side loss and the output-side break are two statements.
         undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
         discontinuity(7, 0, [o_disc_reason("tls-record-lost")]),
-        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 0, 7, 139, 200)])]),
-        session_end(7, [o_input_extents([(1, 0, 7, 200)])]),
+        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 7, 0, 139, 200)])]),
+        session_end(7, [o_input_extents([(1, 7, 0, 200)])]),
         end_block(),
     ],
     jsonl=[
@@ -1312,6 +1589,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 80)],
 )
 
 vector(
@@ -1339,17 +1617,17 @@ vector(
         session(101, [o_proto("http")]),
         participant(101, 0, [o_endpoint("10.0.0.1:51000")]),
         # The shared ciphertext record: its framing fed both inner units.
-        record(100, 0, 1, 1000, b"S100-a", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 80)])]),
-        record(101, 0, 1, 1010, b"S101-a", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 80)])]),
+        record(100, 0, 1, 1000, b"S100-a", options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 80)])]),
+        record(101, 0, 1, 1010, b"S101-a", options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 80)])]),
         record(
-            100, 0, 1, 1100, b"S100-b", options=[o_decoder_id(1), o_spans([(1, 0, 7, 80, 140)])]
+            100, 0, 1, 1100, b"S100-b", options=[o_decoder_id(1), o_spans([(1, 7, 0, 80, 140)])]
         ),
         record(
-            101, 0, 1, 1200, b"S101-b", options=[o_decoder_id(1), o_spans([(1, 0, 7, 140, 200)])]
+            101, 0, 1, 1200, b"S101-b", options=[o_decoder_id(1), o_spans([(1, 7, 0, 140, 200)])]
         ),
         # Each consuming session declares the stream's WHOLE extent, not its share.
-        session_end(100, [o_input_extents([(1, 0, 7, 200)])]),
-        session_end(101, [o_input_extents([(1, 0, 7, 200)])]),
+        session_end(100, [o_input_extents([(1, 7, 0, 200)])]),
+        session_end(101, [o_input_extents([(1, 7, 0, 200)])]),
         end_block(),
     ],
     jsonl=[
@@ -1433,6 +1711,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(100, 0, 12), (101, 0, 12)],
 )
 
 vector(
@@ -1453,10 +1732,10 @@ vector(
         participant(100, 0, [o_endpoint("10.0.0.1:51000")]),
         session(101, [o_proto("http")]),
         participant(101, 0, [o_endpoint("10.0.0.1:51000")]),
-        record(100, 0, 1, 1000, b"a", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
-        record(101, 0, 1, 1100, b"b", options=[o_decoder_id(1), o_spans([(1, 0, 7, 100, 200)])]),
-        session_end(100, [o_input_extents([(1, 0, 7, 200)])]),
-        session_end(101, [o_input_extents([(1, 0, 7, 160)])]),
+        record(100, 0, 1, 1000, b"a", options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 100)])]),
+        record(101, 0, 1, 1100, b"b", options=[o_decoder_id(1), o_spans([(1, 7, 0, 100, 200)])]),
+        session_end(100, [o_input_extents([(1, 7, 0, 200)])]),
+        session_end(101, [o_input_extents([(1, 7, 0, 160)])]),
         end_block(),
     ],
     expect="MAY reject the file, or isolate. Input stream (session 7, pid 0) is "
@@ -1477,7 +1756,9 @@ vector(
     "arithmetic, so the second record occupies [75,105), not [50,80). A reader "
     "that skips the block, or reads it but ignores width, computes a different "
     "range for every later record of this participant -- which is exactly the "
-    "silent failure the block exists to prevent.",
+    "silent failure the block exists to prevent, and it produces no violation "
+    "and the same projection. The declared extent is what catches it: 105, "
+    "not 80.",
     "Discontinuity (0x22)",
     [
         file_header(options=[o_produced_by("zpf-quic 0.1"), o_produced_at(1719590000)]),
@@ -1485,11 +1766,11 @@ vector(
         decoder(1, [o_dec_name("quic-stream"), o_dec_version("0.1")]),
         session(9, [o_proto("quic")]),
         participant(9, 0, [o_endpoint("10.0.0.1:51000")]),
-        record(9, 0, 1, 2000, b"C" * 50, options=[o_decoder_id(1), o_spans([(1, 0, 9, 0, 50)])]),
+        record(9, 0, 1, 2000, b"C" * 50, options=[o_decoder_id(1), o_spans([(1, 9, 0, 0, 50)])]),
         undecoded(1, 0, 9, 50, 75, [o_reason("gap"), o_decoder_id(1)]),
         discontinuity(9, 0, [o_width(25), o_disc_reason("stream-gap")]),
-        record(9, 0, 1, 2100, b"D" * 30, options=[o_decoder_id(1), o_spans([(1, 0, 9, 75, 105)])]),
-        session_end(9, [o_input_extents([(1, 0, 9, 105)])]),
+        record(9, 0, 1, 2100, b"D" * 30, options=[o_decoder_id(1), o_spans([(1, 9, 0, 75, 105)])]),
+        session_end(9, [o_input_extents([(1, 9, 0, 105)])]),
         end_block(),
     ],
     jsonl=[
@@ -1555,6 +1836,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(9, 0, 105)],
 )
 
 UUID = bytes.fromhex("3f2504e04f8911d39a0c0305e82c3301")
@@ -1591,6 +1873,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 
@@ -1645,6 +1928,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 vector(
@@ -1671,6 +1955,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[],
 )
 
 
@@ -1711,7 +1996,7 @@ vector(
             b"B" * 50,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 1, 7, 100, 150)]),
+                o_spans([(1, 7, 1, 100, 150)]),
                 o_content_type("dec:response"),
             ],
         ),
@@ -1724,7 +2009,7 @@ vector(
             1,
             990,
             b"A" * 100,
-            options=[o_decoder_id(1), o_spans([(1, 1, 7, 0, 100)]), o_content_type("dec:response")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 1, 0, 100)]), o_content_type("dec:response")],
         ),
         end_block(),
     ],
@@ -1781,6 +2066,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 1, 150)],
 )
 
 vector(
@@ -1802,7 +2088,9 @@ vector(
     "and an absent width would claim that length is unknowable. Declaring it "
     "keeps the output offset space aligned with the input's -- record C sits "
     "at [100,160) in both -- which does not make this a pass-through, since "
-    "the spans-versus-origin test is what decides that and these are spans.",
+    "whether the spans are identity is what decides that and these are not. "
+    "The declared extent, 160 and not 120, is what catches a reader that "
+    "skipped the width; nothing else in the file does.",
     "Discontinuity (0x22) -- what a producer owes the block",
     [
         file_header(
@@ -1824,7 +2112,7 @@ vector(
             b"A" * 60,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 1, 7, 0, 60)]),
+                o_spans([(1, 7, 1, 0, 60)]),
                 o_content_type("dec:request"),
             ],
         ),
@@ -1840,11 +2128,11 @@ vector(
             b"C" * 60,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 1, 7, 100, 160)]),
+                o_spans([(1, 7, 1, 100, 160)]),
                 o_content_type("dec:response"),
             ],
         ),
-        session_end(7, [o_input_extents([(1, 1, 7, 160)])]),
+        session_end(7, [o_input_extents([(1, 7, 1, 160)])]),
         end_block(),
     ],
     jsonl=[
@@ -1922,6 +2210,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 1, 160)],
 )
 
 vector(
@@ -1962,7 +2251,7 @@ vector(
             1,
             1000,
             b"A" * 50,
-            options=[o_decoder_id(1), o_spans([(1, 0, 4, 0, 50)]), o_seq_start(1001)],
+            options=[o_decoder_id(1), o_spans([(1, 4, 0, 0, 50)]), o_seq_start(1001)],
         ),
         undecoded(1, 0, 4, 50, 75, [o_reason("gap"), o_decoder_id(1)]),
         record(
@@ -1971,9 +2260,9 @@ vector(
             1,
             1200,
             b"B" * 30,
-            options=[o_decoder_id(1), o_spans([(1, 0, 4, 75, 105)]), o_seq_start(1076)],
+            options=[o_decoder_id(1), o_spans([(1, 4, 0, 75, 105)]), o_seq_start(1076)],
         ),
-        session_end(7, [o_input_extents([(1, 0, 4, 105)])]),
+        session_end(7, [o_input_extents([(1, 4, 0, 105)])]),
         end_block(),
     ],
     jsonl=[
@@ -2047,6 +2336,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 105)],
 )
 
 vector(
@@ -2118,6 +2408,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 18)],
 )
 
 vector(
@@ -2127,8 +2418,8 @@ vector(
     "proxy logging application messages -- the bytes they were computed from "
     "were never written to a .zpf and never will be. Records carry decoder_id "
     "and reference a CAPTURE Source, which is the cell the axes were "
-    "conflated to forbid: capture-sourced provenance, decoded layer. No spans "
-    "and no origin, because there is no input stream to name. Two consequences "
+    "conflated to forbid: capture-sourced provenance, decoded layer. No spans, "
+    "because there is no input stream to name. Two consequences "
     "the file demonstrates rather than states: the coverage guarantee does not "
     "apply, since it is scoped within each input participant stream and there "
     "is none; and the Decoder is a claim of IDENTITY, not a recipe -- nothing "
@@ -2202,6 +2493,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(3, 0, 35)],
 )
 
 vector(
@@ -2209,7 +2501,8 @@ vector(
     "accept",
     "An Undecoded block in a CAPTURE-SOURCED file. The stage is the "
     "reassembler and the input is the capture itself: it discarded an "
-    "overlapping retransmit it could not resolve, and says so rather than "
+    "overlapping segment it could not resolve -- retransmitted or duplicated, "
+    "the block does not say and need not -- and says so rather than "
     "leaving the region unaccounted for. Barred before 0.15 on the unstated "
     "assumption that capture-sourced meant no transform had run -- but "
     "reassembly IS a transform, and a destructive one, so the prohibition read "
@@ -2292,22 +2585,24 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 105)],
 )
 
 vector(
     "mixed-derivation",
     "accept",
     "ONE derived file holding a decode-stage stream BESIDE a pass-through "
-    "stream. Session 10 is created: its records carry spans and the file "
-    "accounts for the input it decoded. Session 11 is preserved: its "
-    "participant carries origin, its records carry no spans, and its bytes and "
-    "offsets are the input's unchanged. Before 0.15 a derived file was exactly "
-    "one of the two, never a mix, which left a tool with a decoder for one "
-    "protocol and not the other two dishonest options -- pass everything "
-    "through, or mark the undecodable session's whole stream Undecoded, which "
-    "DROPS those bytes from the output. The rule that replaces it binds per "
-    "participant: a participant MUST NOT both carry origin and hold records "
-    "carrying spans. Across streams there is no such rule.",
+    "stream. Session 10 is created: its records carry spans into input session "
+    "7 and the file accounts for the input it decoded. Session 11 is preserved: "
+    "its record carries an IDENTITY span into input session 8 -- the same range "
+    "in as out, [0,10) -- and its bytes and offsets are the input's unchanged. "
+    "Before 0.15 a derived file was exactly one of the two, never a mix, which "
+    "left a tool with a decoder for one protocol and not the other two "
+    "dishonest options -- pass everything through, or mark the undecodable "
+    "session's whole stream Undecoded, which DROPS those bytes from the output. "
+    "Since 0.19 every zpf-sourced record carries spans and which kind a stream "
+    "is, is read from them: identity spans preserve, any other span creates. "
+    "That binds per participant; across streams there is no rule.",
     "Conformance -- the discriminator binds per participant",
     [
         file_header(
@@ -2319,7 +2614,7 @@ vector(
         ),
         source(1, 1, [o_uri("in.zpf"), o_digest("sha256:6a71")]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
-        # Created: spans, no origin.
+        # Created: a span into input session 7 that is not an identity span.
         session(10, [o_proto("http")]),
         participant(10, 0, [o_endpoint("10.0.0.1:51000")]),
         record(
@@ -2328,9 +2623,9 @@ vector(
             1,
             1000,
             b"GET /",
-            options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 40)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 40)]), o_content_type("dec:request")],
         ),
-        session_end(10, [o_input_extents([(1, 0, 7, 40)])]),
+        session_end(10, [o_input_extents([(1, 7, 0, 40)])]),
         # Preserved: an IDENTITY span -- same range in as out -- and no
         # decoder_id, the stage having had no decoder for this protocol and
         # re-emitted it rather than dropping it. Since 0.19 that is what tells a
@@ -2410,6 +2705,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(10, 0, 5), (11, 0, 10)],
 )
 
 vector(
@@ -2467,6 +2763,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(8, 0, 4), (8, 1, 2)],
 )
 
 vector(
@@ -2539,6 +2836,7 @@ vector(
     "between two taps. A reader that emits the response first has "
     "reordered a causal pair.",
     violations=0,
+    extents=[(1, 0, 5), (1, 1, 12)],
 )
 
 vector(
@@ -2586,6 +2884,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(8, 0, 10), (8, 1, 8)],
 )
 
 
@@ -2600,7 +2899,7 @@ vector(
     "sequencing basis. The shape has nothing to do with SEQUENCED -- placement "
     "keys on whether a stream is sequence-anchored, not on the flag -- so it is "
     "carried here by an ordinary session, which is where it always belonged. "
-    "Its twin is advisory-below-origin-payload, the other shape of one rule.",
+    "Its twin is unplaceable-below-origin, the other shape of one rule.",
     "Referencing the source by stream offset",
     [
         file_header(),
@@ -2646,18 +2945,23 @@ vector(
         },
         {"type": "end"},
     ],
-    expect="Accept. The .jsonl file is the expected projection. On placement: "
-    "pid 0's first record is at [0,6) and its second carries no seq_start "
-    "on a stream whose first record has one, so it is UNPLACEABLE -- it "
-    "covers no byte of the stream and contributes nothing, so the extent "
-    "stays 6 and those six bytes are in no offset at all. A reader that "
-    "appended them at [6,12) is reading an offset the file does not "
-    "state. Since 0.19 the RANGE a reader reports for the unplaceable "
-    "record is not pinned, so two readers may differ there while both "
-    "give extent 6. pid 1 is NOT this rule's case: no record of that "
-    "participant carries a seq_start, so its stream is not "
-    "sequence-anchored to begin with.",
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extents are 6 for pid 0 and 5 for pid 1. pid 0's first record is at "
+    "[0,6) and its second carries no seq_start on a stream whose first "
+    "record has one, so it is UNPLACEABLE -- it covers no byte of the "
+    "stream and contributes nothing, so the extent stays 6 and those six "
+    "bytes are in no offset at all. A reader that appended them at [6,12) "
+    "is reading an offset the file does not state. Which range a reader "
+    "reports for the record is not pinned; two readers may differ there "
+    "while both give extent 6. A reader SHOULD report the record, and the "
+    "suite does not test that it does -- the file breaks no rule, so "
+    "silence is conformant, exactly as for unplaceable-below-origin, the "
+    "other shape of the same sentence. pid 1 is NOT this rule's case: no "
+    "record of that participant carries a seq_start, so its stream is not "
+    "sequence-anchored to begin with, and its extent is the accumulation "
+    "of its payloads.",
     violations=0,
+    extents=[(9, 0, 6), (9, 1, 5)],
 )
 
 # --- negative: the reject tier --------------------------------------------
@@ -2793,7 +3097,7 @@ vector(
         session(7, [o_proto("http")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
         # covers [0,10) only; [10,50) is accounted for nowhere
-        record(7, 0, 1, 1000, b"part", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 10)])]),
+        record(7, 0, 1, 1000, b"part", options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 10)])]),
         undecoded(1, 0, 7, 20, 50, [o_reason("undecodable"), o_decoder_id(1)]),
         end_block(),
     ],
@@ -2818,8 +3122,8 @@ vector(
         decoder(1, [o_dec_name("http/1.1")]),
         session(7, [o_proto("http")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
-        record(7, 0, 1, 1000, b"part", options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 20)])]),
-        session_end(7, [o_input_extents([(1, 0, 7, 40)])]),
+        record(7, 0, 1, 1000, b"part", options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 20)])]),
+        session_end(7, [o_input_extents([(1, 7, 0, 40)])]),
         end_block(),
     ],
     expect="MAY reject the file, or isolate the session. The declared extent "
@@ -2881,13 +3185,13 @@ vector(
         decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
         session(7, [o_proto("tls")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
-        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
+        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 100)])]),
         # The input-side loss is declared. THE VIOLATION is what follows it:
         # no Discontinuity, so the two records are simply adjacent at 50 and a
         # downstream stage may splice them with every rule still satisfied.
         undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
-        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 0, 7, 139, 200)])]),
-        session_end(7, [o_input_extents([(1, 0, 7, 200)])]),
+        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 7, 0, 139, 200)])]),
+        session_end(7, [o_input_extents([(1, 7, 0, 200)])]),
         end_block(),
     ],
     expect="ISOLATE or reject. The Undecoded region is hole-class -- no bytes "
@@ -2939,7 +3243,7 @@ vector(
             1,
             1000,
             b"GET /",
-            options=[o_seq_start(1001), o_spans([(1, 0, 21, 0, 5)])],
+            options=[o_seq_start(1001), o_spans([(1, 21, 0, 0, 5)])],
         ),
         session(20, [o_proto("http")]),
         participant(20, 0, [o_endpoint("10.0.0.1:51000")]),
@@ -2949,7 +3253,7 @@ vector(
             1,
             1100,
             b"GET /",
-            options=[o_decoder_id(1), o_spans([(1, 0, 21, 0, 5)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 21, 0, 0, 5)]), o_content_type("dec:request")],
         ),
         end_block(),
     ],
@@ -2978,8 +3282,9 @@ vector(
     "a second account of the same missing bytes with no rule for which to "
     "believe, which is the same contradiction that bars a Discontinuity from a "
     "transport stream. The bytes-exist class stays available and is the half "
-    "that adds something: an overlapping retransmit the reassembler discarded "
-    "exists in the pcap and is expressible nowhere else.",
+    "that adds something: an overlapping segment the reassembler discarded, "
+    "retransmitted or duplicated, exists in the pcap and is expressible "
+    "nowhere else.",
     "Undecoded (0x21) -- against a capture source only the bytes-exist class",
     [
         file_header(),
@@ -3028,7 +3333,7 @@ vector(
             1,
             1000,
             b"GET /",
-            options=[o_decoder_id(1), o_spans([(1, 0, 5, 0, 5)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 0, 5)]), o_content_type("dec:request")],
         ),
         # THE VIOLATION: same participant, a decoder declaring the other layer.
         record(
@@ -3037,7 +3342,7 @@ vector(
             1,
             1100,
             b"C" * 20,
-            options=[o_decoder_id(2), o_spans([(1, 0, 5, 5, 25)]), o_seq_start(1001)],
+            options=[o_decoder_id(2), o_spans([(1, 5, 0, 5, 25)]), o_seq_start(1001)],
         ),
         end_block(),
     ],
@@ -3054,22 +3359,23 @@ vector(
 vector(
     "isolate-unbound-zpf-stream",
     "isolate",
-    "A zpf-SOURCED participant that is NEITHER created NOR preserved: its "
-    "record references a zpf-input Source, carries no spans, and its "
-    "participant carries no origin. Nothing says which stream inside the input "
-    "its bytes came from, so nothing resolves one level down and no coverage "
-    "obligation can be computed in either direction. The two ways of producing "
-    "a zpf-sourced stream are exhaustive and 0.15 never said so -- the "
-    "discriminator rule forbade being BOTH and was silent on being neither, "
-    "which is how isolate-self-derived shipped carrying this as a second, "
-    "unintended violation. Contrast mixed-derivation, where one participant is "
-    "created and the other preserved and both say which.",
-    "Conformance -- a zpf-sourced participant MUST be one or the other",
+    "A zpf-SOURCED record carrying NO SPANS: it references a zpf-input Source "
+    "and nothing says which stream inside the input its bytes came from, so "
+    "nothing resolves one level down and no coverage obligation can be "
+    "computed in either direction. Every zpf-sourced record carries spans -- "
+    "a pass-through's are identity spans -- so the rule binds per record with "
+    "no second shape to check. Before 0.19 the same file broke a different "
+    "rule, that a participant be either created or preserved, which 0.15 had "
+    "stated as a bar on being BOTH and was silent on being neither; that is how "
+    "isolate-self-derived shipped carrying this as a second, unintended "
+    "violation. Contrast mixed-derivation, where both participants' records "
+    "carry spans and the spans say which kind each stream is.",
+    "Conformance -- every zpf-sourced record carries spans",
     [
         file_header(options=[o_produced_by("zpf-tool 0.1"), o_produced_at(1719650000)]),
         source(1, 1, [o_uri("upstream.zpf"), o_digest("sha256:22bb")]),
         session(40, [o_proto("tcp")]),
-        # THE VIOLATION: zpf-sourced, and no origin here nor spans below.
+        # THE VIOLATION: zpf-sourced, and the record below carries no spans.
         participant(40, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
         record(40, 0, 1, 1000, b"D" * 30, options=[o_seq_start(1001)]),
         end_block(),
@@ -3086,8 +3392,9 @@ vector(
     "advisory-transport-content-type",
     "accept",
     "A transport-layer record carrying a content_type, which 0.16 makes a MUST "
-    "NOT whose violation is ADVISORY -- one of two, the other being 0.17's "
-    "origin floor (advisory-seq-start-below-origin). The "
+    "NOT whose violation is ADVISORY. 0.17's origin floor was the other such "
+    "MUST NOT until 0.19 dropped it, and now the transport-label bar -- this "
+    "vector and advisory-transport-role's -- is the advisory tier. The "
     "reassembly decoder declares output_layer = transport and labels its record "
     "prim:bytes, which is mechanically legal and is the wrong answer: the "
     "record's boundaries are wherever the reassembler chunked the stream, so "
@@ -3117,7 +3424,7 @@ vector(
             b"E" * 40,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 6, 0, 40)]),
+                o_spans([(1, 6, 0, 0, 40)]),
                 o_seq_start(1001),
                 o_content_type("prim:bytes"),
             ],
@@ -3176,6 +3483,7 @@ vector(
     "stated in Typing a decoded record.",
     violations=1,
     advisory=True,
+    extents=[(50, 0, 40)],
 )
 
 vector(
@@ -3193,8 +3501,9 @@ vector(
     "rejects or isolates this file, and with it every conformant capture whose "
     "handshake was observed. Until 0.18 no vector in the suite carried a "
     "seq_start tie at all, so that reader passed the whole suite and failed on "
-    "real traffic. It is the positive twin of advisory-seq-start-below-origin, "
-    "which is the same record written one below the origin. "
+    "real traffic. Its negative twin, the same record written one below the "
+    "origin, was advisory-seq-start-below-origin until 0.19 removed it with "
+    "the floor's MUST NOT; unplaceable-below-origin now carries that shape. "
     "It also carries the responder's SYN-ACK as its own zero-length syn record "
     "with an ack, which the specification describes and nothing else exercises.",
     "Record (0x20) -- handshake records",
@@ -3202,8 +3511,8 @@ vector(
         file_header(),
         source(1, 0, [o_uri("tcp.pcap")]),
         session(7, [o_proto("tcp")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
-        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(1)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
         # The client's SYN, at the origin. Zero length, so its computed end
         # equals its seq_start and every causal edge works unchanged.
         record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
@@ -3298,6 +3607,7 @@ vector(
     "byte, so pid 0's stream is [0,18) and pid 1's is [0,19). The merge "
     "needs no sort: step 1 takes each participant's records in file order.",
     violations=0,
+    extents=[(7, 0, 18), (7, 1, 19)],
 )
 
 
@@ -3337,7 +3647,7 @@ vector(
             b"E" * 40,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 6, 0, 40)]),
+                o_spans([(1, 6, 0, 0, 40)]),
                 o_seq_start(1001),
                 o_role("segment"),
             ],
@@ -3398,6 +3708,7 @@ vector(
     "because the strength is the part implementations guess wrong.",
     violations=1,
     advisory=True,
+    extents=[(51, 0, 40)],
 )
 
 vector(
@@ -3418,7 +3729,7 @@ vector(
         file_header(),
         source(1, 0, [o_uri("offbyone.pcap")]),
         session(7, [o_proto("tcp")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
         # THE VIOLATION: one below the origin, and carrying payload -- so the
         # zero-width placement costs eight bytes rather than nothing.
         record(7, 0, 1, 1000, b"LOSTBYTE", flags=0x0001, options=[o_seq_start(1000)]),
@@ -3470,18 +3781,23 @@ vector(
         },
         {"type": "end"},
     ],
-    expect="ACCEPT, and REPORT. The first record is unplaceable: zero-width at "
-    "offset 0, contributing nothing to the extent and covering no byte, so "
-    "the participant's stream is [0,16) -- the two later records -- and the "
-    "eight bytes of the first are in no offset at all. It is NOT deleted: "
-    "a reader still lists it, still reports its timestamp and payload, and "
-    "a consumer indexing by anything but offset still sees it. Two wrong "
-    "readings diverge visibly here and not on "
-    "advisory-seq-start-below-origin: one places the record at 4294967295 "
-    "and reports an extent to match, the other drops it and reports two "
-    "records where the file has three. Rejecting or isolating is NOT "
-    "conformant.",
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extent is 16. The first record is unplaceable: it contributes nothing to "
+    "the extent and covers no byte, so the participant's stream is [0,16) -- "
+    "the two later records -- and the eight bytes of the first are in no "
+    "offset at all. Which range a reader reports for it is not pinned; that "
+    "it counts for nothing is. It is NOT deleted: a reader still lists it, "
+    "still reports its timestamp and payload, and a consumer indexing by "
+    "anything but offset still sees it. A reader SHOULD report the record, "
+    "and the suite does not test that it does -- the file breaks no rule, "
+    "so silence is conformant and a harness asserting a clean accept is "
+    "right to. Two wrong readings diverge visibly here, where the record "
+    "carries payload, and would not on a zero-length one: one places the "
+    "record at 4294967295 and reports extent 4294967303, the other drops it "
+    "and reports two records where the file has three. Rejecting or "
+    "isolating is NOT conformant.",
     violations=0,
+    extents=[(7, 0, 16)],
 )
 
 vector(
@@ -3522,7 +3838,7 @@ vector(
             b"A" * 60,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 1, 7, 0, 60)]),
+                o_spans([(1, 7, 1, 0, 60)]),
                 o_content_type("dec:request"),
             ],
         ),
@@ -3540,11 +3856,11 @@ vector(
             b"C" * 60,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 1, 7, 100, 160)]),
+                o_spans([(1, 7, 1, 100, 160)]),
                 o_content_type("dec:response"),
             ],
         ),
-        session_end(7, [o_input_extents([(1, 1, 7, 160)])]),
+        session_end(7, [o_input_extents([(1, 7, 1, 160)])]),
         end_block(),
     ],
     expect="ISOLATE or reject. The Undecoded region carries reason = dropped "
@@ -3584,7 +3900,7 @@ vector(
             1,
             1000,
             b"A" * 50,
-            options=[o_decoder_id(1), o_spans([(1, 0, 4, 0, 50)]), o_seq_start(1001)],
+            options=[o_decoder_id(1), o_spans([(1, 4, 0, 0, 50)]), o_seq_start(1001)],
         ),
         end_block(),
     ],
@@ -3654,7 +3970,9 @@ def member(fixture: str, name: str, summary: str, blocks: list[Blk], jsonl: list
     """Add one file to a multi-file fixture.
 
     Returns its bytes, so the next file in the fixture can cite its digest.
+    Refused, as a single-file vector is, if its two faces disagree.
     """
+    check_faces(f"{fixture}/{name}", blocks, jsonl)
     FIXTURES[fixture]["members"].append(
         {"name": name, "summary": summary, "blocks": blocks, "jsonl": jsonl}
     )
@@ -3776,7 +4094,7 @@ def build_chain() -> None:
             1,
             1000,
             DEC_REQ,
-            options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 9)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 9)]), o_content_type("dec:request")],
         ),
         record(
             7,
@@ -3784,7 +4102,7 @@ def build_chain() -> None:
             1,
             1100,
             DEC_RESP,
-            options=[o_decoder_id(1), o_spans([(1, 1, 7, 0, 16)]), o_content_type("dec:response")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 1, 0, 16)]), o_content_type("dec:response")],
         ),
         undecoded(1, 1, 7, 16, 20, [o_reason("undecodable"), o_decoder_id(1)]),
         end_block(),
@@ -3881,7 +4199,7 @@ def build_chain() -> None:
             DEC_REQ,
             options=[
                 o_decoder_id(1),
-                o_spans([(2, 0, 7, 0, len(DEC_REQ))]),
+                o_spans([(2, 7, 0, 0, len(DEC_REQ))]),
                 o_content_type("dec:request"),
             ],
         ),
@@ -3893,7 +4211,7 @@ def build_chain() -> None:
             DEC_RESP,
             options=[
                 o_decoder_id(1),
-                o_spans([(2, 1, 7, 0, len(DEC_RESP))]),
+                o_spans([(2, 7, 1, 0, len(DEC_RESP))]),
                 o_content_type("dec:response"),
             ],
         ),
@@ -4042,14 +4360,14 @@ def build_splice() -> None:
         decoder(1, [o_dec_name("tls-records"), o_dec_version("0.2")]),
         session(7, [o_proto("tls")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
-        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 100)])]),
+        record(7, 0, 1, 1000, b"A" * 50, options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 100)])]),
         undecoded(1, 0, 7, 100, 139, [o_reason("gap"), o_decoder_id(1)]),
         # No width: the plaintext length the lost ciphertext would have
         # produced is not recoverable, so it contributes 0 and the two records
         # remain numerically adjacent at 50 -- which is the whole hazard.
         discontinuity(7, 0, [o_disc_reason("tls-record-lost")]),
-        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 0, 7, 139, 200)])]),
-        session_end(7, [o_input_extents([(1, 0, 7, 200)])]),
+        record(7, 0, 1, 1100, b"B" * 30, options=[o_decoder_id(1), o_spans([(1, 7, 0, 139, 200)])]),
+        session_end(7, [o_input_extents([(1, 7, 0, 200)])]),
         end_block(),
     ]
     stage1 = member(
@@ -4141,9 +4459,9 @@ def build_splice() -> None:
             1,
             1000,
             b"GET /spliced",
-            options=[o_decoder_id(1), o_spans([(1, 0, 7, 0, 80)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 80)]), o_content_type("dec:request")],
         ),
-        session_end(7, [o_input_extents([(1, 0, 7, 80)])]),
+        session_end(7, [o_input_extents([(1, 7, 0, 80)])]),
         end_block(),
     ]
     member(
@@ -4325,7 +4643,7 @@ def build_tunnel() -> None:
             1,
             1000,
             IP_A1,
-            options=[o_decoder_id(1), o_spans([(1, 0, 1, 0, 80)]), o_content_type("dec:ip-packet")],
+            options=[o_decoder_id(1), o_spans([(1, 1, 0, 0, 80)]), o_content_type("dec:ip-packet")],
         ),
         record(
             5,
@@ -4335,7 +4653,7 @@ def build_tunnel() -> None:
             IP_B1,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 1, 80, 160)]),
+                o_spans([(1, 1, 0, 80, 160)]),
                 o_content_type("dec:ip-packet"),
             ],
         ),
@@ -4362,11 +4680,11 @@ def build_tunnel() -> None:
             IP_A2,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 1, 240, 320)]),
+                o_spans([(1, 1, 0, 240, 320)]),
                 o_content_type("dec:ip-packet"),
             ],
         ),
-        session_end(5, [o_input_extents([(1, 0, 1, 320)])]),
+        session_end(5, [o_input_extents([(1, 1, 0, 320)])]),
         end_block(),
     ]
     packets = member(
@@ -4481,7 +4799,7 @@ def build_tunnel() -> None:
             1,
             1000,
             TCP_A1,
-            options=[o_decoder_id(1), o_spans([(1, 0, 5, 0, 60)]), o_seq_start(1001)],
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 0, 60)]), o_seq_start(1001)],
         ),
         # seq 1081, not 1041: the 40 bytes the lost packet carried occupy
         # [40,80) and no record covers them. The hole is in the NUMBERS -- this
@@ -4492,9 +4810,9 @@ def build_tunnel() -> None:
             1,
             1300,
             TCP_A2,
-            options=[o_decoder_id(1), o_spans([(1, 0, 5, 100, 150)]), o_seq_start(1081)],
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 100, 150)]), o_seq_start(1081)],
         ),
-        session_end(10, [o_input_extents([(1, 0, 5, 150)])]),
+        session_end(10, [o_input_extents([(1, 5, 0, 150)])]),
         # Flow B: a second inner connection out of the SAME input stream.
         session(11, [o_proto("tcp"), o_flow_key("10.8.0.2:44301 -> 10.8.0.9:53")]),
         participant(11, 0, [o_endpoint("10.8.0.2:44301"), o_isn(5000)]),
@@ -4504,11 +4822,11 @@ def build_tunnel() -> None:
             1,
             1100,
             TCP_B1,
-            options=[o_decoder_id(1), o_spans([(1, 0, 5, 60, 100)]), o_seq_start(5001)],
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 60, 100)]), o_seq_start(5001)],
         ),
         # The same extent 150 as session 10 declares: under fan-out every
         # consuming session declares the WHOLE input stream, not its share.
-        session_end(11, [o_input_extents([(1, 0, 5, 150)])]),
+        session_end(11, [o_input_extents([(1, 5, 0, 150)])]),
         end_block(),
     ]
     inner = member(
@@ -4639,7 +4957,7 @@ def build_tunnel() -> None:
             1,
             1000,
             b"REQ:GET /",
-            options=[o_decoder_id(1), o_spans([(1, 0, 10, 0, 40)]), o_content_type("dec:request")],
+            options=[o_decoder_id(1), o_spans([(1, 10, 0, 0, 40)]), o_content_type("dec:request")],
         ),
         # The transport hole, named in the input's space. hole-class, canonical.
         undecoded(1, 0, 10, 40, 80, [o_reason("gap"), o_decoder_id(1)]),
@@ -4655,11 +4973,11 @@ def build_tunnel() -> None:
             b"RESP:200",
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 0, 10, 80, 110)]),
+                o_spans([(1, 10, 0, 80, 110)]),
                 o_content_type("dec:response"),
             ],
         ),
-        session_end(20, [o_input_extents([(1, 0, 10, 110)])]),
+        session_end(20, [o_input_extents([(1, 10, 0, 110)])]),
         end_block(),
     ]
     member(
@@ -4836,11 +5154,350 @@ def emit(d: str, files: dict[str, bytes], label: str, check: bool) -> list[str]:
     return problems
 
 
+# ------------------------------------------------------------------- the merge
+#
+# Two single-direction captures merged into one sequenced session, where one
+# input's stream has a hole. The obligation this pins (#133): a merge is a
+# pass-through, every record it re-emits carries an identity span, an identity
+# span cites the input, and the coverage guarantee makes a file answerable for
+# every offset of an input stream it cites -- so a hole in a preserved
+# transport stream is marked with an Undecoded gap block, like any other
+# uncovered range. Before 0.19 a merge cited nothing and owed nothing.
+#
+# Byte budget, fixed here so every offset below is checkable by hand:
+#   sideA (a.zpf, session 7 / pid 0, isn 1000, the client):
+#     "GET / HTTP/1.1\r\n"       16 bytes at seq 1001  -> offsets [0,16)
+#     "Host: example.com\r\n"    19 bytes LOST         -> the hole [16,35)
+#     "Accept: */*\r\n\r\n"      15 bytes at seq 1036  -> offsets [35,50)
+#   sideB (b.zpf, session 3 / pid 0, isn 5000, the server):
+#     "HTTP/1.1 200 OK\r\n\r\n"  19 bytes at seq 5001  -> offsets [0,19)
+# The hole is real in the sequence numbers: 1001 + 16 = 1017, and the next
+# captured byte is at 1036. merged.zpf's identity spans cover [0,16) and
+# [35,50) of sideA's stream; the gap block covers [16,35); its Session End
+# declares the extent 50, so the obligation is checkable from merged.zpf alone.
+
+MERGE_A1 = b"GET / HTTP/1.1\r\n"  # 16
+MERGE_A2 = b"Accept: */*\r\n\r\n"  # 15, at seq 1036: 19 bytes lost between
+MERGE_B1 = b"HTTP/1.1 200 OK\r\n\r\n"  # 19
+MERGE_KEY = "10.0.0.1:51000 <-> 93.184.216.34:80"
+
+
+def merge_file(name: str, summary: str, blocks: list[Blk], jsonl: list[dict]) -> bytes:
+    return member("merge", name, summary, blocks, jsonl)
+
+
+def merge_output_blocks(a_dg: str, b_dg: str, *, gap: bool) -> list[Blk]:
+    """Build the merged file's blocks, with or without the gap block the merge owes.
+
+    One description for both faces of the obligation, so the negative twin
+    differs from merged.zpf in exactly the block whose absence it tests.
+    """
+    hole = [undecoded(1, 0, 7, 16, 35, [o_reason("gap")])] if gap else []
+    return [
+        file_header(
+            options=[
+                o_produced_by("zpf-merge 1.2"),
+                o_produced_at(1719510000),
+                o_transform_params_digest("sha256:77c1"),
+            ]
+        ),
+        source(1, 1, [o_uri("a.zpf"), o_digest(a_dg)]),
+        source(2, 1, [o_uri("b.zpf"), o_digest(b_dg)]),
+        session(1, [o_proto("tcp"), o_flow_key(MERGE_KEY), o_sess_flags(0x0001)]),
+        participant(1, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        participant(1, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+        # Identity spans: each record cites the range of its input stream it
+        # was re-emitted from, the same range it occupies here.
+        record(
+            1,
+            0,
+            1,
+            1000,
+            MERGE_A1,
+            options=[o_seq_start(1001), o_ack(5001), o_spans([(1, 7, 0, 0, 16)])],
+        ),
+        # THE OBLIGATION: sideA's stream has no bytes at [16,35). The output's
+        # sequence numbers already say so -- 1017 to 1036 -- but the file cites
+        # the input, so it answers for the input's every offset, and this is
+        # the block that answers for these. The twin omits it.
+        *hole,
+        record(
+            1,
+            0,
+            1,
+            1020,
+            MERGE_A2,
+            flags=0x0001,
+            options=[o_seq_start(1036), o_ack(5001), o_spans([(1, 7, 0, 35, 50)])],
+        ),
+        # Stored after both request records: it acks 1051, the end of the
+        # request, so it causally follows them despite the earlier timestamp.
+        record(
+            1,
+            1,
+            2,
+            995,
+            MERGE_B1,
+            flags=0x0001,
+            options=[o_seq_start(5001), o_ack(1051), o_spans([(2, 3, 0, 0, 19)])],
+        ),
+        # input_extents is what makes the twin decidable from one file: the
+        # declared 50 against a coverage of [0,16) + [35,50) is the hole.
+        session_end(1, [o_input_extents([(1, 7, 0, 50), (2, 3, 0, 19)])]),
+        end_block(),
+    ]
+
+
+def merge_output_jsonl(a_dg: str, b_dg: str, *, gap: bool) -> list[dict]:
+    hole = [
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 7,
+            "pid": 0,
+            "off_start": 16,
+            "off_end": 35,
+            "reason": "gap",
+        }
+    ]
+    return [
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-merge 1.2",
+            "produced_at": 1719510000,
+            "transform_params_digest": "sha256:77c1",
+        },
+        {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "a.zpf", "digest": a_dg},
+        {"type": "source", "source_id": 2, "kind": "zpf-input", "uri": "b.zpf", "digest": b_dg},
+        {"type": "session", "session_id": 1, "proto": "tcp", "key": MERGE_KEY, "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 1,
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(MERGE_A1),
+            "seq_start": 1001,
+            "ack": 5001,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 0, "off_end": 16}],
+        },
+        *(hole if gap else []),
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1020,
+            "flags": ["psh"],
+            "payload": b64(MERGE_A2),
+            "seq_start": 1036,
+            "ack": 5001,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 35, "off_end": 50}],
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 1,
+            "source_id": 2,
+            "ts": 995,
+            "flags": ["psh"],
+            "payload": b64(MERGE_B1),
+            "seq_start": 5001,
+            "ack": 1051,
+            "spans": [{"source_id": 2, "session_id": 3, "pid": 0, "off_start": 0, "off_end": 19}],
+        },
+        {
+            "type": "session_end",
+            "session_id": 1,
+            "input_extents": [
+                {"source_id": 1, "session_id": 7, "pid": 0, "extent": 50},
+                {"source_id": 2, "session_id": 3, "pid": 0, "extent": 19},
+            ],
+        },
+        {"type": "end"},
+    ]
+
+
+def build_merge() -> None:
+    """Build the two inputs and the merge, hashing each input so the merge can cite it."""
+    fixture(
+        "merge",
+        "accept",
+        "A merge of two single-direction captures into one SEQUENCED session, "
+        "where one input's stream has a hole: a.zpf's client stream is missing "
+        "19 bytes between its two records, visible in its sequence numbers. "
+        "merged.zpf is a pass-through, so every record carries an identity span "
+        "into its input -- and citing the input makes the file answerable for "
+        "it. The coverage guarantee then owes an Undecoded gap block for the "
+        "hole, naming a.zpf's range [16,35), exactly as a decode stage would "
+        "owe one; the output's own sequence numbers carrying the same gap does "
+        "not discharge it, because those speak of this file's stream and the "
+        "guarantee is stated against the input's. Before 0.19 a merge cited "
+        "nothing and owed nothing here; the identity span is what changed. "
+        "Session End declares both input extents, so the obligation is checkable "
+        "from merged.zpf alone -- which is what lets the negative twin, "
+        "isolate-merge-unmarked-hole, be a single file.",
+        "Conformance -- a pass-through marks its input's holes; Coverage honesty",
+        "Accept all three. Each .jsonl is the expected projection; each declared "
+        "digest is the real SHA-256 of the input it names. A reader that walks "
+        "merged.zpf's coverage of a.zpf's stream finds [0,16) and [35,50) "
+        "spanned and [16,35) marked, against a declared extent of 50 -- "
+        "complete, and never both.",
+        violations=0,
+    )
+    a = merge_file(
+        "a",
+        "sideA: the client direction, capture-sourced, with a hole. Two records "
+        "at seq 1001 and 1036 on a stream whose origin is 1001; the 19 bytes "
+        "between them were never captured, so offsets [16,35) belong to no "
+        "record.",
+        [
+            file_header(options=[o_creator("zpf-sessionize 1.0")]),
+            source(1, 0, [o_uri("sideA.pcap")]),
+            session(7, [o_proto("tcp")]),
+            participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+            record(7, 0, 1, 1000, MERGE_A1, options=[o_seq_start(1001), o_ack(5001)]),
+            # The hole: 1001 + 16 = 1017, and this record starts at 1036.
+            record(7, 0, 1, 1020, MERGE_A2, flags=0x0001, options=[o_seq_start(1036), o_ack(5001)]),
+            end_block(),
+        ],
+        [
+            {"type": "file", "format": FORMAT, "tick_hz": 1000000, "creator": "zpf-sessionize 1.0"},
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "sideA.pcap"},
+            {"type": "session", "session_id": 7, "proto": "tcp"},
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 0,
+                "endpoint": ["10.0.0.1:51000"],
+                "isn": 1000,
+            },
+            {
+                "type": "record",
+                "session_id": 7,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000,
+                "payload": b64(MERGE_A1),
+                "seq_start": 1001,
+                "ack": 5001,
+            },
+            {
+                "type": "record",
+                "session_id": 7,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1020,
+                "flags": ["psh"],
+                "payload": b64(MERGE_A2),
+                "seq_start": 1036,
+                "ack": 5001,
+            },
+            {"type": "end"},
+        ],
+    )
+    a_dg = "sha256:" + hashlib.sha256(a).hexdigest()
+
+    b = merge_file(
+        "b",
+        "sideB: the server direction, capture-sourced, complete. One record at "
+        "seq 5001 acking 1051, the end of the request.",
+        [
+            file_header(options=[o_creator("zpf-sessionize 1.0")]),
+            source(1, 0, [o_uri("sideB.pcap")]),
+            session(3, [o_proto("tcp")]),
+            participant(3, 0, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+            record(3, 0, 1, 995, MERGE_B1, flags=0x0001, options=[o_seq_start(5001), o_ack(1051)]),
+            end_block(),
+        ],
+        [
+            {"type": "file", "format": FORMAT, "tick_hz": 1000000, "creator": "zpf-sessionize 1.0"},
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "sideB.pcap"},
+            {"type": "session", "session_id": 3, "proto": "tcp"},
+            {
+                "type": "participant",
+                "session_id": 3,
+                "pid": 0,
+                "endpoint": ["93.184.216.34:80"],
+                "isn": 5000,
+            },
+            {
+                "type": "record",
+                "session_id": 3,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 995,
+                "flags": ["psh"],
+                "payload": b64(MERGE_B1),
+                "seq_start": 5001,
+                "ack": 1051,
+            },
+            {"type": "end"},
+        ],
+    )
+    b_dg = "sha256:" + hashlib.sha256(b).hexdigest()
+
+    merge_file(
+        "merged",
+        "The merge: one sequenced session, both directions, every record "
+        "carrying an identity span into its input, and an Undecoded gap block "
+        "for the 19 bytes a.zpf never had. The server's record is stored last "
+        "because it acks the whole request, despite its earlier timestamp.",
+        merge_output_blocks(a_dg, b_dg, gap=True),
+        merge_output_jsonl(a_dg, b_dg, gap=True),
+    )
+
+    # The negative twin, registered here so it cites the inputs' real digests.
+    vector(
+        "isolate-merge-unmarked-hole",
+        "isolate",
+        "merge/merged.zpf with its gap block omitted: a merge whose input "
+        "stream has a hole at [16,35) that nothing in the output accounts for. "
+        "The records carry identity spans, so the file cites a.zpf's stream "
+        "and is answerable for every offset of it; its Session End declares "
+        "that stream 50 long; its spans cover [0,16) and [35,50); and no "
+        "Undecoded block names the rest. That the output's own sequence "
+        "numbers jump from 1017 to 1036 does not help -- they describe this "
+        "file's stream, and the guarantee is stated against the input's. "
+        "It is a single file, not a pair, BECAUSE input_extents is on the "
+        "Session End: the declared 50 against a coverage of 31 bytes is "
+        "the violation, and no input need be opened to see it. That is the "
+        "property Package D-pair would trade away, and under it this vector "
+        "would need merge/a.zpf beside it.",
+        "Conformance -- a pass-through marks its input's holes; Coverage honesty",
+        merge_output_blocks(a_dg, b_dg, gap=False),
+        expect="MAY reject the file, or isolate session 1. The coverage guarantee "
+        "fails for input stream (source 1, session 7, pid 0): declared extent "
+        "50, covered [0,16) and [35,50), and [16,35) neither spanned nor "
+        "marked. A reader MUST NOT infer the gap block from the sequence "
+        "numbers and treat the file as whole; the block is what the producer "
+        "owes, and its absence is the producer's omission.",
+        violations=1,
+    )
+
+
 def main() -> int:
     check = "--check" in sys.argv
     build_chain()
     build_splice()
     build_tunnel()
+    build_merge()
     manifest = []
     problems = []
 
@@ -4899,6 +5556,7 @@ def main() -> int:
                 "spec_section": v["spec"],
                 "expect": v["expect"] or ("Accept. The .jsonl file is the expected projection."),
                 "has_jsonl": v["jsonl"] is not None,
+                **({"extents": v["extents"]} if v["extents"] is not None else {}),
             }
         )
 

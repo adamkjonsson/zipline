@@ -1,6 +1,6 @@
-# Zipline Payload Format (v0.19)
+# Zipline Payload Format (v0.20)
 
-> Status: **version 0.19** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.20** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
@@ -281,7 +281,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -457,9 +457,11 @@ never changing the algorithm.
 - Pure ACK segments (no payload) carry ordering information but no bytes; store
   them as zero-length records (or fold their `ack` into the next data record)
   so their happens-before edges aren't lost.
-- SACK/retransmission/overlap are resolved by the *reassembler* before records
-  are emitted; the format records the reassembled result and its favor-old
-  overlap policy, not raw retransmits.
+- SACK, retransmission, duplication and overlap are resolved by the
+  *reassembler* before records are emitted; the format records the reassembled
+  result and its favor-old overlap policy, not the raw segments. Whether the
+  *sender* resent is kept as the `retransmit` flag (see [enums](#enums)); what
+  the reassembler discarded is an Undecoded block.
 - A **mid-stream** capture (handshake never seen) needs no special handling for
   *ordering* — the writer simply omits `isn` (it is responsible for confirming the
   SYN is genuinely absent rather than merely delayed before declaring a
@@ -474,7 +476,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -509,7 +511,8 @@ file is a valid causal linearization — every record appears after all records
 that causally precede it, with the producer's tie-break already applied to
 concurrent records. The flag is per session because *whether a session can be
 soundly sequenced is itself a per-session fact* (a TCP session can always be; a
-hint-less one needs a basis — see below). A file may therefore mix
+hint-less one only when the producer has some other ground for it). A file may
+therefore mix
 sequenced and unsequenced sessions, and a reader decides per session — records of
 different sessions interleave freely, and a reader recovers one session's order by
 filtering. In the JSONL projection the flag is a boolean `"sequenced":true` on the
@@ -543,39 +546,41 @@ Who sets the flag depends on the capture:
   **pass-through** derived file (see [Conformance](#conformance)): it declares
   each input as a [Source](#source-descriptor-which-input) of `kind = zpf-input`
   (with `digest` and provenance, exactly as a decoder does), mints its own
-  session/participant ids and maps each participant back to its input stream
-  with an [`origin`](#participant-descriptor-0x11) option, and re-emits the
-  inputs' records as **pass-through records** — here byte runs with no
-  `decoder_id`, since the inputs are at the transport layer; their payload bytes,
-  logical offsets,
-  and TCP ordering hints preserved. Gaps stay implicit (sequence
-  discontinuities), exactly as in the inputs.
+  session/participant ids, and re-emits the inputs' records as **pass-through
+  records** — here byte runs with no `decoder_id`, since the inputs are at the
+  transport layer — each carrying an **identity span** that cites the input
+  range it was re-emitted from, the same range in as out; their payload bytes,
+  logical offsets, and TCP ordering hints preserved. Gaps stay visible in the
+  sequence numbers exactly as in the inputs — and because the output cites its
+  inputs, each hole is also marked with an Undecoded `gap` block naming the
+  input's range, which the [merge fixture](../vectors/README.md#the-merge)
+  shows and [Conformance](#conformance) requires.
 
 Concretely, merging the
 [skewed two-file capture](#worked-example-a-skewed-two-file-capture) (here as two
 single-direction capture-sourced files: `sideA.zpf` holds the client as its session 7 /
 pid 0, `sideB.zpf` the server as its session 3 / pid 0) yields the pass-through
-file below. The merge mints its own ids — which is exactly why each
-participant's `origin` mapping is required — and stores the two records in
-causal order despite the inverted timestamps:
+file below. The merge mints its own ids — which is exactly why each record's
+identity span, naming the input's ids, is what ties it back — and stores the two
+records in causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
 
 {"type":"session","session_id":1,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80","sequenced":true}
-{"type":"participant","session_id":1,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000,
- "origin":{"source_id":1,"session_id":7,"pid":0}}
-{"type":"participant","session_id":1,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000,
- "origin":{"source_id":2,"session_id":3,"pid":0}}
+{"type":"participant","session_id":1,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000}
+{"type":"participant","session_id":1,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000}
 
 {"type":"record","session_id":1,"sender_pid":0,"source_id":1,"ts":1000,
- "seq_start":1001,"ack":5001,"payload":"R0VUIC8gSFRUUC8xLjENCg0K"}
+ "seq_start":1001,"ack":5001,"payload":"R0VUIC8gSFRUUC8xLjENCg0K",
+ "spans":[{"source_id":1,"session_id":7,"pid":0,"off_start":0,"off_end":18}]}
 {"type":"record","session_id":1,"sender_pid":1,"source_id":2,"ts":995,
- "seq_start":5001,"ack":1019,"payload":"SFRUUC8xLjEgMjAwIE9LDQouLi4="}
+ "seq_start":5001,"ack":1019,"payload":"SFRUUC8xLjEgMjAwIE9LDQouLi4=",
+ "spans":[{"source_id":2,"session_id":3,"pid":0,"off_start":0,"off_end":20}]}
 ```
 
 Sequencing is **optional** and orthogonal to both
@@ -988,8 +993,9 @@ with an explicit **[Undecoded block](#undecoded-0x21)** rather than silently
 dropping bytes. An Undecoded block names a `[off_start, off_end)` range of a
 predecessor stream and a `reason`; it carries **no payload**, only a reference, so
 a consumer that wants the bytes follows the span back toward the capture. This
-gives the **coverage guarantee**: in a decode stage's output, every region of an
-input participant stream is covered **at least once** by a decoded record's
+gives the **coverage guarantee**: in a derived file's output — a decode stage's,
+or a pass-through's, whose identity spans cite their input just the same — every
+region of an input participant stream is covered **at least once** by a record's
 `spans` *or* marked Undecoded — never silently dropped, and never both. *At least
 once* is deliberate: two records MAY cite one region (see
 [`spans`](#tlv-option-framing--id-registry)), and overlap drops nothing. *Never
@@ -1022,7 +1028,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1087,7 +1093,7 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.19","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
@@ -1295,8 +1301,7 @@ Header options: `time_epoch` (i64, `tick_hz` ticks; default Unix epoch
 1970-01-01T00:00:00Z), `creator` (string), `produced_by` (string, derived files —
 tool + version that produced this file), `produced_at` (i64, derived files —
 wall-clock build time in Unix seconds), `transform_params_digest` (string,
-derived files — see below), `flags` (u16, file-level flags; see below),
-`comment`.
+derived files — see below), `comment`.
 
 **`transform_params_digest` — how a transform that did not decode was configured.**
 A decoder's configuration has a home already: `params_digest` on the
@@ -1426,7 +1431,7 @@ wrong one is easy:
 A trace id, a UUID from a capture orchestrator, a flow key from a NetFlow
 collector, a case number, a span id from a distributed trace. **Nothing in this
 format interprets it** — it is carried, compared for equality if a consumer
-chooses, and never parsed. `spans` and `origin` keep referring to `session_id`,
+chooses, and never parsed. `spans` and `input_extents` keep referring to `session_id`,
 because a cross-file reference needs a fixed-width numeric key; `session_id`
 therefore stays u64 and this option does not replace it. Note `session_id` is
 already global-capable — a writer may draw it from a fleet-wide sequence — so
@@ -1559,8 +1564,8 @@ Entries are **20 bytes** each, so a parser derives their number as
 whose entry size a reader has to infer is one an off-by-one hides in. The two u16s
 lead so the u64s stay 4-byte aligned, as in a span-list entry. The triple
 `(source_id, session_id, pid)` names an input participant stream **in the
-source's id namespace**, never this file's — the same rule that governs `spans`
-and `origin`. `extent` is that stream's length in **its own** offset space, as
+source's id namespace**, never this file's — the same rule that governs `spans`.
+`extent` is that stream's length in **its own** offset space, as
 [Layers](#layers-transport-and-decoded-live-in-separate-streams) defines it — this
 re-states nothing, so there is one place to change if that definition ever moves.
 
@@ -1652,8 +1657,8 @@ stamp could). Consequences:
 
 - A single-packet record uses that packet's time; a zero-length pure-ACK record
   uses its ACK segment's time.
-- Under the favor-old overlap policy, a later retransmit that contributes no
-  *accepted* bytes does not move `timestamp`.
+- Under the favor-old overlap policy, a later segment — retransmitted or
+  duplicated — that contributes no *accepted* bytes does not move `timestamp`.
 - A **decoded** record inherits its `timestamp` from the data it is built from:
   the timestamp of the last source element in its span set — when the unit became
   complete. That source is transport bytes in a one-step decode, or itself a
@@ -1705,7 +1710,7 @@ and the origin it might have been tempted to re-derive is fixed by `isn` rather
 than by this record.
 
 Two neighbouring shapes follow from the same reasoning. A `syn`-flagged record
-carrying **no** `seq_start` is unplaceable like any other and placed by the same
+carrying **no** `seq_start` is unplaceable like any other and treated by the same
 rule. And the **zero length is part of the shape described here**, not an
 incidental detail: the flag marks a handshake-*timing* record. A writer with data
 on the SYN (TCP Fast Open) emits that data as an ordinary record at the origin,
@@ -1768,8 +1773,8 @@ no block: the stream the reassembler produced is a transport layer, whose offset
 are hole-inclusive, so a missing segment already occupies a range no record covers
 and the sequence numbers already carry its extent. What the block adds at that
 position is the other class: bytes that *are* in the capture and did not reach the
-output, an overlapping retransmit the reassembler discarded, which nothing else in
-the file can express.
+output — an overlapping segment the reassembler discarded, retransmitted or
+duplicated — which nothing else in the file can express.
 
 **And against a `capture` source it discharges no coverage obligation, nor
 creates one.** The [coverage guarantee](#coverage-honesty-undecoded-blocks) is
@@ -1864,10 +1869,9 @@ identically:
   known about the region's content, and reporting it as empty would assert
   something the consumer did not establish.
 
-Crossing a **pass-through** file costs nothing extra: its participants'
-[`origin`](#participant-descriptor-0x11) options map each stream to the
-corresponding input stream, and offsets are preserved, so the same
-`[off_start, off_end)` range resolves unchanged one level further down.
+Crossing a **pass-through** file costs nothing extra: its records carry
+identity spans — the same range in as out — so the same `[off_start, off_end)`
+range resolves unchanged one level further down.
 
 An Undecoded block has no `timestamp`, and no placement constraint beyond
 declare-on-first-use (its `source_id` must already be declared). A region is
@@ -2333,9 +2337,22 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0004` | `rst`        | TCP RST seen                                             |
 | `0x0008` | `syn`        | TCP SYN — a zero-length handshake-timing record (see [Handshake records](#record-0x20)) |
 | `0x0010` | `urg`        | TCP URG seen                                             |
-| `0x0040` | `retransmit` | retransmission/overlap was resolved inside this record   |
+| `0x0040` | `retransmit` | the sender **resent** bytes of this record's range — a retransmission — and the reassembler resolved it inside this record (see below) |
 | `0x0080` | `message`    | message boundary: the record is exactly one transport message (a UDP datagram, an SCTP message, …) |
 | `0xFF20` | —            | reserved, MUST be written 0, and MUST be ignored on read; a bit nonetheless set is preserved through a round-trip (as a hex token in JSONL), never interpreted |
+
+**`retransmit` names the sender's act, not the reassembler's.** A copy of one
+transmission — every packet seen twice through a mirror port, a two-interface
+capture, a veth pair — is not a retransmission: the sender sent once, and the
+flag is not set, however the reassembler dealt with the copy. What the
+reassembler *discarded*, whether a retransmitted segment or a duplicated one, has
+its own home: an [Undecoded](#undecoded-0x21) block against the `capture` source.
+The two mechanisms split cleanly — the flag says what the sender did, the block
+says what the reassembler dropped. How a producer tells a copy from a
+retransmission is its own affair (the TCP Timestamps option is one way, and is
+not always negotiated); a producer that **cannot** tell them apart SHOULD treat
+the repeat as a retransmission, which is the conservative reading and what every
+producer did before this paragraph.
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
@@ -2552,8 +2569,8 @@ the number went stale with the content.
 - A **decoded record with no predecessor file** carries a `decoder_id` and
   references a `capture` Source: a TLS-terminating proxy, an `SSL_write` uprobe, a
   QUIC library's own stream log. The bytes its units were computed from were never
-  written to a `.zpf` and never will be, so there is no input stream, no `spans`
-  and no `origin`. Two consequences follow and neither is an exception:
+  written to a `.zpf` and never will be, so there is no input stream and no
+  `spans`. Two consequences follow and neither is an exception:
   **the coverage guarantee does not apply**, because it is scoped *within each
   input participant stream* and there is none — it degrades on its own rather than
   needing to be excused; and the referenced **Decoder is a claim of identity, not
@@ -2600,17 +2617,25 @@ the number went stale with the content.
   stated in [what a producer owes the block](#discontinuity-0x22) and is
   deliberately not restated here.
 - A **pass-through** record is any record a pass-through *stream* re-emits. It
-  carries no `spans` — `origin` plus offset preservation is its provenance — and
-  it carries a `decoder_id` exactly when the input's record did. Its `source_id`
-  references a `zpf-input` Source. A pass-through transform (e.g. the
-  [merge](#sequenced-files-precomputed-order)) MUST preserve each participant
-  stream it re-emits — payload bytes and logical offsets unchanged, in the
-  offset space of whichever layer the input was at, gaps included where that
-  layer has them — and MUST put exactly one
-  [`origin`](#participant-descriptor-0x11) option on every participant, mapping
-  it to its input stream. Preserving a **transport** layer, it MUST carry TCP
+  carries an **identity span** — the same range in as out, which is the whole of
+  its provenance — and it carries a `decoder_id` exactly when the input's record
+  did. Its `source_id` references a `zpf-input` Source. A pass-through transform
+  (e.g. the [merge](#sequenced-files-precomputed-order)) MUST preserve each
+  participant stream it re-emits — payload bytes and logical offsets unchanged,
+  in the offset space of whichever layer the input was at, gaps included where
+  that layer has them — and MUST cite, on every record, the input range it was
+  re-emitted from. Preserving a **transport** layer, it MUST carry TCP
   ordering hints (`seq_start`/`ack`) forward (recomputed if records are
-  re-chunked) so gap visibility and `SEQUENCED` verification survive.
+  re-chunked) so gap visibility and `SEQUENCED` verification survive. Citing the
+  input makes the file answerable for it: the
+  [coverage guarantee](#coverage-honesty-undecoded-blocks) binds a pass-through
+  as it binds a decode stage, so a pass-through preserving a transport stream
+  **MUST mark each hole of its input** — a range of the input stream no record
+  covers — with an Undecoded `gap` block naming the input's range, like any
+  other uncovered range. The output's own sequence numbers carrying the same
+  gap does not discharge this: they describe *this* file's stream, and the
+  guarantee is stated against the input's (`merge/`, and its twin
+  `isolate-merge-unmarked-hole`).
 
   **Carrying `decoder_id` forward is keyed on the decoder, not on the layer.**
   Wherever the input's records carry one — a decoded stream, or a transport stream
@@ -2701,14 +2726,13 @@ readers in two tiers, split by what the violation poisons:
 - **Semantic violations — the reader MAY isolate.** When a well-framed block's
   *content* violates a MUST — it references an undeclared
   `session_id`/`pid`/`source_id`/`decoder_id`; an id is declared twice; a
-  block appears where its kind is forbidden (an `origin` option on a
-  capture-sourced stream, a Discontinuity on a transport-layer one, a `hole`-class
+  block appears where its kind is forbidden (a Discontinuity on a
+  transport-layer stream, a `hole`-class
   Undecoded region against a `capture` Source, a stream
   derived from another in the same file, a block referencing a session after its
   [Session End](#session-end-0x12), a second Session End); a participant is
   malformed as a stream (its records resolve to **two layers**; it is
-  `zpf`-sourced and carries **neither** `origin` nor records with `spans`; it
-  carries `origin` *and* holds records with `spans`); the coverage
+  `zpf`-sourced and its records carry no `spans`); the coverage
   guarantee fails — the reader MAY reject the file, or discard the smallest
   unit it can soundly isolate: the offending block, or the session it belongs
   to. It MUST NOT silently reinterpret or repair the data — no reordering
@@ -2735,18 +2759,21 @@ above are the normal, conformant path.
 
 **Unrecognised enum values.** An enum value with no defined label is likewise not
 a violation in itself; what follows from it depends on what the enum governs, and
-the two enums this document defines differ:
+the enums this document defines differ (see [Enums](#enums)):
 
 - `tcp_role` is advisory, so an unrecognised value means simply "unknown",
   exactly as an omitted option does. A reader carries it and moves on.
-- Source `kind` is **load-bearing**: it fixes a stream's provenance, tells a
-  decoder-less record apart as capture-sourced or pass-through, and selects how a
-  `spans` entry's offsets are read (capture-file byte offsets vs logical stream
-  offsets — see the [span-list rule](#tlv-option-framing--id-registry)). A reader
-  that does not recognise a Source's `kind` therefore cannot interpret any record
-  or span referencing it, and this **is** an isolatable semantic condition: the
-  reader MAY reject the file, or discard that Source together with everything
-  referencing it, and SHOULD report it. It MUST NOT guess a kind.
+- Source `kind` and Decoder `output_layer` are **load-bearing**: `kind` fixes a
+  stream's provenance, tells a decoder-less record apart as capture-sourced or
+  pass-through, and selects how a `spans` entry's offsets are read (capture-file
+  byte offsets vs logical stream offsets — see the
+  [span-list rule](#tlv-option-framing--id-registry)); `output_layer` decides
+  which offset space a stream's records live in. A reader that does not
+  recognise a Source's `kind`, or a Decoder's `output_layer`, therefore cannot
+  interpret any record or span referencing it, and this **is** an isolatable
+  semantic condition: the reader MAY reject the file, or discard that Source or
+  Decoder together with everything referencing it, and SHOULD report it. It
+  MUST NOT guess a value.
 
 A consequence worth stating for future editors: **`kind` is not a free extension
 point.** Adding a value to it is not like adding an option id, which old readers
@@ -2822,9 +2849,8 @@ name:
 |--------------|------------------------------------------------------------------|
 | `format`     | `version_major`/`version_minor` as `"zipline-payload/<major>[.<minor>]"`; an omitted minor is `0` (so `"zipline-payload/2"` would be major 2, minor 0). Each component is an independent integer — parse them separately and compare componentwise, **never** as one decimal number, or `0.10` sorts below `0.9` |
 | `ts`         | `timestamp` (Record)                                            |
-| `pid`        | `participant_id` (block body, each `spans` entry, and `origin`)  |
+| `pid`        | `participant_id` (block body, each `spans` and `input_extents` entry) |
 | `key`        | `flow_key` (Session)                                            |
-| `single_clock` | File Header `flags` bit `0x0001`, rendered as a boolean        |
 | `sequenced`  | Session `flags` bit `0x0001`, rendered as a boolean             |
 
 (`proto` is **not** an alias — its JSON key equals its option name.)
@@ -2857,8 +2883,8 @@ general naming rule covers it.
   **load-bearing** enums that number is not a value a reader may act on — it
   preserves the byte through a round-trip and nothing more.
 - **Flag bitfields** render by name, never as the raw integer: the single-bit
-  file and session flags are booleans (`"single_clock"` on `file`, `"sequenced"`
-  on `session`), and a Record's multi-bit `flags` is an **array of set-bit
+  session flag is a boolean (`"sequenced"` on `session`), and a Record's
+  multi-bit `flags` is an **array of set-bit
   tokens** (the JSON-token column of the [flags enum](#enums), e.g.
   `"flags":["psh","fin"]`). A set bit with **no token** renders as a hex token
   (see [the escapes](#unrecognised-data-the-four-escapes)). A zero/unset
@@ -2871,8 +2897,6 @@ general naming rule covers it.
 - **`spans`** → a JSON array of `{source_id, session_id, pid, off_start, off_end}`
   objects; repeated binary occurrences merge into this one array, and a
   converter back to binary MAY split it into several occurrences.
-- **`origin`** → a JSON object `{source_id, session_id, pid}` (a `spans` entry
-  without offsets; ids in the referenced source's namespace).
 - **`input_extents`** → a JSON array of `{source_id, session_id, pid, extent}`
   objects, always an array; repeated binary occurrences merge into it and a
   converter back to binary MAY split it again, exactly as for `spans`. Ids are in
