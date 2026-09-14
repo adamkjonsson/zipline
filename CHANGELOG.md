@@ -70,6 +70,24 @@ uncovered hole. No option and no block is added. Scope and reasoning in
 
 ### Fixed
 
+- **Three vectors' `.zpf` disagreed with their `.jsonl`, and the `.jsonl` was
+  right** ([#141](https://github.com/adamkjonsson/zipline/issues/141); defects 5
+  and 6 in [docs/VECTOR-DEFECTS.md](docs/VECTOR-DEFECTS.md)). `handshake-at-origin`
+  and `unplaceable-below-origin` wrote `tcp_role` one below the enum value their
+  projections name — *unknown* for *initiator*, *initiator* for *responder*
+  (defect 5). `mixed-derivation`'s identity span had its `session_id` and `pid`
+  swapped, the author having written the triple in the logical order every prose
+  statement uses where `o_spans` took byte order (defect 6). The bytes and `.hex`
+  are regenerated; no `.jsonl` changed. Found by `python-zipline` projecting every
+  vendored `.zpf` and diffing — the third release running in which a
+  `.zpf`/`.jsonl` disagreement surfaced downstream.
+- **`mixed-derivation`'s summary and README row still described the `origin`
+  model** `0.19` deleted — *its participant carries origin, its records carry no
+  spans* — in a spelling `RETIRED_CLAIMS` did not match. Three softer spellings
+  of the same model in `filtered-decoded`, `isolate-unbound-zpf-stream` and
+  `proxy-decoded` went with it, `o_origin` is deleted from `build.py`, and the
+  five spellings are now in `RETIRED_CLAIMS`, reproducing against `v0.19`.
+
 ### Clarified
 
 ### Added

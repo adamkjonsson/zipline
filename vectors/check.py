@@ -605,6 +605,18 @@ RETIRED_CLAIMS = {
             r"The discriminator between the two is `spans` versus `origin`",
             # vectors/README.md, and so any harness reading it
             r"A pass-through preserving a transport layer: `origin`",
+            # 0.20 (#141). mixed-derivation's summary survived 0.19 saying all of
+            # this in a spelling without the bold and the backticks -- the
+            # paraphrase blindness 0.18 measured, on the vector 0.19's plan
+            # flagged as the default action. build.py, and so manifest.json:
+            r"participant carries origin, its records carry no spans",
+            r"a participant MUST NOT both carry origin and hold records",
+            # vectors/README.md
+            r"session 11's participant carries `origin`",
+            # The softer spellings the same grep found: the test named by the
+            # option that is gone, and a violation described as its absence.
+            r"the spans-versus-origin test",
+            r"participant carries no origin",
         ),
         "0.19",
         None,

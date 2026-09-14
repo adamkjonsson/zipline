@@ -422,15 +422,6 @@ def o_tcp_role(v: str) -> Opt:
     return option(0x0063, u8(v), "tcp_role", str(v))
 
 
-def o_origin(src: int, pid: int, sess: int) -> Opt:
-    return option(
-        0x0064,
-        u16(src) + u16(pid) + u64(sess),
-        "origin",
-        f"source {src}, pid {pid}, session {sess}",
-    )
-
-
 def o_seq_start(v: str) -> Opt:
     return option(0x0070, u32(v), "seq_start", str(v))
 
@@ -1802,7 +1793,7 @@ vector(
     "and an absent width would claim that length is unknowable. Declaring it "
     "keeps the output offset space aligned with the input's -- record C sits "
     "at [100,160) in both -- which does not make this a pass-through, since "
-    "the spans-versus-origin test is what decides that and these are spans.",
+    "whether the spans are identity is what decides that and these are not.",
     "Discontinuity (0x22) -- what a producer owes the block",
     [
         file_header(
@@ -2127,8 +2118,8 @@ vector(
     "proxy logging application messages -- the bytes they were computed from "
     "were never written to a .zpf and never will be. Records carry decoder_id "
     "and reference a CAPTURE Source, which is the cell the axes were "
-    "conflated to forbid: capture-sourced provenance, decoded layer. No spans "
-    "and no origin, because there is no input stream to name. Two consequences "
+    "conflated to forbid: capture-sourced provenance, decoded layer. No spans, "
+    "because there is no input stream to name. Two consequences "
     "the file demonstrates rather than states: the coverage guarantee does not "
     "apply, since it is scoped within each input participant stream and there "
     "is none; and the Decoder is a claim of IDENTITY, not a recipe -- nothing "
@@ -2298,16 +2289,17 @@ vector(
     "mixed-derivation",
     "accept",
     "ONE derived file holding a decode-stage stream BESIDE a pass-through "
-    "stream. Session 10 is created: its records carry spans and the file "
-    "accounts for the input it decoded. Session 11 is preserved: its "
-    "participant carries origin, its records carry no spans, and its bytes and "
-    "offsets are the input's unchanged. Before 0.15 a derived file was exactly "
-    "one of the two, never a mix, which left a tool with a decoder for one "
-    "protocol and not the other two dishonest options -- pass everything "
-    "through, or mark the undecodable session's whole stream Undecoded, which "
-    "DROPS those bytes from the output. The rule that replaces it binds per "
-    "participant: a participant MUST NOT both carry origin and hold records "
-    "carrying spans. Across streams there is no such rule.",
+    "stream. Session 10 is created: its records carry spans into input session "
+    "7 and the file accounts for the input it decoded. Session 11 is preserved: "
+    "its record carries an IDENTITY span into input session 8 -- the same range "
+    "in as out, [0,10) -- and its bytes and offsets are the input's unchanged. "
+    "Before 0.15 a derived file was exactly one of the two, never a mix, which "
+    "left a tool with a decoder for one protocol and not the other two "
+    "dishonest options -- pass everything through, or mark the undecodable "
+    "session's whole stream Undecoded, which DROPS those bytes from the output. "
+    "Since 0.19 every zpf-sourced record carries spans and which kind a stream "
+    "is, is read from them: identity spans preserve, any other span creates. "
+    "That binds per participant; across streams there is no rule.",
     "Conformance -- the discriminator binds per participant",
     [
         file_header(
@@ -2319,7 +2311,7 @@ vector(
         ),
         source(1, 1, [o_uri("in.zpf"), o_digest("sha256:6a71")]),
         decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
-        # Created: spans, no origin.
+        # Created: a span into input session 7 that is not an identity span.
         session(10, [o_proto("http")]),
         participant(10, 0, [o_endpoint("10.0.0.1:51000")]),
         record(
@@ -2344,7 +2336,7 @@ vector(
             1,
             1100,
             b"EHLO relay",
-            options=[o_seq_start(4001), o_spans([(1, 8, 0, 0, 10)])],
+            options=[o_seq_start(4001), o_spans([(1, 0, 8, 0, 10)])],
         ),
         end_block(),
     ],
@@ -3054,22 +3046,23 @@ vector(
 vector(
     "isolate-unbound-zpf-stream",
     "isolate",
-    "A zpf-SOURCED participant that is NEITHER created NOR preserved: its "
-    "record references a zpf-input Source, carries no spans, and its "
-    "participant carries no origin. Nothing says which stream inside the input "
-    "its bytes came from, so nothing resolves one level down and no coverage "
-    "obligation can be computed in either direction. The two ways of producing "
-    "a zpf-sourced stream are exhaustive and 0.15 never said so -- the "
-    "discriminator rule forbade being BOTH and was silent on being neither, "
-    "which is how isolate-self-derived shipped carrying this as a second, "
-    "unintended violation. Contrast mixed-derivation, where one participant is "
-    "created and the other preserved and both say which.",
-    "Conformance -- a zpf-sourced participant MUST be one or the other",
+    "A zpf-SOURCED record carrying NO SPANS: it references a zpf-input Source "
+    "and nothing says which stream inside the input its bytes came from, so "
+    "nothing resolves one level down and no coverage obligation can be "
+    "computed in either direction. Every zpf-sourced record carries spans -- "
+    "a pass-through's are identity spans -- so the rule binds per record with "
+    "no second shape to check. Before 0.19 the same file broke a different "
+    "rule, that a participant be either created or preserved, which 0.15 had "
+    "stated as a bar on being BOTH and was silent on being neither; that is how "
+    "isolate-self-derived shipped carrying this as a second, unintended "
+    "violation. Contrast mixed-derivation, where both participants' records "
+    "carry spans and the spans say which kind each stream is.",
+    "Conformance -- every zpf-sourced record carries spans",
     [
         file_header(options=[o_produced_by("zpf-tool 0.1"), o_produced_at(1719650000)]),
         source(1, 1, [o_uri("upstream.zpf"), o_digest("sha256:22bb")]),
         session(40, [o_proto("tcp")]),
-        # THE VIOLATION: zpf-sourced, and no origin here nor spans below.
+        # THE VIOLATION: zpf-sourced, and the record below carries no spans.
         participant(40, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
         record(40, 0, 1, 1000, b"D" * 30, options=[o_seq_start(1001)]),
         end_block(),
@@ -3202,8 +3195,8 @@ vector(
         file_header(),
         source(1, 0, [o_uri("tcp.pcap")]),
         session(7, [o_proto("tcp")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
-        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(1)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
         # The client's SYN, at the origin. Zero length, so its computed end
         # equals its seq_start and every causal edge works unchanged.
         record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
@@ -3418,7 +3411,7 @@ vector(
         file_header(),
         source(1, 0, [o_uri("offbyone.pcap")]),
         session(7, [o_proto("tcp")]),
-        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(0)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
         # THE VIOLATION: one below the origin, and carrying payload -- so the
         # zero-width placement costs eight bytes rather than nothing.
         record(7, 0, 1, 1000, b"LOSTBYTE", flags=0x0001, options=[o_seq_start(1000)]),
