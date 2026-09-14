@@ -134,7 +134,35 @@ uncovered hole. No option and no block is added. Scope and reasoning in
 
 ### Clarified
 
+- **A SHOULD-report on a clean vector is not tested, and the two `unplaceable-*`
+  vectors now say so** ([#140](https://github.com/adamkjonsson/zipline/issues/140)
+  part 1). `unplaceable-below-origin`'s `expect` opened *ACCEPT, and REPORT* on
+  a `violations: 0` vector, and the manifest had no way to say *breaks no rule
+  and is still reported*. It gets a README sentence rather than a key: a SHOULD
+  has no conformant failure mode, so a key asserting the report would promote it
+  to a MUST through the manifest — the second normative authority ground rule 2
+  forbids. Both `expect` strings now state the report as the SHOULD it is, agree
+  with each other (§Referencing's one sentence names both shapes, and only one
+  of them mentioned it), and say silence is conformant. No text in the
+  specification changes.
+
 ### Added
+
+- **`extents` in `manifest.json`, mandatory on every single-file accept vector**
+  ([#140](https://github.com/adamkjonsson/zipline/issues/140) part 2). A list of
+  `{session_id, pid, extent}` per participant stream — the `input_extents` entry
+  shape, so no new vocabulary — declared in `build.py` as `violations` is, never
+  computed, and checked by `check.py` for shape only: every declared participant
+  has one and nothing else does. It is the accept tier's assertion about what a
+  reader *computes*; `violations` only sees the wrong reading that produces a
+  finding, and a reader that skips a Discontinuity's `width` or trusts a wrapped
+  offset is wrong silently. 31 vectors, 37 streams; the three the issue names
+  state their number in their summaries — 16, 105 and 160 — and the zero-length
+  and hint-less cases are each a reading of §Referencing: a handshake record's
+  stream measures from `isn + 1` to the end of its last placeable record, a
+  never-anchored stream is the accumulation of its payloads, a decoded stream
+  is payloads plus declared widths. `chain` and `tunnel` declare none, being
+  verified against their inputs already.
 
 - **The suite compares a vector's two faces at registration** — a note on the
   suite, not the format. Every option and block `build.py` emits now carries

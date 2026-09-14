@@ -1611,6 +1611,48 @@ def check_violations(v: dict) -> list[str]:
     return []
 
 
+def check_extents(v: dict) -> list[str]:
+    """Check a vector's declared extents are shaped right, and name real streams.
+
+    `extents` is the accept tier's assertion about what a reader COMPUTES, the
+    way `violations` is its assertion about what a reader reports (#140): three
+    accept vectors carried their whole lesson in a number no field stated, and a
+    reader that got it wrong passed all three silently. Every single-file accept
+    entry declares one per participant stream. The values are the author's
+    reading of the specification and are checked by nobody here -- this compares
+    nothing against the bytes, for the same reason `violations` does not -- but
+    each entry must name a session and pid the vector's own projection declares,
+    and every declared participant must have one, so a stream cannot be left
+    out and a number cannot name a stream that is not there.
+
+    Multi-file fixtures carry none: their extents are already verified against
+    their inputs by the bespoke checks, and a declared copy would be a second
+    statement of the same number.
+    """
+    name, tier = v["name"], v["tier"]
+    if "files" in v or tier != "accept":
+        return (
+            [f"{name}: declares extents off the single-file accept tier"] if "extents" in v else []
+        )
+    if "extents" not in v:
+        return [f"{name}: a single-file accept vector declares extents"]
+    out = []
+    keys = {"session_id", "pid", "extent"}
+    for e in v["extents"]:
+        if set(e) != keys or not all(isinstance(e[k], int) and e[k] >= 0 for k in keys):
+            out.append(
+                f"{name}: extents entry {e} is not {{session_id, pid, extent}} of non-negative ints"
+            )
+    if out:
+        return out
+    jl = chain_lines(os.path.join(HERE, name), name)
+    declared = sorted((o["session_id"], o["pid"]) for o in jl if o.get("type") == "participant")
+    named = sorted((e["session_id"], e["pid"]) for e in v["extents"])
+    if named != declared:
+        out.append(f"{name}: extents name streams {named} but the projection declares {declared}")
+    return out
+
+
 def check_jsonl(label: str, path: str, block_count: int) -> list[str]:
     """Check a projection parses and has one line per block."""
     jl = [x for x in read_text(path).splitlines() if x.strip()]
@@ -1702,6 +1744,7 @@ def main() -> int:
     failures = []
     for v in manifest["vectors"]:
         failures += check_violations(v)
+        failures += check_extents(v)
         failures += check_vector(v)
 
     failures += check_chain()
@@ -1718,6 +1761,12 @@ def main() -> int:
         for f in failures:
             print("  " + f)
         return 1
+    n_ext = sum(1 for v in manifest["vectors"] if "extents" in v)
+    streams = sum(len(v.get("extents", ())) for v in manifest["vectors"])
+    print(
+        f"  extents: {n_ext} accept vectors declare {streams} stream extents -- "
+        f"shape checked, values are the author's"
+    )
     print(f"\nall {len(manifest['vectors'])} vectors consistent")
     return 0
 

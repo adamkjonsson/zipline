@@ -742,6 +742,7 @@ def vector(
     *,
     violations: int,
     advisory: bool = False,
+    extents: list[tuple[int, int, int]] | None = None,
 ) -> None:
     """Register a vector.
 
@@ -763,6 +764,18 @@ def vector(
     for block (`check_faces`). The two faces stay independently authored -- that
     is what makes their agreement mean something -- and since 0.20 they are
     compared here rather than by the first downstream port to diff them (#141).
+
+    `extents` is required on the accept tier, for the reason `violations` is
+    required everywhere: a number an author must confront is one that gets
+    checked, and a default is a number nobody looked at. It declares each
+    participant stream's extent in its own offset space, as `(session_id, pid,
+    extent)`, and is the accept tier's assertion about what a reader COMPUTES --
+    `violations` catches only the wrong reading that produces a finding, and a
+    reader that skips a Discontinuity's width, or trusts a wrapped offset, is
+    wrong silently (#140). Every declared participant is named, and nothing else
+    is: each number is the author's reading of the specification, and a wrong
+    one is caught by the first implementation that disagrees, which is the loop
+    the suite lacked. Nothing here computes it.
     """
     if advisory and tier != "accept":
         raise ValueError(f"{name}: advisory is meaningless off the accept tier")
@@ -779,8 +792,31 @@ def vector(
             "expect": expect,
             "violations": violations,
             "advisory": advisory,
+            "extents": check_extents(name, tier, blocks, extents),
         }
     )
+
+
+def check_extents(
+    name: str, tier: str, blocks: list[Blk], extents: list[tuple[int, int, int]] | None
+) -> list[dict] | None:
+    """Require `extents` on the accept tier, naming exactly the declared participants."""
+    if tier != "accept":
+        if extents is not None:
+            raise ValueError(f"{name}: extents is declared on the accept tier only")
+        return None
+    if extents is None:
+        raise TypeError(f"{name}: an accept vector declares extents, one per participant stream")
+    declared = [
+        (b.fields["session_id"], b.fields["participant_id"]) for b in blocks if b.btype == 0x11
+    ]
+    named = [(sess, pid) for sess, pid, _ext in extents]
+    if sorted(named) != sorted(declared):
+        raise ValueError(
+            f"{name}: extents name {sorted(named)} but the file declares "
+            f"participants {sorted(declared)}"
+        )
+    return [{"session_id": sess, "pid": pid, "extent": ext} for sess, pid, ext in extents]
 
 
 # --- baseline -------------------------------------------------------------
@@ -824,6 +860,7 @@ vector(
         },
     ],
     violations=0,
+    extents=[(7, 0, 18)],
 )
 
 vector(
@@ -934,6 +971,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 3), (7, 1, 4)],
 )
 
 vector(
@@ -1106,6 +1144,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(31, 0, 16)],
 )
 
 
@@ -1132,6 +1171,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[],
 )
 
 vector(
@@ -1165,6 +1205,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 vector(
@@ -1194,6 +1235,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 0)],
 )
 
 vector(
@@ -1227,6 +1269,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 # --- 0.10 constructs -------------------------------------------------------
@@ -1328,6 +1371,7 @@ vector(
     "this vector trivially and has tested nothing -- the distinction is "
     "only observable in a consumer that recovers bytes.",
     violations=0,
+    extents=[(7, 0, 3)],
 )
 
 vector(
@@ -1398,6 +1442,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 4)],
 )
 
 vector(
@@ -1449,6 +1494,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 0)],
 )
 
 vector(
@@ -1543,6 +1589,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 80)],
 )
 
 vector(
@@ -1664,6 +1711,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(100, 0, 12), (101, 0, 12)],
 )
 
 vector(
@@ -1708,7 +1756,9 @@ vector(
     "arithmetic, so the second record occupies [75,105), not [50,80). A reader "
     "that skips the block, or reads it but ignores width, computes a different "
     "range for every later record of this participant -- which is exactly the "
-    "silent failure the block exists to prevent.",
+    "silent failure the block exists to prevent, and it produces no violation "
+    "and the same projection. The declared extent is what catches it: 105, "
+    "not 80.",
     "Discontinuity (0x22)",
     [
         file_header(options=[o_produced_by("zpf-quic 0.1"), o_produced_at(1719590000)]),
@@ -1786,6 +1836,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(9, 0, 105)],
 )
 
 UUID = bytes.fromhex("3f2504e04f8911d39a0c0305e82c3301")
@@ -1822,6 +1873,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 
@@ -1876,6 +1928,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 2)],
 )
 
 vector(
@@ -1902,6 +1955,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[],
 )
 
 
@@ -2012,6 +2066,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 1, 150)],
 )
 
 vector(
@@ -2033,7 +2088,9 @@ vector(
     "and an absent width would claim that length is unknowable. Declaring it "
     "keeps the output offset space aligned with the input's -- record C sits "
     "at [100,160) in both -- which does not make this a pass-through, since "
-    "whether the spans are identity is what decides that and these are not.",
+    "whether the spans are identity is what decides that and these are not. "
+    "The declared extent, 160 and not 120, is what catches a reader that "
+    "skipped the width; nothing else in the file does.",
     "Discontinuity (0x22) -- what a producer owes the block",
     [
         file_header(
@@ -2153,6 +2210,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 1, 160)],
 )
 
 vector(
@@ -2278,6 +2336,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 105)],
 )
 
 vector(
@@ -2349,6 +2408,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 18)],
 )
 
 vector(
@@ -2433,6 +2493,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(3, 0, 35)],
 )
 
 vector(
@@ -2524,6 +2585,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(7, 0, 105)],
 )
 
 vector(
@@ -2643,6 +2705,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(10, 0, 5), (11, 0, 10)],
 )
 
 vector(
@@ -2700,6 +2763,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(8, 0, 4), (8, 1, 2)],
 )
 
 vector(
@@ -2772,6 +2836,7 @@ vector(
     "between two taps. A reader that emits the response first has "
     "reordered a causal pair.",
     violations=0,
+    extents=[(1, 0, 5), (1, 1, 12)],
 )
 
 vector(
@@ -2819,6 +2884,7 @@ vector(
         {"type": "end"},
     ],
     violations=0,
+    extents=[(8, 0, 10), (8, 1, 8)],
 )
 
 
@@ -2879,18 +2945,23 @@ vector(
         },
         {"type": "end"},
     ],
-    expect="Accept. The .jsonl file is the expected projection. On placement: "
-    "pid 0's first record is at [0,6) and its second carries no seq_start "
-    "on a stream whose first record has one, so it is UNPLACEABLE -- it "
-    "covers no byte of the stream and contributes nothing, so the extent "
-    "stays 6 and those six bytes are in no offset at all. A reader that "
-    "appended them at [6,12) is reading an offset the file does not "
-    "state. Since 0.19 the RANGE a reader reports for the unplaceable "
-    "record is not pinned, so two readers may differ there while both "
-    "give extent 6. pid 1 is NOT this rule's case: no record of that "
-    "participant carries a seq_start, so its stream is not "
-    "sequence-anchored to begin with.",
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extents are 6 for pid 0 and 5 for pid 1. pid 0's first record is at "
+    "[0,6) and its second carries no seq_start on a stream whose first "
+    "record has one, so it is UNPLACEABLE -- it covers no byte of the "
+    "stream and contributes nothing, so the extent stays 6 and those six "
+    "bytes are in no offset at all. A reader that appended them at [6,12) "
+    "is reading an offset the file does not state. Which range a reader "
+    "reports for the record is not pinned; two readers may differ there "
+    "while both give extent 6. A reader SHOULD report the record, and the "
+    "suite does not test that it does -- the file breaks no rule, so "
+    "silence is conformant, exactly as for unplaceable-below-origin, the "
+    "other shape of the same sentence. pid 1 is NOT this rule's case: no "
+    "record of that participant carries a seq_start, so its stream is not "
+    "sequence-anchored to begin with, and its extent is the accumulation "
+    "of its payloads.",
     violations=0,
+    extents=[(9, 0, 6), (9, 1, 5)],
 )
 
 # --- negative: the reject tier --------------------------------------------
@@ -3412,6 +3483,7 @@ vector(
     "stated in Typing a decoded record.",
     violations=1,
     advisory=True,
+    extents=[(50, 0, 40)],
 )
 
 vector(
@@ -3535,6 +3607,7 @@ vector(
     "byte, so pid 0's stream is [0,18) and pid 1's is [0,19). The merge "
     "needs no sort: step 1 takes each participant's records in file order.",
     violations=0,
+    extents=[(7, 0, 18), (7, 1, 19)],
 )
 
 
@@ -3635,6 +3708,7 @@ vector(
     "because the strength is the part implementations guess wrong.",
     violations=1,
     advisory=True,
+    extents=[(51, 0, 40)],
 )
 
 vector(
@@ -3707,18 +3781,23 @@ vector(
         },
         {"type": "end"},
     ],
-    expect="ACCEPT, and REPORT. The first record is unplaceable: zero-width at "
-    "offset 0, contributing nothing to the extent and covering no byte, so "
-    "the participant's stream is [0,16) -- the two later records -- and the "
-    "eight bytes of the first are in no offset at all. It is NOT deleted: "
-    "a reader still lists it, still reports its timestamp and payload, and "
-    "a consumer indexing by anything but offset still sees it. Two wrong "
-    "readings diverge visibly here, where the record carries payload, and "
-    "would not on a zero-length one: one places the record at 4294967295 "
-    "and reports an extent to match, the other drops it and reports two "
-    "records where the file has three. Rejecting or isolating is NOT "
-    "conformant.",
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extent is 16. The first record is unplaceable: it contributes nothing to "
+    "the extent and covers no byte, so the participant's stream is [0,16) -- "
+    "the two later records -- and the eight bytes of the first are in no "
+    "offset at all. Which range a reader reports for it is not pinned; that "
+    "it counts for nothing is. It is NOT deleted: a reader still lists it, "
+    "still reports its timestamp and payload, and a consumer indexing by "
+    "anything but offset still sees it. A reader SHOULD report the record, "
+    "and the suite does not test that it does -- the file breaks no rule, "
+    "so silence is conformant and a harness asserting a clean accept is "
+    "right to. Two wrong readings diverge visibly here, where the record "
+    "carries payload, and would not on a zero-length one: one places the "
+    "record at 4294967295 and reports extent 4294967303, the other drops it "
+    "and reports two records where the file has three. Rejecting or "
+    "isolating is NOT conformant.",
     violations=0,
+    extents=[(7, 0, 16)],
 )
 
 vector(
@@ -5138,6 +5217,7 @@ def main() -> int:
                 "spec_section": v["spec"],
                 "expect": v["expect"] or ("Accept. The .jsonl file is the expected projection."),
                 "has_jsonl": v["jsonl"] is not None,
+                **({"extents": v["extents"]} if v["extents"] is not None else {}),
             }
         )
 

@@ -92,6 +92,37 @@ a key rather than a fourth tier because the tier names what a *reader does*, and
 reader accepts these files completely. `advisory` on any other tier fails the
 build, since where a reader may discard something the word says nothing.
 
+**A SHOULD-report on a clean file is not tested.** §Referencing says a reader
+*SHOULD* report an unplaceable record, and `unplaceable-below-origin` and
+`unplaceable-no-seq-start` are both `violations: 0`, because since `0.19` such a
+record breaks no rule. There is no key for *breaks no rule and is still
+reported*, deliberately: a SHOULD has no conformant failure mode — a reader that
+stays silent on an unplaceable record has broken nothing — and a manifest key
+that asserted the report would make silence a suite failure, which promotes the
+SHOULD to a MUST through the manifest, a second normative authority ground rule 2
+forbids. So a harness asserting a clean accept on those two vectors is right to,
+and their `expect` strings say which reports are the SHOULD's rather than the
+tier's.
+
+**Every single-file `accept` entry declares `extents`**, and since `0.20` that is
+enforced too: a list of `{"session_id", "pid", "extent"}`, one per participant
+stream, the stream's length in its own offset space. It is the accept tier's
+assertion about what a reader **computes**, where `violations` is its assertion
+about what a reader *reports*. `violations` catches exactly one class of wrong
+reading, the kind that produces a spurious finding; a reader that skips a
+Discontinuity's `width`, or trusts a below-origin record's wrapped offset, is
+wrong **silently** — no violation, and the same projection, because the blocks
+are preserved either way. Three vectors carried their whole lesson in such a
+number (#140): `unplaceable-below-origin` is 16, not 4294967303;
+`discontinuity-known-width` is 105, not 80; `filtered-decoded` is 160, not 120.
+Like `violations` it is declared in [`build.py`](build.py) and never computed by
+inspecting the file — each number is the author's reading of the specification,
+mandatory so that every stream's number is one somebody confronted — and
+`check.py` checks only its shape: that every declared participant has one and
+nothing else does. A wrong number is caught by the first implementation that
+disagrees, which is the loop the suite lacked. Multi-file fixtures declare none;
+their extents are verified against their inputs by the bespoke checks.
+
 **Every capability the format defines is exercised by some vector**, and since
 `0.14` that is enforced too. `check.py` parses the option-id registry and the
 block-type table out of the specification and requires each entry to appear in
@@ -146,7 +177,8 @@ Each vector is a directory:
 The `.hex` dump exists so a change to a vector is reviewable in a diff — a raw
 `.zpf` is an opaque blob. It is generated, never edited, so it cannot drift from
 the bytes. [`manifest.json`](manifest.json) is the machine-readable index: name,
-tier, size, the specification section each comes from, and what a reader must do.
+tier, size, the specification section each comes from, what a reader must do,
+and on the accept tier the per-stream `extents` a reader must compute.
 
 ## The vectors
 
