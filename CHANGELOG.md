@@ -60,6 +60,22 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.20] — unreleased
+
+**A repair-and-vector release, and two implementations are waiting on it.**
+Three vectors whose bytes and projection disagreed, one flags row that read two
+ways, and a suite that could not see a wrong computed value or a merge's
+uncovered hole. No option and no block is added. Scope and reasoning in
+[docs/RELEASE-0.20-PLAN.md](docs/RELEASE-0.20-PLAN.md).
+
+### Fixed
+
+### Clarified
+
+### Added
+
+---
+
 ## [0.19] — 2026-09-05
 
 **Clarification and simplification, in that order.** The terms are pinned first,
