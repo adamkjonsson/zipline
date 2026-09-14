@@ -2592,7 +2592,7 @@ vector(
     "sequencing basis. The shape has nothing to do with SEQUENCED -- placement "
     "keys on whether a stream is sequence-anchored, not on the flag -- so it is "
     "carried here by an ordinary session, which is where it always belonged. "
-    "Its twin is advisory-below-origin-payload, the other shape of one rule.",
+    "Its twin is unplaceable-below-origin, the other shape of one rule.",
     "Referencing the source by stream offset",
     [
         file_header(),
@@ -3079,8 +3079,9 @@ vector(
     "advisory-transport-content-type",
     "accept",
     "A transport-layer record carrying a content_type, which 0.16 makes a MUST "
-    "NOT whose violation is ADVISORY -- one of two, the other being 0.17's "
-    "origin floor (advisory-seq-start-below-origin). The "
+    "NOT whose violation is ADVISORY. 0.17's origin floor was the other such "
+    "MUST NOT until 0.19 dropped it, and now the transport-label bar -- this "
+    "vector and advisory-transport-role's -- is the advisory tier. The "
     "reassembly decoder declares output_layer = transport and labels its record "
     "prim:bytes, which is mechanically legal and is the wrong answer: the "
     "record's boundaries are wherever the reassembler chunked the stream, so "
@@ -3186,8 +3187,9 @@ vector(
     "rejects or isolates this file, and with it every conformant capture whose "
     "handshake was observed. Until 0.18 no vector in the suite carried a "
     "seq_start tie at all, so that reader passed the whole suite and failed on "
-    "real traffic. It is the positive twin of advisory-seq-start-below-origin, "
-    "which is the same record written one below the origin. "
+    "real traffic. Its negative twin, the same record written one below the "
+    "origin, was advisory-seq-start-below-origin until 0.19 removed it with "
+    "the floor's MUST NOT; unplaceable-below-origin now carries that shape. "
     "It also carries the responder's SYN-ACK as its own zero-length syn record "
     "with an ack, which the specification describes and nothing else exercises.",
     "Record (0x20) -- handshake records",
@@ -3469,8 +3471,8 @@ vector(
     "eight bytes of the first are in no offset at all. It is NOT deleted: "
     "a reader still lists it, still reports its timestamp and payload, and "
     "a consumer indexing by anything but offset still sees it. Two wrong "
-    "readings diverge visibly here and not on "
-    "advisory-seq-start-below-origin: one places the record at 4294967295 "
+    "readings diverge visibly here, where the record carries payload, and "
+    "would not on a zero-length one: one places the record at 4294967295 "
     "and reports an extent to match, the other drops it and reports two "
     "records where the file has three. Rejecting or isolating is NOT "
     "conformant.",
