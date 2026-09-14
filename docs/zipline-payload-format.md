@@ -550,8 +550,11 @@ Who sets the flag depends on the capture:
   records** — here byte runs with no `decoder_id`, since the inputs are at the
   transport layer — each carrying an **identity span** that cites the input
   range it was re-emitted from, the same range in as out; their payload bytes,
-  logical offsets, and TCP ordering hints preserved. Gaps stay implicit (sequence
-  discontinuities), exactly as in the inputs.
+  logical offsets, and TCP ordering hints preserved. Gaps stay visible in the
+  sequence numbers exactly as in the inputs — and because the output cites its
+  inputs, each hole is also marked with an Undecoded `gap` block naming the
+  input's range, which the [merge fixture](../vectors/README.md#the-merge)
+  shows and [Conformance](#conformance) requires.
 
 Concretely, merging the
 [skewed two-file capture](#worked-example-a-skewed-two-file-capture) (here as two
@@ -1707,7 +1710,7 @@ and the origin it might have been tempted to re-derive is fixed by `isn` rather
 than by this record.
 
 Two neighbouring shapes follow from the same reasoning. A `syn`-flagged record
-carrying **no** `seq_start` is unplaceable like any other and placed by the same
+carrying **no** `seq_start` is unplaceable like any other and treated by the same
 rule. And the **zero length is part of the shape described here**, not an
 incidental detail: the flag marks a handshake-*timing* record. A writer with data
 on the SYN (TCP Fast Open) emits that data as an ordinary record at the origin,
@@ -2756,18 +2759,21 @@ above are the normal, conformant path.
 
 **Unrecognised enum values.** An enum value with no defined label is likewise not
 a violation in itself; what follows from it depends on what the enum governs, and
-the two enums this document defines differ:
+the enums this document defines differ (see [Enums](#enums)):
 
 - `tcp_role` is advisory, so an unrecognised value means simply "unknown",
   exactly as an omitted option does. A reader carries it and moves on.
-- Source `kind` is **load-bearing**: it fixes a stream's provenance, tells a
-  decoder-less record apart as capture-sourced or pass-through, and selects how a
-  `spans` entry's offsets are read (capture-file byte offsets vs logical stream
-  offsets — see the [span-list rule](#tlv-option-framing--id-registry)). A reader
-  that does not recognise a Source's `kind` therefore cannot interpret any record
-  or span referencing it, and this **is** an isolatable semantic condition: the
-  reader MAY reject the file, or discard that Source together with everything
-  referencing it, and SHOULD report it. It MUST NOT guess a kind.
+- Source `kind` and Decoder `output_layer` are **load-bearing**: `kind` fixes a
+  stream's provenance, tells a decoder-less record apart as capture-sourced or
+  pass-through, and selects how a `spans` entry's offsets are read (capture-file
+  byte offsets vs logical stream offsets — see the
+  [span-list rule](#tlv-option-framing--id-registry)); `output_layer` decides
+  which offset space a stream's records live in. A reader that does not
+  recognise a Source's `kind`, or a Decoder's `output_layer`, therefore cannot
+  interpret any record or span referencing it, and this **is** an isolatable
+  semantic condition: the reader MAY reject the file, or discard that Source or
+  Decoder together with everything referencing it, and SHOULD report it. It
+  MUST NOT guess a value.
 
 A consequence worth stating for future editors: **`kind` is not a free extension
 point.** Adding a value to it is not like adding an option id, which old readers

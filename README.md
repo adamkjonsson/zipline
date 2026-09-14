@@ -54,7 +54,7 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 0.19 — a design in progress. Not ready for production.**
+**Version 0.20 — a design in progress. Not ready for production.**
 
 `0.x` means what it says: any minor release may change anything, including in
 ways that break existing readers. A reader must reject a `version_minor` it does
@@ -63,7 +63,7 @@ not implement.
 A release was designated `1.0` in July 2026, before any implementation existed.
 That was premature — the first implementation found enough to force a breaking
 revision — so it is retroactively designated `0.9`, and the work since is `0.10`
-through `0.19`. (`0.19` follows `0.9`; the components are integers, not decimals.)
+through `0.20`. (`0.20` follows `0.9`; the components are integers, not decimals.)
 `1.0` is reserved for a specification that has survived implementation. More `0.x` rounds
 are expected.
 
@@ -130,6 +130,13 @@ rounds as they happened, not plans:
   packages as a menu, the three that were taken, and the terminology the release
   pinned first because the specification had defined `decoder` wrongly since
   `0.15`.
+- [docs/RELEASE-0.20-PLAN.md](docs/RELEASE-0.20-PLAN.md) — the repair-and-vector
+  release built from what two ports found in their first week: three vectors
+  whose bytes and projection disagreed, a flags row that read two ways, an
+  accept tier that could not see a wrong value, and a merge obligation with no
+  fixture. Two design questions are answered with a decision and a `0.21`
+  milestone rather than syntax. Ends with what execution changed, which was
+  mostly what `0.19` had left behind.
 
 ## License
 

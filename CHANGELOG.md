@@ -60,7 +60,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.20] — unreleased
+## [0.20] — 2026-09-14
 
 **A repair-and-vector release, and two implementations are waiting on it.**
 Three vectors whose bytes and projection disagreed, one flags row that read two
