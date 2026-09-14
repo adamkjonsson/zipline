@@ -560,8 +560,9 @@ Release:
       removals plus additions, whatever the numbers turn out to be.
 - [x] `ruff check` and `ruff format` clean.
 - [x] `CHANGELOG.md` `[0.20]` dated, with the three vectors named under `Fixed`.
-- [ ] Both implementations told before the tag.
-- [ ] Tag `v0.20`, on the merge commit, where `v0.19` sits.
+- [x] Both implementations told before the tag. *(Told after it, on the merged
+      commit, so the comments could point at `v0.20` rather than at a branch.)*
+- [x] Tag `v0.20`, on the merge commit, where `v0.19` sits.
 
 ---
 
