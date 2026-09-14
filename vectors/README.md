@@ -112,6 +112,19 @@ so neither a JSON parse nor a registry lookup notices. Two of that fixture's fou
 members were out of a conformant reader's accept tier for a reason unrelated to
 what the fixture exists to test.
 
+**Every `.jsonl` is what its `.zpf` projects to**, and since `0.20` that is
+enforced too. The two faces are still written independently — the bytes from a
+field-by-field description, the projection by hand from the mapping — because an
+independent second statement is what gives their agreement meaning. But three
+vectors shipped with the faces disagreeing (#141, defects 5 and 6), and nothing
+could see it: the `.hex` is generated from the description that made the wrong
+byte, and `check.py` parses no block body. So [`build.py`](build.py), which
+built the bytes and knows every value it wrote, projects each block by the
+mapping — aliases, enum labels, flag tokens, base64, the four escapes — and
+refuses to register a vector whose projection is not its `.jsonl`. The 40
+hand-written projections are that projector's test suite as much as it is
+theirs.
+
 It hard-fails rather than warning. Session fan-out shipped in `0.13` as a
 *Clarified* item with nothing exercising it, and the gap survived a whole release
 until an implementation reviewed it; an advisory line is exactly what gets

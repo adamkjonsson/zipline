@@ -136,6 +136,19 @@ uncovered hole. No option and no block is added. Scope and reasoning in
 
 ### Added
 
+- **The suite compares a vector's two faces at registration** — a note on the
+  suite, not the format. Every option and block `build.py` emits now carries
+  the logical value it wrote; a projector renders it by the mapping, including
+  the four escapes; and `vector()` refuses a vector whose projection is not its
+  hand-written `.jsonl`, naming the block, the key and both values. The `.jsonl`
+  files stay hand-authored — single-sourcing them would have removed the
+  disagreement by removing the second opinion. Validated by reverting each of
+  #141's three defects on a scratch copy and seeing the build refuse each.
+  `o_spans` and `o_input_extents` now take `(source, session, pid, …)`, the
+  logical order every prose statement uses, rather than the bytes' alignment
+  order that caught defect 6. Three dead helpers for options `0.19` removed —
+  `o_origin`, `o_file_flags`, `o_seq_basis` — are gone.
+
 ---
 
 ## [0.19] — 2026-09-05

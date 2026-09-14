@@ -311,10 +311,12 @@ cannot see it by design: ground rule 2 keeps it from parsing block bodies, and
 comparing the two faces is exactly that. The capability check saw `0x0063`
 present and was satisfied. So `.zpf` ↔ `.jsonl` agreement was unguarded by
 construction, and this is the third release running in which such a disagreement
-surfaced downstream (defect 4 was the last). The structural fix is `0.20`'s
-own, and lands after this one: `build.py` compares the two faces at
-registration, so a vector whose bytes and projection disagree fails the build
-rather than a port.
+surfaced downstream (defect 4 was the last). `0.20` makes `build.py` compare
+the two faces at registration — every option and block now carries the logical
+value it wrote, a projector renders that by the mapping, and `vector()` refuses
+a vector whose projection is not its `.jsonl` — so a disagreement fails the
+build rather than a port. It was seen to refuse both of these on a scratch
+revert before it was trusted.
 
 ---
 
@@ -362,8 +364,10 @@ flagged as the likeliest place for it.
 The one value in `build.py`; the `.zpf` and `.hex` regenerated; no `.jsonl`
 changed. The summary and README row now say *identity span*, and the stale
 spellings are in `RETIRED_CLAIMS`, where they reproduce against `v0.19`. With
-the structural fix, `0.20` also changes `o_spans` to take its triple in logical
-order, so the class of mistake goes with the instance.
+the structural fix, `0.20` also changes `o_spans` and `o_input_extents` to take
+their triples in logical order, `(source, session, pid, …)`, so the class of
+mistake goes with the instance — and the face check was seen to refuse this
+defect too, on a scratch revert.
 
 ---
 
