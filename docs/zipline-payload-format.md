@@ -457,9 +457,11 @@ never changing the algorithm.
 - Pure ACK segments (no payload) carry ordering information but no bytes; store
   them as zero-length records (or fold their `ack` into the next data record)
   so their happens-before edges aren't lost.
-- SACK/retransmission/overlap are resolved by the *reassembler* before records
-  are emitted; the format records the reassembled result and its favor-old
-  overlap policy, not raw retransmits.
+- SACK, retransmission, duplication and overlap are resolved by the
+  *reassembler* before records are emitted; the format records the reassembled
+  result and its favor-old overlap policy, not the raw segments. Whether the
+  *sender* resent is kept as the `retransmit` flag (see [enums](#enums)); what
+  the reassembler discarded is an Undecoded block.
 - A **mid-stream** capture (handshake never seen) needs no special handling for
   *ordering* — the writer simply omits `isn` (it is responsible for confirming the
   SYN is genuinely absent rather than merely delayed before declaring a
@@ -1651,8 +1653,8 @@ stamp could). Consequences:
 
 - A single-packet record uses that packet's time; a zero-length pure-ACK record
   uses its ACK segment's time.
-- Under the favor-old overlap policy, a later retransmit that contributes no
-  *accepted* bytes does not move `timestamp`.
+- Under the favor-old overlap policy, a later segment — retransmitted or
+  duplicated — that contributes no *accepted* bytes does not move `timestamp`.
 - A **decoded** record inherits its `timestamp` from the data it is built from:
   the timestamp of the last source element in its span set — when the unit became
   complete. That source is transport bytes in a one-step decode, or itself a
@@ -1767,8 +1769,8 @@ no block: the stream the reassembler produced is a transport layer, whose offset
 are hole-inclusive, so a missing segment already occupies a range no record covers
 and the sequence numbers already carry its extent. What the block adds at that
 position is the other class: bytes that *are* in the capture and did not reach the
-output, an overlapping retransmit the reassembler discarded, which nothing else in
-the file can express.
+output — an overlapping segment the reassembler discarded, retransmitted or
+duplicated — which nothing else in the file can express.
 
 **And against a `capture` source it discharges no coverage obligation, nor
 creates one.** The [coverage guarantee](#coverage-honesty-undecoded-blocks) is
@@ -2331,9 +2333,22 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0004` | `rst`        | TCP RST seen                                             |
 | `0x0008` | `syn`        | TCP SYN — a zero-length handshake-timing record (see [Handshake records](#record-0x20)) |
 | `0x0010` | `urg`        | TCP URG seen                                             |
-| `0x0040` | `retransmit` | retransmission/overlap was resolved inside this record   |
+| `0x0040` | `retransmit` | the sender **resent** bytes of this record's range — a retransmission — and the reassembler resolved it inside this record (see below) |
 | `0x0080` | `message`    | message boundary: the record is exactly one transport message (a UDP datagram, an SCTP message, …) |
 | `0xFF20` | —            | reserved, MUST be written 0, and MUST be ignored on read; a bit nonetheless set is preserved through a round-trip (as a hex token in JSONL), never interpreted |
+
+**`retransmit` names the sender's act, not the reassembler's.** A copy of one
+transmission — every packet seen twice through a mirror port, a two-interface
+capture, a veth pair — is not a retransmission: the sender sent once, and the
+flag is not set, however the reassembler dealt with the copy. What the
+reassembler *discarded*, whether a retransmitted segment or a duplicated one, has
+its own home: an [Undecoded](#undecoded-0x21) block against the `capture` source.
+The two mechanisms split cleanly — the flag says what the sender did, the block
+says what the reassembler dropped. How a producer tells a copy from a
+retransmission is its own affair (the TCP Timestamps option is one way, and is
+not always negotiated); a producer that **cannot** tell them apart SHOULD treat
+the repeat as a retransmission, which is the conservative reading and what every
+producer did before this paragraph.
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an

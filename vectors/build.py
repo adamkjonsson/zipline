@@ -2200,7 +2200,8 @@ vector(
     "accept",
     "An Undecoded block in a CAPTURE-SOURCED file. The stage is the "
     "reassembler and the input is the capture itself: it discarded an "
-    "overlapping retransmit it could not resolve, and says so rather than "
+    "overlapping segment it could not resolve -- retransmitted or duplicated, "
+    "the block does not say and need not -- and says so rather than "
     "leaving the region unaccounted for. Barred before 0.15 on the unstated "
     "assumption that capture-sourced meant no transform had run -- but "
     "reassembly IS a transform, and a destructive one, so the prohibition read "
@@ -2970,8 +2971,9 @@ vector(
     "a second account of the same missing bytes with no rule for which to "
     "believe, which is the same contradiction that bars a Discontinuity from a "
     "transport stream. The bytes-exist class stays available and is the half "
-    "that adds something: an overlapping retransmit the reassembler discarded "
-    "exists in the pcap and is expressible nowhere else.",
+    "that adds something: an overlapping segment the reassembler discarded, "
+    "retransmitted or duplicated, exists in the pcap and is expressible "
+    "nowhere else.",
     "Undecoded (0x21) -- against a capture source only the bytes-exist class",
     [
         file_header(),

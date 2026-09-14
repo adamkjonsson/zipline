@@ -105,6 +105,33 @@ uncovered hole. No option and no block is added. Scope and reasoning in
   that no longer exist. Six spellings join `RETIRED_CLAIMS`, each reproducing
   against `v0.19`.
 
+### Changed
+
+- **`retransmit` names the sender's act, not the reassembler's**
+  ([#142](https://github.com/adamkjonsson/zipline/issues/142)). The flags row
+  said *retransmission/overlap was resolved inside this record*, and two
+  passages used *retransmit* for anything the reassembler threw away. The two
+  readings agree on every capture the format had been tested against and come
+  apart on a **duplicated capture** — a mirror port, a two-interface capture, a
+  veth pair, where every packet is seen twice and the sender resent nothing:
+  under one reading no record carries the flag, under the other every record
+  does. The row now says the flag means the **sender resent** bytes of the
+  record's range. A copy of one transmission is not a retransmission and does
+  not set it; what the reassembler *discarded*, retransmitted or duplicated, is
+  an Undecoded block against the `capture` source, which it always was — so the
+  flag says what the sender did and the block says what the reassembler dropped,
+  and nothing is lost. Decided against packeteer's `tcp_dup_ts.pcap` (10
+  duplicates, same TSval) and `tcp_lossy_ts.pcap` (16 retransmissions, later
+  TSval). The row does not name TSval — that is one producer's method and the
+  option is not always negotiated. **New keyword:** a producer that *cannot* tell
+  a copy from a retransmission **SHOULD** treat the repeat as a retransmission,
+  which is what every producer did under the old row; the entry is in
+  `NORMATIVE_ADDITIONS`. The timestamp rule, §Undecoded and the Caveats bullet
+  now say *retransmitted or duplicated* where they said *retransmit*, and two
+  vector summaries follow. `undecoded-in-capture`'s `reason: overlap-discarded`
+  is unchanged — it names the reassembler's act, which is what the block is for.
+  No vector: a reader treats the bit identically either way.
+
 ### Clarified
 
 ### Added

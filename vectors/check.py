@@ -306,7 +306,22 @@ NORMATIVE_REMOVALS = (
 # existing rules already force is a Clarified line; one that binds a producer to
 # something no existing rule binds it to is a Changed line. Both belong here, but
 # the why must say which.
-NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = ()
+NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
+    # 0.20 (#142). The retransmit flag's row read two ways -- the sender resent,
+    # or the reassembler discarded an overlap -- and they come apart on a
+    # duplicated capture, where every packet is seen twice and the sender resent
+    # nothing. The row now says it names the sender's act; this is the sentence
+    # for the producer that cannot tell a copy from a retransmission.
+    (
+        r"a producer that \*\*cannot\*\* tell them apart SHOULD treat the repeat as a "
+        r"retransmission",
+        {"SHOULD": 1},
+        "the document did not say which act the flag names, so it could not say "
+        "what to do when the producer cannot tell; treating the repeat as a "
+        "retransmission is what every producer did under the old row, and the "
+        "SHOULD keeps that the default rather than making silence the answer",
+    ),
+)
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
 # Session fan-out shipped in 0.13 as a Clarified item with nothing exercising it,
@@ -692,6 +707,27 @@ RETIRED_CLAIMS = {
         91,
         "a reassembly record is a byte run AND carries a decoder_id; the "
         "distinction is the layer, not the presence of the field",
+    ),
+    # 0.20 (#142). The flags row said "retransmission/overlap", and two passages
+    # used "retransmit" for anything the reassembler threw away -- which on a
+    # duplicated capture flags a session in which the sender resent nothing.
+    "retransmit-means-overlap-resolved": (
+        (
+            r"retransmission/overlap was resolved inside this record",
+            r"a later retransmit that contributes no",
+            # the specification, build.py and so manifest.json
+            r"an overlapping retransmit the reassembler discarded",
+            # build.py, and so manifest.json
+            r"overlapping retransmit it could not resolve",
+            # vectors/README.md
+            r"declaring an overlapping retransmit it discarded",
+        ),
+        "0.20",
+        142,
+        "retransmit names the sender's act: the sender resent bytes of this "
+        "record's range. A copy of one transmission is not a retransmission and "
+        "does not set it; what the reassembler discarded, retransmitted or "
+        "duplicated, is an Undecoded block against the capture source",
     ),
 }
 
