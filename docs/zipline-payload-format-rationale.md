@@ -287,17 +287,15 @@ This is not a backlog. Planned work lives in the
 
   There is no option to promote on correctness grounds: **every mandatory option
   in this document is *conditionally* mandatory** — `isn` when the handshake was
-  seen, `decoder_id` when a decoder produced the record, `spans` when the file
-  is a decode
-  stage, `origin` when it is a pass-through, `sequenced_basis` on a hint-less
-  `SEQUENCED` session, `reason_class` on a non-canonical reason. A body field is
+  seen, `decoder_id` when a decoder produced the record, `spans` when the
+  record is `zpf`-sourced, `reason_class` on a non-canonical reason. A body field is
   always present, so each would need a sentinel for "absent" — and absence here
   *carries meaning*: no `isn` means the capture began mid-stream and the origin is
   unknowable, no `decoder_id` means the record is a byte run, no `tcp_role` means
   unknown rather than responder. A sentinel would also collide with a legal value
   (`isn = 0` is a real ISN). The same block type additionally serves several file
-  kinds — `origin` is required in a pass-through and forbidden on a
-  capture-sourced stream — and a body cannot vary by file kind.
+  kinds — `spans` is required on a `zpf`-sourced record and absent on a
+  capture-sourced one — and a body cannot vary by file kind.
 
   The strongest *efficiency* candidates are therefore not the mandatory options
   but `seq_start` and `ack`, near-universal in a TCP file and costing 8 bytes each
@@ -321,10 +319,10 @@ This is not a backlog. Planned work lives in the
   sessions that motivated the request (multi-party UDP, chat) supply neither.
   RTP-style protocols supply only the first, which yields no cross-participant
   edges at all. Those cases are served instead by a producer asserting the order
-  and recording `sequenced_basis` (see
+  with `SEQUENCED` (see
   [Sequenced
-  files](zipline-payload-format.md#sequenced-files-precomputed-order)). Worth
-  revisiting for any
+  files](zipline-payload-format.md#sequenced-files-precomputed-order); the basis
+  it once recorded beside the flag went in `0.19`). Worth revisiting for any
   transport that genuinely carries both — SCTP is the concrete one, and is
   tracked as an issue.
 

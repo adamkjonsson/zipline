@@ -87,6 +87,23 @@ uncovered hole. No option and no block is added. Scope and reasoning in
   of the same model in `filtered-decoded`, `isolate-unbound-zpf-stream` and
   `proxy-decoded` went with it, `o_origin` is deleted from `build.py`, and the
   five spellings are now in `RETIRED_CLAIMS`, reproducing against `v0.19`.
+- **The specification itself still carried `0.19`'s deletions in thirteen
+  places.** `origin` — removed from the registry in `0.19` — was still written on
+  both participants of the merge worked example in §Sequenced files, still
+  defined in the JSONL mapping and its alias table, still named in the Conformance
+  violation list, and still **required by a MUST** in the Conformance pass-through
+  bullet, which said a pass-through *carries no `spans`*. Every site now says what
+  `0.19` meant: identity spans. The example's two records carry theirs. The
+  pass-through bullet's MUST now binds to the live rule — *cite, on every record,
+  the input range it was re-emitted from* — so the keyword count does not move,
+  and the guard cannot see a MUST change subject; this line is the record that it
+  did. Likewise the `single_clock` alias row and the flag-bitfield mapping rule
+  (the File Header `flags` option went with `SINGLE_CLOCK`), the File Header
+  options line that still listed `flags`, and the §Sequenced files opener that
+  said a hint-less session *needs a basis — see below* with nothing below. The
+  companion's present-tense list of conditionally mandatory options cited two
+  that no longer exist. Six spellings join `RETIRED_CLAIMS`, each reproducing
+  against `v0.19`.
 
 ### Clarified
 

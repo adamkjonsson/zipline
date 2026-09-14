@@ -617,6 +617,14 @@ RETIRED_CLAIMS = {
             # option that is gone, and a violation described as its absence.
             r"the spans-versus-origin test",
             r"participant carries no origin",
+            # 0.20. The SPECIFICATION kept thirteen references to the option
+            # 0.19 removed -- the merge worked example still wrote it, the
+            # mapping still defined it, and Conformance still required it with
+            # a MUST. None matched the three spellings above. These are the
+            # three that state the rule rather than mention the word.
+            r"`origin` plus offset preservation is its provenance",
+            r"MUST put exactly one\s+\[`origin`\]",
+            r"\*\*`origin`\*\* → a JSON object",
         ),
         "0.19",
         None,
@@ -635,6 +643,9 @@ RETIRED_CLAIMS = {
             r"the producer MUST NOT set SEQUENCED without a \*\*sound basis\*\*",
             # vectors/README.md, and so any harness reading it
             r"A hint-less `SEQUENCED` session with no `sequenced_basis`",
+            # 0.20: the Sequenced-files opener still said so, pointing "below"
+            # at a paragraph 0.19 had deleted
+            r"a hint-less one needs a basis",
         ),
         "0.19",
         None,
@@ -647,6 +658,10 @@ RETIRED_CLAIMS = {
             r"Bit `0x0001` \(\*\*SINGLE_CLOCK\*\*\)",
             # build.py summary, and so manifest.json
             r"\*\*SINGLE_CLOCK\*\* asserts one trustworthy clock across the file",
+            # 0.20: the JSONL alias table and the flag-bitfield mapping rule
+            # still rendered the bit 0.19 removed
+            r"`single_clock`\s*\| File Header `flags` bit",
+            r'`"single_clock"` on `file`',
         ),
         "0.19",
         None,
