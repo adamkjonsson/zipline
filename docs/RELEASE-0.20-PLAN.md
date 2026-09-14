@@ -274,6 +274,50 @@ against `v0.19` where they must report both sites.
    passages, the two `origin` paraphrases — **before** any of it is edited. The
    `RETIRED_CLAIMS` patterns are written from what the grep finds.
 
+**What the grep found (Phase 0, 2026-09-14, against `2c5fa72`).** Sites are in
+the five files `RETIRED_CLAIMS` scans unless marked *(unscanned)*; line numbers
+are pre-edit.
+
+*`retransmit`, for Phase 2* — the row and the three passages the plan named,
+plus two summaries and a README row:
+
+- spec `:2336` — `retransmission/overlap was resolved inside this record`
+- spec `:1655` — `a later retransmit that contributes no *accepted* bytes`
+- spec `:1771` — `an overlapping retransmit the reassembler discarded`
+- spec `:460–462` — `SACK/retransmission/overlap are resolved by the
+  *reassembler*` … `not raw retransmits` (the Caveats bullet; also `:37–40`,
+  which says the same in the introduction and is *not* about the flag)
+- `build.py:2212` (`reassembler-declared`) — `overlapping retransmit it could not
+  resolve`
+- `build.py:2981` (`undecoded-in-capture`) — `an overlapping retransmit the
+  reassembler discarded`
+- `vectors/README.md:189` (`undecoded-in-capture`) — `declaring an overlapping
+  retransmit it discarded`
+- *(unscanned)* `docs/ISSUE_41_ANALYSIS.md:219–220` quotes the row's old
+  meaning as history; `docs/RELEASE-0.16-PLAN.md:58` likewise. Neither is edited.
+
+*`origin`, for Phase 1* — the two paraphrases §Mechanics item 4 named, and
+three softer ones the plan did not know about:
+
+- `build.py:2303` (`mixed-derivation`) — `its participant carries origin, its
+  records carry no spans`
+- `build.py:2309–2310` — `a participant MUST NOT both carry origin and hold
+  records carrying spans`
+- `vectors/README.md:190` — `session 11's participant carries \`origin\``
+- `build.py:1805` (`filtered-decoded`) — `the spans-versus-origin test is what
+  decides that`; the test is now identity-versus-non-identity spans
+- `build.py:3059` and `vectors/README.md:225` (`isolate-unbound-zpf-stream`) —
+  `no origin` / `carries no origin`, vacuously true now that no such option
+  exists, but describing the violation in a model that has moved on
+- `vectors/README.md:188` (`proxy-decoded`) — `no \`spans\` and no \`origin\``,
+  the same shape
+- `build.py:425` — `o_origin` itself is still defined, unused since `0.19`
+  removed `0x0064`; the plan's Phase 3 note says it *is gone*, and it should be
+
+The three softer spellings are fixed in Phase 1 with the two named ones, since
+they are the same stale model in the same scanned files; whether they get
+`RETIRED_CLAIMS` spellings is decided when writing the entry.
+
 ---
 
 ## Phase 1 — #141, the three values (one commit, first)
