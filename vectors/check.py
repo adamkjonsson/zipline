@@ -287,6 +287,27 @@ NORMATIVE_REMOVALS = (
     ),
 )
 
+# Normative statements deliberately ADDED to the specification, with the keywords
+# each brought and why. The other half of the table above.
+#
+# The guard was built for a subtractive release, and until 0.20 a keyword
+# arriving failed the build the same as one leaving. That was an accident of when
+# it was built, not a policy: the guard exists so a rule cannot leave with the
+# paragraph that explained it, and a rule arriving deserves the same record, not
+# a prohibition. So this table has the removals' shape exactly -- a pattern that
+# must be PRESENT in the specification, the keywords it brought, and the argument
+# -- and the expected counts are derived from both tables. A keyword cannot be
+# added without naming the sentence that brought it, and a named sentence absent
+# from the specification fails the check, which is what keeps this from being a
+# knob to turn when the build goes red the other way.
+#
+# The review question for every entry is whether the sentence states a rule the
+# document did not already imply. An entry that spells out a consequence two
+# existing rules already force is a Clarified line; one that binds a producer to
+# something no existing rule binds it to is a Changed line. Both belong here, but
+# the why must say which.
+NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = ()
+
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
 # Session fan-out shipped in 0.13 as a Clarified item with nothing exercising it,
 # and nobody noticed until an implementation reviewed the release -- so a purely
@@ -1099,10 +1120,12 @@ def check_anchor_links() -> list[str]:
 def check_normative_split() -> list[str]:
     """Keep every rule in the specification, and let only the argument move.
 
-    Three parts. The specification's normative keyword counts must match `v0.18`
-    less whatever `NORMATIVE_REMOVALS` accounts for, so a MUST cannot leave with
-    the paragraph that explains it. Every removal it names must genuinely be gone,
-    so the table cannot be padded to absorb a loss it does not describe. And the
+    Four parts. The specification's normative keyword counts must match `v0.18`
+    less whatever `NORMATIVE_REMOVALS` accounts for plus whatever
+    `NORMATIVE_ADDITIONS` accounts for, so a MUST cannot leave with the paragraph
+    that explains it, and cannot arrive without an argument. Every removal it
+    names must genuinely be gone, and every addition genuinely present, so
+    neither table can be padded to absorb a change it does not describe. And the
     companion must carry **no** normative keyword at all: a reader who finds a MUST
     in the rationale document has found one the specification lost.
 
@@ -1111,22 +1134,32 @@ def check_normative_split() -> list[str]:
     """
     out = []
     spec = read_text(SPEC)
+    flat = re.sub(r"\s+", " ", spec)
 
     for pattern, _kws, why in NORMATIVE_REMOVALS:
-        if re.search(pattern, re.sub(r"\s+", " ", spec)):
+        if re.search(pattern, flat):
             out.append(
                 f"removal '{pattern[:48]}...' names a sentence still in the specification "
                 f"-- the table accounts for a loss that did not happen ({why[:60]}...)"
             )
 
+    for pattern, _kws, why in NORMATIVE_ADDITIONS:
+        if not re.search(pattern, flat):
+            out.append(
+                f"addition '{pattern[:48]}...' names a sentence not in the specification "
+                f"-- the table accounts for a gain that did not happen ({why[:60]}...)"
+            )
+
     for kw, base in sorted(NORMATIVE_V018.items()):
-        want = base - sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_REMOVALS)
+        want = expected_normative(kw)
         got = len(re.findall(r"\b" + kw.replace(" ", r"\s+") + r"\b", spec))
         if got != want:
-            verb = "lost" if got < want else "gained"
+            verb, table = (
+                ("lost", "NORMATIVE_REMOVALS") if got < want else ("gained", "NORMATIVE_ADDITIONS")
+            )
             out.append(
                 f"specification {verb} a normative keyword: {kw} is {got}, expected {want} "
-                f"(v0.18 had {base}) -- extraction moves the argument and leaves the rule"
+                f"(v0.18 had {base}) -- name the sentence in {table}, with why"
             )
 
     if os.path.exists(RATIONALE):
@@ -1142,16 +1175,28 @@ def check_normative_split() -> list[str]:
                 )
 
     if not out:
-        counts = ", ".join(
-            f"{k} {v - sum(x.get(k, 0) for _p, x, _w in NORMATIVE_REMOVALS)}"
-            for k, v in sorted(NORMATIVE_V018.items())
-        )
+        counts = ", ".join(f"{k} {expected_normative(k)}" for k in sorted(NORMATIVE_V018))
         home = "companion clean" if os.path.exists(RATIONALE) else "no companion yet"
         print(
             f"  normative split: {counts} -- v0.18 less "
-            f"{len(NORMATIVE_REMOVALS)} accounted removal(s), {home}"
+            f"{len(NORMATIVE_REMOVALS)} accounted removal(s) plus "
+            f"{len(NORMATIVE_ADDITIONS)} accounted addition(s), {home}"
         )
     return out
+
+
+def expected_normative(kw: str) -> int:
+    """Return how many of one keyword the specification should carry today.
+
+    `v0.18`'s frozen count, less what the removals table names, plus what the
+    additions table names. Derived, never typed, so neither table can move a
+    number without a sentence and a reason beside it.
+    """
+    return (
+        NORMATIVE_V018[kw]
+        - sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_REMOVALS)
+        + sum(k.get(kw, 0) for _p, k, _w in NORMATIVE_ADDITIONS)
+    )
 
 
 def spec_tables() -> tuple[dict[str, str], dict[str, str]]:
