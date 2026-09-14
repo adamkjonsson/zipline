@@ -990,8 +990,9 @@ with an explicit **[Undecoded block](#undecoded-0x21)** rather than silently
 dropping bytes. An Undecoded block names a `[off_start, off_end)` range of a
 predecessor stream and a `reason`; it carries **no payload**, only a reference, so
 a consumer that wants the bytes follows the span back toward the capture. This
-gives the **coverage guarantee**: in a decode stage's output, every region of an
-input participant stream is covered **at least once** by a decoded record's
+gives the **coverage guarantee**: in a derived file's output — a decode stage's,
+or a pass-through's, whose identity spans cite their input just the same — every
+region of an input participant stream is covered **at least once** by a record's
 `spans` *or* marked Undecoded — never silently dropped, and never both. *At least
 once* is deliberate: two records MAY cite one region (see
 [`spans`](#tlv-option-framing--id-registry)), and overlap drops nothing. *Never
@@ -2622,7 +2623,16 @@ the number went stale with the content.
   that layer has them — and MUST cite, on every record, the input range it was
   re-emitted from. Preserving a **transport** layer, it MUST carry TCP
   ordering hints (`seq_start`/`ack`) forward (recomputed if records are
-  re-chunked) so gap visibility and `SEQUENCED` verification survive.
+  re-chunked) so gap visibility and `SEQUENCED` verification survive. Citing the
+  input makes the file answerable for it: the
+  [coverage guarantee](#coverage-honesty-undecoded-blocks) binds a pass-through
+  as it binds a decode stage, so a pass-through preserving a transport stream
+  **MUST mark each hole of its input** — a range of the input stream no record
+  covers — with an Undecoded `gap` block naming the input's range, like any
+  other uncovered range. The output's own sequence numbers carrying the same
+  gap does not discharge this: they describe *this* file's stream, and the
+  guarantee is stated against the input's (`merge/`, and its twin
+  `isolate-merge-unmarked-hole`).
 
   **Carrying `decoder_id` forward is keyed on the decoder, not on the layer.**
   Wherever the input's records carry one — a decoded stream, or a transport stream

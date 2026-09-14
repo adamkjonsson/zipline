@@ -321,6 +321,22 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "retransmission is what every producer did under the old row, and the "
         "SHOULD keeps that the default rather than making silence the answer",
     ),
+    # 0.20 (#133). The consequence of 0.19's Package A that no fixture pinned:
+    # a merge's identity spans cite its inputs, and the coverage guarantee makes
+    # a file answerable for every offset of a stream it cites. The guarantee's
+    # own statement was scoped to "a decode stage's output" in two places and
+    # unscoped in two others, so this pins a reading the document leaned to
+    # rather than stating a rule it did not imply. python-zipline is building
+    # to it; merge/ and isolate-merge-unmarked-hole vector it.
+    (
+        r"a pass-through preserving a transport stream \*\*MUST mark each hole of "
+        r"its input\*\*",
+        {"MUST": 1},
+        "the pass-through bullet had every premise -- identity spans, the "
+        "citation, the coverage guarantee -- and left the conclusion to be "
+        "derived from two rules three sections apart, with the guarantee's "
+        "scope stated inconsistently; the MUST states the consequence once",
+    ),
 )
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
@@ -427,6 +443,16 @@ RULES = {
         "every zpf-sourced record carries spans -- a pass-through's are identity "
         "spans, so the rule binds per record with no exception to check",
         "isolate-unbound-zpf-stream",
+    ),
+    # 0.20 (#133). A consequence of the entry above and the coverage guarantee
+    # that 0.19 created without a fixture: an identity span cites the input, so
+    # a merge answers for every offset of the streams it re-emits, holes
+    # included. Could not be added before the vector existed -- a rule with no
+    # vector fails the build, which is the mechanism working.
+    "pass-through-marks-input-holes": (
+        "a pass-through preserving a transport stream marks each hole of its "
+        "input with an Undecoded gap block, as any uncovered input range is marked",
+        "merge",
     ),
     "undecoded-capture-bytes-only": (
         "against a capture source the hole class is unavailable -- "
@@ -1344,45 +1370,63 @@ def walk(raw: bytes) -> Iterator[tuple[int, int, int]]:
         raise Corrupt("trailing bytes")
 
 
-def chain_lines(d: str, n: str) -> list[dict]:
-    """Read one chain file's JSONL projection."""
+def fixture_lines(d: str, n: str) -> list[dict]:
+    """Read one fixture file's JSONL projection."""
     text = read_text(os.path.join(d, f"{n}.jsonl"))
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-def check_chain_digests(d: str) -> list[str]:
-    """Check every declared digest is the real SHA-256 of the file it names."""
+def fixture_digests(
+    d: str, label: str, files: tuple[str, ...], citing: tuple[str, ...]
+) -> list[str]:
+    """Check every digest a fixture's files declare is the real SHA-256 of the sibling named."""
     import hashlib
 
     real = {
         f"{n}.zpf": "sha256:" + hashlib.sha256(read_bytes(os.path.join(d, f"{n}.zpf"))).hexdigest()
-        for n in ("raw", "decoded", "annotated")
+        for n in files
     }
     out = []
-    for n in ("decoded", "annotated"):
-        for o in chain_lines(d, n):
+    for n in citing:
+        for o in fixture_lines(d, n):
             if o.get("type") == "source" and "digest" in o:
                 want = real.get(o["uri"])
                 if want is None:
-                    out.append(f"chain/{n}: cites unknown file {o['uri']}")
+                    out.append(f"{label}/{n}: cites unknown file {o['uri']}")
                 elif o["digest"] != want:
-                    out.append(f"chain/{n}: digest for {o['uri']} is stale")
+                    out.append(f"{label}/{n}: digest for {o['uri']} is stale")
     return out
 
 
-def chain_raw_extents(d: str) -> dict[int, int]:
-    """Reconstruct raw.zpf's per-stream extents from seq_start - (isn + 1)."""
+def anchored_extents(lines: list[dict]) -> dict[tuple[int, int], int]:
+    """Reconstruct each sequence-anchored stream's extent from seq_start - (isn + 1).
+
+    Keyed by (session_id, pid). This is what proves a fixture's hole is really in
+    the sequence numbers rather than merely asserted in a comment, and it is the
+    one arithmetic the three pair checks share: chain's raw.zpf, tunnel's
+    inner.zpf and merge's two inputs are each verified this way against what the
+    next hop cites or declares.
+    """
+    ext: dict[tuple[int, int], int] = {}
+    for k, _start, end in anchored_ranges(lines, keyed=True):
+        ext[k] = max(ext.get(k, 0), end)
+    return ext
+
+
+def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
+    """Each record's [start, end) in its stream's offset space, from seq_start - (isn + 1)."""
     import base64
 
-    isn, ext = {}, {}
-    for o in chain_lines(d, "raw"):
-        if o.get("type") == "participant":
-            isn[o["pid"]] = o["isn"]
-        elif o.get("type") == "record":
-            off = o["seq_start"] - (isn[o["sender_pid"]] + 1)
-            end = off + len(base64.b64decode(o["payload"]))
-            ext[o["sender_pid"]] = max(ext.get(o["sender_pid"], 0), end)
-    return ext
+    isn, out = {}, []
+    for o in lines:
+        if o.get("type") == "participant" and "isn" in o:
+            isn[(o["session_id"], o["pid"])] = o["isn"]
+        elif o.get("type") == "record" and "seq_start" in o:
+            k = (o["session_id"], o["sender_pid"])
+            start = o["seq_start"] - (isn[k] + 1)
+            end = start + len(base64.b64decode(o["payload"]))
+            out.append((k, start, end) if keyed else (start, end))
+    return out
 
 
 def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -1396,21 +1440,34 @@ def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return merged
 
 
-def check_chain_coverage(d: str, ext: dict[int, int]) -> list[str]:
-    """Confirm decoded.zpf accounts for every byte raw.zpf holds."""
-    cov: dict[int, list[tuple[int, int]]] = {}
-    for o in chain_lines(d, "decoded"):
-        for s in o.get("spans", []):
-            cov.setdefault(s["pid"], []).append((s["off_start"], s["off_end"]))
-        if o.get("type") == "undecoded":
-            cov.setdefault(o["pid"], []).append((o["off_start"], o["off_end"]))
+def covers(
+    label: str, lines: list[dict], sess: int, pid: int, want_end: int, source_id: int | None = None
+) -> list[str]:
+    """Confirm one hop accounts for every offset of the input stream it reads.
 
-    out = []
-    for pid, want_end in sorted(ext.items()):
-        merged = merge_ranges(cov.get(pid, []))
-        if merged != [(0, want_end)]:
-            out.append(f"chain: pid {pid} covered {merged}, raw stream is [0,{want_end})")
-    return out
+    Accumulated across the WHOLE file rather than per output session: under
+    fan-out one input stream feeds several output sessions and no single one
+    covers it, which is the property tunnel/inner.zpf exists to show. `source_id`
+    narrows to one input where a hop reads several, as merged.zpf does.
+    """
+    cov: list[tuple[int, int]] = []
+    for o in lines:
+        for sp in o.get("spans", []):
+            if (sp["session_id"], sp["pid"]) == (sess, pid) and source_id in (
+                None,
+                sp["source_id"],
+            ):
+                cov.append((sp["off_start"], sp["off_end"]))
+        if (
+            o.get("type") == "undecoded"
+            and (o["session_id"], o["pid"]) == (sess, pid)
+            and source_id in (None, o["source_id"])
+        ):
+            cov.append((o["off_start"], o["off_end"]))
+    merged = merge_ranges(cov)
+    if merged != [(0, want_end)]:
+        return [f"{label}: covers {merged} of session {sess} pid {pid}, want [0,{want_end})"]
+    return []
 
 
 def check_chain() -> list[str]:
@@ -1421,79 +1478,17 @@ def check_chain() -> list[str]:
     d = os.path.join(HERE, "chain")
     if not os.path.isdir(d):
         return ["chain/ missing"]
-    ext = chain_raw_extents(d)
-    out = check_chain_digests(d) + check_chain_coverage(d, ext)
+    ext = anchored_extents(fixture_lines(d, "raw"))
+    out = fixture_digests(d, "chain", ("raw", "decoded", "annotated"), ("decoded", "annotated"))
+    decoded = fixture_lines(d, "decoded")
+    for (sess, pid), end in sorted(ext.items()):
+        out += covers("chain/decoded", decoded, sess, pid, end)
     if not out:
         print(
             f"  chain: 3 files, digests match, coverage complete "
-            f"({', '.join(f'pid {p} [0,{e})' for p, e in sorted(ext.items()))})"
+            f"({', '.join(f'pid {p} [0,{e})' for (_s, p), e in sorted(ext.items()))})"
         )
     return out
-
-
-def tunnel_lines(d: str, n: str) -> list[dict]:
-    """Read one tunnel file's JSONL projection."""
-    text = read_text(os.path.join(d, f"{n}.jsonl"))
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
-
-
-def tunnel_digests(d: str) -> list[str]:
-    """Check each hop cites the real SHA-256 of the file before it."""
-    import hashlib
-
-    real = {
-        f"{n}.zpf": "sha256:" + hashlib.sha256(read_bytes(os.path.join(d, f"{n}.zpf"))).hexdigest()
-        for n in ("outer", "packets", "inner", "http")
-    }
-    out = []
-    for n in ("packets", "inner", "http"):
-        for o in tunnel_lines(d, n):
-            if o.get("type") == "source" and "digest" in o:
-                want = real.get(o["uri"])
-                if want is None:
-                    out.append(f"tunnel/{n}: cites unknown file {o['uri']}")
-                elif o["digest"] != want:
-                    out.append(f"tunnel/{n}: digest for {o['uri']} is stale")
-    return out
-
-
-def tunnel_covers(d: str, stage: str, sess: int, pid: int, want_end: int) -> list[str]:
-    """Confirm one hop accounts for every offset of the input stream it reads.
-
-    Accumulated across the WHOLE file rather than per output session: under
-    fan-out one input stream feeds several output sessions and no single one
-    covers it, which is the property inner.zpf exists to show.
-    """
-    cov: list[tuple[int, int]] = []
-    for o in tunnel_lines(d, stage):
-        for s in o.get("spans", []):
-            if (s["session_id"], s["pid"]) == (sess, pid):
-                cov.append((s["off_start"], s["off_end"]))
-        if o.get("type") == "undecoded" and (o["session_id"], o["pid"]) == (sess, pid):
-            cov.append((o["off_start"], o["off_end"]))
-    merged = merge_ranges(cov)
-    if merged != [(0, want_end)]:
-        return [f"tunnel/{stage}: covers {merged} of session {sess} pid {pid}, want [0,{want_end})"]
-    return []
-
-
-def tunnel_inner_extent(d: str, sess: int, pid: int) -> int:
-    """Reconstruct one inner stream's extent from seq_start - (isn + 1).
-
-    The same arithmetic chain_raw_extents() does, one level further down: it is
-    what proves inner.zpf's hole is really in the sequence numbers rather than
-    merely asserted in a comment.
-    """
-    import base64
-
-    isn, end = None, 0
-    for o in tunnel_lines(d, "inner"):
-        if o.get("type") == "participant" and (o["session_id"], o["pid"]) == (sess, pid):
-            isn = o["isn"]
-        elif o.get("type") == "record" and (o["session_id"], o["sender_pid"]) == (sess, pid):
-            off = o["seq_start"] - (isn + 1)
-            end = max(end, off + len(base64.b64decode(o["payload"])))
-    return end
 
 
 def check_tunnel() -> list[str]:
@@ -1506,20 +1501,23 @@ def check_tunnel() -> list[str]:
     if not os.path.isdir(d):
         return ["tunnel/ missing"]
 
-    out = tunnel_digests(d)
+    out = fixture_digests(
+        d, "tunnel", ("outer", "packets", "inner", "http"), ("packets", "inner", "http")
+    )
     # outer -> packets: the whole capture stream, framing included.
-    out += tunnel_covers(d, "packets", 1, 0, 320)
+    out += covers("tunnel/packets", fixture_lines(d, "packets"), 1, 0, 320)
     # packets -> inner: the union across BOTH output sessions, not either alone.
-    out += tunnel_covers(d, "inner", 5, 0, 150)
+    out += covers("tunnel/inner", fixture_lines(d, "inner"), 5, 0, 150)
     # inner -> http: flow A only; session 11 is not an input to that hop.
-    out += tunnel_covers(d, "http", 10, 0, 110)
+    http = fixture_lines(d, "http")
+    out += covers("tunnel/http", http, 10, 0, 110)
 
     # The inner stream's own extent, re-derived from the sequence numbers, must
     # agree with what the next hop declares it to be.
-    derived = tunnel_inner_extent(d, 10, 0)
+    derived = anchored_extents(fixture_lines(d, "inner"))[(10, 0)]
     declared = [
         e["extent"]
-        for o in tunnel_lines(d, "http")
+        for o in http
         if o.get("type") == "session_end"
         for e in o.get("input_extents", [])
         if (e["session_id"], e["pid"]) == (10, 0)
@@ -1534,6 +1532,57 @@ def check_tunnel() -> list[str]:
         print(
             f"  tunnel: 4 files, digests match, coverage complete "
             f"(outer [0,320) -> packets [0,150) fan-out -> inner flow A [0,{derived}))"
+        )
+    return out
+
+
+def check_merge() -> list[str]:
+    """Verify the merge against its inputs: digests, the hole, and its coverage.
+
+    The third pair check, and the one #133 asked for. Each input's stream extent
+    is re-derived from its own isn and seq_start; a.zpf's records must NOT cover
+    that extent on their own, or the fixture has no hole and proves nothing;
+    merged.zpf's identity spans plus its Undecoded block must cover each input
+    stream exactly, per source; and what its Session End declares must be the
+    derived number. All of it from the projections -- nothing here parses a
+    block body.
+    """
+    d = os.path.join(HERE, "merge")
+    if not os.path.isdir(d):
+        return ["merge/ missing"]
+
+    out = fixture_digests(d, "merge", ("a", "b", "merged"), ("merged",))
+    inputs = {1: fixture_lines(d, "a"), 2: fixture_lines(d, "b")}
+    merged = fixture_lines(d, "merged")
+    ext = {src: anchored_extents(lines) for src, lines in inputs.items()}
+
+    # The hole must be real: a.zpf's own records leave part of [0,50) uncovered.
+    a_cov = merge_ranges(anchored_ranges(inputs[1]))
+    (_a_key, a_end), *_ = ext[1].items()
+    if a_cov == [(0, a_end)]:
+        out.append("merge/a: its records cover its whole stream -- there is no hole to mark")
+    hole = [(x, y) for (_, x), (y, _) in zip(a_cov, a_cov[1:], strict=False)]
+
+    declared = {
+        (e["source_id"], e["session_id"], e["pid"]): e["extent"]
+        for o in merged
+        if o.get("type") == "session_end"
+        for e in o.get("input_extents", [])
+    }
+    for src, streams in sorted(ext.items()):
+        for (sess, pid), end in sorted(streams.items()):
+            out += covers("merge/merged", merged, sess, pid, end, source_id=src)
+            if declared.get((src, sess, pid)) != end:
+                out.append(
+                    f"merge/merged: input stream (source {src}, session {sess}, pid {pid}) "
+                    f"is [0,{end}) by seq_start - (isn + 1), but Session End declares "
+                    f"{declared.get((src, sess, pid))}"
+                )
+
+    if not out:
+        print(
+            f"  merge: 3 files, digests match, a.zpf's hole {hole} is in its sequence "
+            f"numbers, merged.zpf covers both inputs exactly and declares their extents"
         )
     return out
 
@@ -1645,7 +1694,7 @@ def check_extents(v: dict) -> list[str]:
             )
     if out:
         return out
-    jl = chain_lines(os.path.join(HERE, name), name)
+    jl = fixture_lines(os.path.join(HERE, name), name)
     declared = sorted((o["session_id"], o["pid"]) for o in jl if o.get("type") == "participant")
     named = sorted((e["session_id"], e["pid"]) for e in v["extents"])
     if named != declared:
@@ -1749,6 +1798,7 @@ def main() -> int:
 
     failures += check_chain()
     failures += check_tunnel()
+    failures += check_merge()
     failures += check_capability_coverage(manifest)
     failures += check_jsonl_keys()
     failures += check_retired_claims()

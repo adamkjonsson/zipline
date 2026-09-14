@@ -145,8 +145,39 @@ uncovered hole. No option and no block is added. Scope and reasoning in
   with each other (§Referencing's one sentence names both shapes, and only one
   of them mentioned it), and say silence is conformant. No text in the
   specification changes.
+- **A pass-through preserving a transport stream MUST mark each hole of its
+  input** ([#133](https://github.com/adamkjonsson/zipline/issues/133)). `0.19`'s
+  Package A made every `zpf`-sourced record carry `spans`; a merge writes
+  identity spans; an identity span cites the input; and the coverage guarantee
+  makes a file answerable for every offset of a stream it cites. So a merge owes
+  an Undecoded `gap` block per hole in its input, and before `0.19` it owed
+  nothing of the kind. The consequence was derivable from two rules three
+  sections apart and stated nowhere — and the guarantee's own statement was
+  scoped to *a decode stage's output* in §Coverage honesty and the Conformance
+  decoded-record bullet, while §Session End and §Layers stated it for every
+  input offset. The pass-through bullet of §Conformance now states it once, as
+  a MUST (in `NORMATIVE_ADDITIONS`), and §Coverage honesty says *a derived
+  file's output — a decode stage's, or a pass-through's*. The design fork was
+  real: a transport-layer pass-through's own sequence numbers carry the same
+  gap, and one could argue the block restates them. That would be an exemption
+  — a new rule shape in a release that adds none — and the one implementation
+  with a `merge_files` has already built to the obligation as written. If the
+  blocks prove pure noise on real merges, the fixture is what will show it.
 
 ### Added
+
+- **The `merge/` fixture and its negative twin `isolate-merge-unmarked-hole`**
+  ([#133](https://github.com/adamkjonsson/zipline/issues/133)). Two
+  single-direction capture-sourced inputs, `a.zpf` with a real hole in its
+  sequence numbers, merged into one SEQUENCED session whose every record carries
+  an identity span and which marks the hole with an Undecoded `gap` block. The
+  twin omits the block and is a single file on the isolate tier, because
+  `input_extents` on the Session End makes the uncovered range visible from the
+  output alone — the property Package D-pair would trade away. `RULES` gains
+  `pass-through-marks-input-holes`; `check.py` gains `check_merge`, the third
+  pair check, and the three now share one digest check, one extent arithmetic
+  and one coverage union rather than two copies of each. **55 vectors, 35
+  options, 27 rules.**
 
 - **`extents` in `manifest.json`, mandatory on every single-file accept vector**
   ([#140](https://github.com/adamkjonsson/zipline/issues/140) part 2). A list of

@@ -1688,6 +1688,41 @@
       "has_jsonl": false
     },
     {
+      "name": "isolate-merge-unmarked-hole",
+      "tier": "isolate",
+      "violations": 1,
+      "bytes": 816,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0015",
+        "0x0020",
+        "0x0021",
+        "0x0050",
+        "0x0051",
+        "0x0052",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0072",
+        "0x0080",
+        "0x00C1"
+      ],
+      "summary": "merge/merged.zpf with its gap block omitted: a merge whose input stream has a hole at [16,35) that nothing in the output accounts for. The records carry identity spans, so the file cites a.zpf's stream and is answerable for every offset of it; its Session End declares that stream 50 long; its spans cover [0,16) and [35,50); and no Undecoded block names the rest. That the output's own sequence numbers jump from 1017 to 1036 does not help -- they describe this file's stream, and the guarantee is stated against the input's. It is a single file, not a pair, BECAUSE input_extents is on the Session End: the declared 50 against a coverage of 31 bytes is the violation, and no input need be opened to see it. That is the property Package D-pair would trade away, and under it this vector would need merge/a.zpf beside it.",
+      "spec_section": "Conformance -- a pass-through marks its input's holes; Coverage honesty",
+      "expect": "MAY reject the file, or isolate session 1. The coverage guarantee fails for input stream (source 1, session 7, pid 0): declared extent 50, covered [0,16) and [35,50), and [16,35) neither spanned nor marked. A reader MUST NOT infer the gap block from the sequence numbers and treat the file as whole; the block is what the producer owes, and its absence is the producer's omission.",
+      "has_jsonl": false
+    },
+    {
       "name": "chain",
       "tier": "accept",
       "violations": 0,
@@ -1842,6 +1877,55 @@
         "packets.hex",
         "packets.jsonl",
         "packets.zpf"
+      ]
+    },
+    {
+      "name": "merge",
+      "tier": "accept",
+      "violations": 0,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x41"
+      ],
+      "options": [
+        "0x0011",
+        "0x0012",
+        "0x0013",
+        "0x0015",
+        "0x0020",
+        "0x0021",
+        "0x0050",
+        "0x0051",
+        "0x0052",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0072",
+        "0x0080",
+        "0x00A0",
+        "0x00C1"
+      ],
+      "bytes": 1388,
+      "summary": "A merge of two single-direction captures into one SEQUENCED session, where one input's stream has a hole: a.zpf's client stream is missing 19 bytes between its two records, visible in its sequence numbers. merged.zpf is a pass-through, so every record carries an identity span into its input -- and citing the input makes the file answerable for it. The coverage guarantee then owes an Undecoded gap block for the hole, naming a.zpf's range [16,35), exactly as a decode stage would owe one; the output's own sequence numbers carrying the same gap does not discharge it, because those speak of this file's stream and the guarantee is stated against the input's. Before 0.19 a merge cited nothing and owed nothing here; the identity span is what changed. Session End declares both input extents, so the obligation is checkable from merged.zpf alone -- which is what lets the negative twin, isolate-merge-unmarked-hole, be a single file.",
+      "spec_section": "Conformance -- a pass-through marks its input's holes; Coverage honesty",
+      "expect": "Accept all three. Each .jsonl is the expected projection; each declared digest is the real SHA-256 of the input it names. A reader that walks merged.zpf's coverage of a.zpf's stream finds [0,16) and [35,50) spanned and [16,35) marked, against a declared extent of 50 -- complete, and never both.",
+      "has_jsonl": true,
+      "files": [
+        "a.hex",
+        "a.jsonl",
+        "a.zpf",
+        "b.hex",
+        "b.jsonl",
+        "b.zpf",
+        "merged.hex",
+        "merged.jsonl",
+        "merged.zpf"
       ]
     }
   ]

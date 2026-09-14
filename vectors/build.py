@@ -5154,11 +5154,350 @@ def emit(d: str, files: dict[str, bytes], label: str, check: bool) -> list[str]:
     return problems
 
 
+# ------------------------------------------------------------------- the merge
+#
+# Two single-direction captures merged into one sequenced session, where one
+# input's stream has a hole. The obligation this pins (#133): a merge is a
+# pass-through, every record it re-emits carries an identity span, an identity
+# span cites the input, and the coverage guarantee makes a file answerable for
+# every offset of an input stream it cites -- so a hole in a preserved
+# transport stream is marked with an Undecoded gap block, like any other
+# uncovered range. Before 0.19 a merge cited nothing and owed nothing.
+#
+# Byte budget, fixed here so every offset below is checkable by hand:
+#   sideA (a.zpf, session 7 / pid 0, isn 1000, the client):
+#     "GET / HTTP/1.1\r\n"       16 bytes at seq 1001  -> offsets [0,16)
+#     "Host: example.com\r\n"    19 bytes LOST         -> the hole [16,35)
+#     "Accept: */*\r\n\r\n"      15 bytes at seq 1036  -> offsets [35,50)
+#   sideB (b.zpf, session 3 / pid 0, isn 5000, the server):
+#     "HTTP/1.1 200 OK\r\n\r\n"  19 bytes at seq 5001  -> offsets [0,19)
+# The hole is real in the sequence numbers: 1001 + 16 = 1017, and the next
+# captured byte is at 1036. merged.zpf's identity spans cover [0,16) and
+# [35,50) of sideA's stream; the gap block covers [16,35); its Session End
+# declares the extent 50, so the obligation is checkable from merged.zpf alone.
+
+MERGE_A1 = b"GET / HTTP/1.1\r\n"  # 16
+MERGE_A2 = b"Accept: */*\r\n\r\n"  # 15, at seq 1036: 19 bytes lost between
+MERGE_B1 = b"HTTP/1.1 200 OK\r\n\r\n"  # 19
+MERGE_KEY = "10.0.0.1:51000 <-> 93.184.216.34:80"
+
+
+def merge_file(name: str, summary: str, blocks: list[Blk], jsonl: list[dict]) -> bytes:
+    return member("merge", name, summary, blocks, jsonl)
+
+
+def merge_output_blocks(a_dg: str, b_dg: str, *, gap: bool) -> list[Blk]:
+    """Build the merged file's blocks, with or without the gap block the merge owes.
+
+    One description for both faces of the obligation, so the negative twin
+    differs from merged.zpf in exactly the block whose absence it tests.
+    """
+    hole = [undecoded(1, 0, 7, 16, 35, [o_reason("gap")])] if gap else []
+    return [
+        file_header(
+            options=[
+                o_produced_by("zpf-merge 1.2"),
+                o_produced_at(1719510000),
+                o_transform_params_digest("sha256:77c1"),
+            ]
+        ),
+        source(1, 1, [o_uri("a.zpf"), o_digest(a_dg)]),
+        source(2, 1, [o_uri("b.zpf"), o_digest(b_dg)]),
+        session(1, [o_proto("tcp"), o_flow_key(MERGE_KEY), o_sess_flags(0x0001)]),
+        participant(1, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        participant(1, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+        # Identity spans: each record cites the range of its input stream it
+        # was re-emitted from, the same range it occupies here.
+        record(
+            1,
+            0,
+            1,
+            1000,
+            MERGE_A1,
+            options=[o_seq_start(1001), o_ack(5001), o_spans([(1, 7, 0, 0, 16)])],
+        ),
+        # THE OBLIGATION: sideA's stream has no bytes at [16,35). The output's
+        # sequence numbers already say so -- 1017 to 1036 -- but the file cites
+        # the input, so it answers for the input's every offset, and this is
+        # the block that answers for these. The twin omits it.
+        *hole,
+        record(
+            1,
+            0,
+            1,
+            1020,
+            MERGE_A2,
+            flags=0x0001,
+            options=[o_seq_start(1036), o_ack(5001), o_spans([(1, 7, 0, 35, 50)])],
+        ),
+        # Stored after both request records: it acks 1051, the end of the
+        # request, so it causally follows them despite the earlier timestamp.
+        record(
+            1,
+            1,
+            2,
+            995,
+            MERGE_B1,
+            flags=0x0001,
+            options=[o_seq_start(5001), o_ack(1051), o_spans([(2, 3, 0, 0, 19)])],
+        ),
+        # input_extents is what makes the twin decidable from one file: the
+        # declared 50 against a coverage of [0,16) + [35,50) is the hole.
+        session_end(1, [o_input_extents([(1, 7, 0, 50), (2, 3, 0, 19)])]),
+        end_block(),
+    ]
+
+
+def merge_output_jsonl(a_dg: str, b_dg: str, *, gap: bool) -> list[dict]:
+    hole = [
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 7,
+            "pid": 0,
+            "off_start": 16,
+            "off_end": 35,
+            "reason": "gap",
+        }
+    ]
+    return [
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-merge 1.2",
+            "produced_at": 1719510000,
+            "transform_params_digest": "sha256:77c1",
+        },
+        {"type": "source", "source_id": 1, "kind": "zpf-input", "uri": "a.zpf", "digest": a_dg},
+        {"type": "source", "source_id": 2, "kind": "zpf-input", "uri": "b.zpf", "digest": b_dg},
+        {"type": "session", "session_id": 1, "proto": "tcp", "key": MERGE_KEY, "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "participant",
+            "session_id": 1,
+            "pid": 1,
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(MERGE_A1),
+            "seq_start": 1001,
+            "ack": 5001,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 0, "off_end": 16}],
+        },
+        *(hole if gap else []),
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1020,
+            "flags": ["psh"],
+            "payload": b64(MERGE_A2),
+            "seq_start": 1036,
+            "ack": 5001,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 0, "off_start": 35, "off_end": 50}],
+        },
+        {
+            "type": "record",
+            "session_id": 1,
+            "sender_pid": 1,
+            "source_id": 2,
+            "ts": 995,
+            "flags": ["psh"],
+            "payload": b64(MERGE_B1),
+            "seq_start": 5001,
+            "ack": 1051,
+            "spans": [{"source_id": 2, "session_id": 3, "pid": 0, "off_start": 0, "off_end": 19}],
+        },
+        {
+            "type": "session_end",
+            "session_id": 1,
+            "input_extents": [
+                {"source_id": 1, "session_id": 7, "pid": 0, "extent": 50},
+                {"source_id": 2, "session_id": 3, "pid": 0, "extent": 19},
+            ],
+        },
+        {"type": "end"},
+    ]
+
+
+def build_merge() -> None:
+    """Build the two inputs and the merge, hashing each input so the merge can cite it."""
+    fixture(
+        "merge",
+        "accept",
+        "A merge of two single-direction captures into one SEQUENCED session, "
+        "where one input's stream has a hole: a.zpf's client stream is missing "
+        "19 bytes between its two records, visible in its sequence numbers. "
+        "merged.zpf is a pass-through, so every record carries an identity span "
+        "into its input -- and citing the input makes the file answerable for "
+        "it. The coverage guarantee then owes an Undecoded gap block for the "
+        "hole, naming a.zpf's range [16,35), exactly as a decode stage would "
+        "owe one; the output's own sequence numbers carrying the same gap does "
+        "not discharge it, because those speak of this file's stream and the "
+        "guarantee is stated against the input's. Before 0.19 a merge cited "
+        "nothing and owed nothing here; the identity span is what changed. "
+        "Session End declares both input extents, so the obligation is checkable "
+        "from merged.zpf alone -- which is what lets the negative twin, "
+        "isolate-merge-unmarked-hole, be a single file.",
+        "Conformance -- a pass-through marks its input's holes; Coverage honesty",
+        "Accept all three. Each .jsonl is the expected projection; each declared "
+        "digest is the real SHA-256 of the input it names. A reader that walks "
+        "merged.zpf's coverage of a.zpf's stream finds [0,16) and [35,50) "
+        "spanned and [16,35) marked, against a declared extent of 50 -- "
+        "complete, and never both.",
+        violations=0,
+    )
+    a = merge_file(
+        "a",
+        "sideA: the client direction, capture-sourced, with a hole. Two records "
+        "at seq 1001 and 1036 on a stream whose origin is 1001; the 19 bytes "
+        "between them were never captured, so offsets [16,35) belong to no "
+        "record.",
+        [
+            file_header(options=[o_creator("zpf-sessionize 1.0")]),
+            source(1, 0, [o_uri("sideA.pcap")]),
+            session(7, [o_proto("tcp")]),
+            participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+            record(7, 0, 1, 1000, MERGE_A1, options=[o_seq_start(1001), o_ack(5001)]),
+            # The hole: 1001 + 16 = 1017, and this record starts at 1036.
+            record(7, 0, 1, 1020, MERGE_A2, flags=0x0001, options=[o_seq_start(1036), o_ack(5001)]),
+            end_block(),
+        ],
+        [
+            {"type": "file", "format": FORMAT, "tick_hz": 1000000, "creator": "zpf-sessionize 1.0"},
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "sideA.pcap"},
+            {"type": "session", "session_id": 7, "proto": "tcp"},
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 0,
+                "endpoint": ["10.0.0.1:51000"],
+                "isn": 1000,
+            },
+            {
+                "type": "record",
+                "session_id": 7,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000,
+                "payload": b64(MERGE_A1),
+                "seq_start": 1001,
+                "ack": 5001,
+            },
+            {
+                "type": "record",
+                "session_id": 7,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1020,
+                "flags": ["psh"],
+                "payload": b64(MERGE_A2),
+                "seq_start": 1036,
+                "ack": 5001,
+            },
+            {"type": "end"},
+        ],
+    )
+    a_dg = "sha256:" + hashlib.sha256(a).hexdigest()
+
+    b = merge_file(
+        "b",
+        "sideB: the server direction, capture-sourced, complete. One record at "
+        "seq 5001 acking 1051, the end of the request.",
+        [
+            file_header(options=[o_creator("zpf-sessionize 1.0")]),
+            source(1, 0, [o_uri("sideB.pcap")]),
+            session(3, [o_proto("tcp")]),
+            participant(3, 0, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+            record(3, 0, 1, 995, MERGE_B1, flags=0x0001, options=[o_seq_start(5001), o_ack(1051)]),
+            end_block(),
+        ],
+        [
+            {"type": "file", "format": FORMAT, "tick_hz": 1000000, "creator": "zpf-sessionize 1.0"},
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "sideB.pcap"},
+            {"type": "session", "session_id": 3, "proto": "tcp"},
+            {
+                "type": "participant",
+                "session_id": 3,
+                "pid": 0,
+                "endpoint": ["93.184.216.34:80"],
+                "isn": 5000,
+            },
+            {
+                "type": "record",
+                "session_id": 3,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 995,
+                "flags": ["psh"],
+                "payload": b64(MERGE_B1),
+                "seq_start": 5001,
+                "ack": 1051,
+            },
+            {"type": "end"},
+        ],
+    )
+    b_dg = "sha256:" + hashlib.sha256(b).hexdigest()
+
+    merge_file(
+        "merged",
+        "The merge: one sequenced session, both directions, every record "
+        "carrying an identity span into its input, and an Undecoded gap block "
+        "for the 19 bytes a.zpf never had. The server's record is stored last "
+        "because it acks the whole request, despite its earlier timestamp.",
+        merge_output_blocks(a_dg, b_dg, gap=True),
+        merge_output_jsonl(a_dg, b_dg, gap=True),
+    )
+
+    # The negative twin, registered here so it cites the inputs' real digests.
+    vector(
+        "isolate-merge-unmarked-hole",
+        "isolate",
+        "merge/merged.zpf with its gap block omitted: a merge whose input "
+        "stream has a hole at [16,35) that nothing in the output accounts for. "
+        "The records carry identity spans, so the file cites a.zpf's stream "
+        "and is answerable for every offset of it; its Session End declares "
+        "that stream 50 long; its spans cover [0,16) and [35,50); and no "
+        "Undecoded block names the rest. That the output's own sequence "
+        "numbers jump from 1017 to 1036 does not help -- they describe this "
+        "file's stream, and the guarantee is stated against the input's. "
+        "It is a single file, not a pair, BECAUSE input_extents is on the "
+        "Session End: the declared 50 against a coverage of 31 bytes is "
+        "the violation, and no input need be opened to see it. That is the "
+        "property Package D-pair would trade away, and under it this vector "
+        "would need merge/a.zpf beside it.",
+        "Conformance -- a pass-through marks its input's holes; Coverage honesty",
+        merge_output_blocks(a_dg, b_dg, gap=False),
+        expect="MAY reject the file, or isolate session 1. The coverage guarantee "
+        "fails for input stream (source 1, session 7, pid 0): declared extent "
+        "50, covered [0,16) and [35,50), and [16,35) neither spanned nor "
+        "marked. A reader MUST NOT infer the gap block from the sequence "
+        "numbers and treat the file as whole; the block is what the producer "
+        "owes, and its absence is the producer's omission.",
+        violations=1,
+    )
+
+
 def main() -> int:
     check = "--check" in sys.argv
     build_chain()
     build_splice()
     build_tunnel()
+    build_merge()
     manifest = []
     problems = []
 

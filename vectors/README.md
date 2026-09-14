@@ -294,10 +294,12 @@ example of the origination duty into a positive test of it.
 
 ## Multi-file fixtures
 
-Two directories are **fixtures** rather than vectors: several files that only mean
-anything together, because what they test is a relationship *between* files.
-`check.py` walks each member exactly as it walks a single-file vector — framing,
-projection, the lot — and adds arithmetic specific to `chain/` on top.
+Four directories are **fixtures** rather than vectors: several files that only
+mean anything together, because what they test is a relationship *between*
+files. `check.py` walks each member exactly as it walks a single-file vector —
+framing, projection, the lot — and adds arithmetic specific to `chain/`,
+`tunnel/` and `merge/` on top: one function each, sharing the digest check, the
+`seq_start − (isn + 1)` extent arithmetic and the coverage union.
 
 ### The splice fixture
 
@@ -422,13 +424,46 @@ against the real sibling, each hop's coverage against its predecessor — the mi
 one accumulated across *both* output sessions — and `inner.zpf`'s flow-A extent
 re-derived from `seq_start - (isn + 1)` and compared with what `http.zpf` declares.
 
+### The merge
+
+`merge/` is the fixture #133 asked for, and the one that pins what `0.19`'s
+Package A created without a vector: **a merge owes an Undecoded `gap` block for
+each hole in its input**.
+
+```
+sideA.pcap ──[sessionize]──▶ a.zpf ──┐
+                                     ├──[merge]──▶ merged.zpf
+sideB.pcap ──[sessionize]──▶ b.zpf ──┘
+```
+
+`a.zpf` is the client direction, and its stream has a hole: two records at
+`seq 1001` and `seq 1036` on a stream whose origin is 1001, so the 19 bytes at
+`[16,35)` were never captured. `b.zpf` is the server direction, complete.
+`merged.zpf` is a pass-through — one SEQUENCED session, both directions, every
+record carrying an **identity span** into its input — and citing the input is
+what makes the file answerable for it. The coverage guarantee then owes a block
+for `[16,35)` of `a.zpf`'s stream exactly as it would a decode stage, and
+`merged.zpf` carries it. Its Session End declares both input extents, so the
+obligation is checkable from the output alone.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `merge/` | *(accept, three files)* The merge above, with the `gap` block. |
+| `isolate-merge-unmarked-hole` | *(isolate)* `merged.zpf` with the `gap` block omitted. A **single file**, because `input_extents` on the Session End makes the uncovered range visible without opening `a.zpf`: the declared 50 against spans covering 31 bytes is the violation. That is the property Package D-pair would trade away, and under it this vector would need `a.zpf` beside it. The output's own sequence numbers jumping from 1017 to 1036 do not discharge the obligation — they describe *this* file's stream, and the guarantee is stated against the input's. |
+
+`check.py` verifies the pair: each input's extent re-derived from its sequence
+numbers, `a.zpf`'s own records seen **not** to cover its stream (so the hole is
+real rather than asserted), `merged.zpf`'s spans plus Undecoded block covering
+each input stream exactly, per source, and its declared `input_extents` equal to
+the derived numbers. It was seen to fail on a `merged.jsonl` with the `gap` line
+removed before it was trusted.
+
 ## Coverage this does not have
 
 Stated so nobody mistakes the suite for complete:
 
-- No causal-merge vectors: no skewed two-file capture, no tie-break case.
 - No truncation vectors, which need a file that ends mid-block.
-- No tunnelled `endpoint` list, no `spans` chunked across several occurrences,
-  no `Custom` block, no Session End.
+- No tunnelled `endpoint` list, and no `spans` chunked across several
+  occurrences of the option.
 - Payloads are short and ASCII; nothing exercises the 64-bit fields near 2⁵³
   where the decimal-string encoding becomes mandatory.
