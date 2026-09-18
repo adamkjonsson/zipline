@@ -488,10 +488,28 @@ RULES = {
     # without anyone saying where the record goes.
     "unplaceable-covers-nothing": (
         "an unplaceable record covers no byte of the stream and contributes "
-        "nothing to the extent -- below the origin, or with no seq_start on a "
-        "sequence-anchored stream. Since 0.19 the RANGE a reader reports for it "
-        "is its own affair; the extent is not",
+        "nothing to the extent -- serially below its predecessor (the origin, "
+        "for the first record), or with no seq_start on a sequence-anchored "
+        "stream. Since 0.19 the RANGE a reader reports for it is its own "
+        "affair; the extent is not. Since 0.21 it anchors nothing either",
         "unplaceable-below-origin",
+    ),
+    # 0.21 (#146). The rule the floor implied and never drew: a record is
+    # measured from its predecessor, not from the origin, so the serial
+    # half-space bounds the DELTA between neighbours and not the stream. Two
+    # vectors, because two readings fail differently: a reader applying the
+    # floor against the origin fails past 2 GiB, and one subtracting without the
+    # modulus fails where the sequence numbers pass through 2**32 -- which is
+    # the commoner shape, and the one check.py's own arithmetic got wrong.
+    "offsets-unwrap-past-2gib": (
+        "a transport stream longer than 2 GiB is placed record by record; a "
+        "record past 2**31 is not below the origin",
+        "stream-past-2gib",
+    ),
+    "offsets-unwrap-through-2**32": (
+        "sequence numbers passing through 2**32 place by signed serial delta; "
+        "the offset keeps counting",
+        "stream-wraps-seq",
     ),
     # 0.18's one rule with a vector. The ordering MUST has never said whether
     # two records may share a seq_start; 0.17's handshake MUST makes the tie
@@ -754,6 +772,23 @@ RETIRED_CLAIMS = {
         "record's range. A copy of one transmission is not a retransmission and "
         "does not set it; what the reassembler discarded, retransmitted or "
         "duplicated, is an Undecoded block against the capture source",
+    ),
+    # 0.21 (#146). The floor was stated against the origin for every record and
+    # then conceded that serial arithmetic cannot decide it past 2**31 -- which
+    # is to say every record more than 2 GiB into a stream read as below the
+    # origin. The concession was the defect: the rule that avoids it (offsets
+    # unwrap along stored order, each record measured from its predecessor) was
+    # one sentence away and the document drew the wrong conclusion instead.
+    "floor-undecidable-past-half-space": (
+        (
+            r"The floor is only decidable within the serial-arithmetic half-space",
+            r"more than 2³¹ below the origin is indistinguishable from one above it",
+        ),
+        "0.21",
+        146,
+        "offsets unwrap along stored order: a record's offset is its predecessor's "
+        "plus the signed serial delta of their seq_starts, the origin being the "
+        "first record's predecessor, so the floor is decidable at any stream length",
     ),
 }
 
@@ -1413,18 +1448,40 @@ def anchored_extents(lines: list[dict]) -> dict[tuple[int, int], int]:
     return ext
 
 
+def serial_delta(a: int, b: int) -> int:
+    """RFC 1982 `a - b` over the u32 sequence space: signed, defined within 2**31."""
+    return ((a - b + 2**31) % 2**32) - 2**31
+
+
 def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
-    """Each record's [start, end) in its stream's offset space, from seq_start - (isn + 1)."""
+    """Each placeable record's [start, end) in its stream's offset space.
+
+    This is the unwrapping rule of Referencing the source by stream offset, and
+    since 0.21 (#146) it is the ONLY arithmetic here: a record's offset is its
+    predecessor's plus the signed serial delta of their seq_starts, the first
+    record's predecessor being the origin, isn + 1. A record serially below its
+    predecessor is unplaceable -- it is left out, and it anchors nothing, so the
+    next record measures from the last placeable one. Plain `seq_start - (isn +
+    1)` was what stood here before, and it returned a negative range on the first
+    fixture whose sequence numbers passed through 2**32 (the Phase 0 probe in
+    RELEASE-0.21-PLAN.md); stream-wraps-seq is the vector that keeps it gone.
+    """
     import base64
 
-    isn, out = {}, []
+    prev: dict[tuple[int, int], tuple[int, int]] = {}  # key -> (seq_start, offset)
+    out = []
     for o in lines:
         if o.get("type") == "participant" and "isn" in o:
-            isn[(o["session_id"], o["pid"])] = o["isn"]
+            prev[(o["session_id"], o["pid"])] = (o["isn"] + 1, 0)
         elif o.get("type") == "record" and "seq_start" in o:
             k = (o["session_id"], o["sender_pid"])
-            start = o["seq_start"] - (isn[k] + 1)
+            seq_prev, off_prev = prev[k]
+            delta = serial_delta(o["seq_start"], seq_prev)
+            if delta < 0:
+                continue  # unplaceable: covers nothing, anchors nothing
+            start = off_prev + delta
             end = start + len(base64.b64decode(o["payload"]))
+            prev[k] = (o["seq_start"], start)
             out.append((k, start, end) if keyed else (start, end))
     return out
 

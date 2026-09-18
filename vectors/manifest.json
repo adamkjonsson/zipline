@@ -1041,7 +1041,7 @@
       ],
       "summary": "The COMMONER unplaceable shape, on its own: a record with no seq_start on a stream whose earlier record has one, so the offset space cannot say where it belongs. 0.17 stated a placement rule for a below-origin record and left this shape silent; 0.18 stated one rule for both and pinned this half inside partially-hinted-sequenced, which 0.19 removed with the sequencing basis. The shape has nothing to do with SEQUENCED -- placement keys on whether a stream is sequence-anchored, not on the flag -- so it is carried here by an ordinary session, which is where it always belonged. Its twin is unplaceable-below-origin, the other shape of one rule.",
       "spec_section": "Referencing the source by stream offset",
-      "expect": "Accept. The .jsonl file is the expected projection, and the declared extents are 6 for pid 0 and 5 for pid 1. pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- it covers no byte of the stream and contributes nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. Which range a reader reports for the record is not pinned; two readers may differ there while both give extent 6. A reader SHOULD report the record, and the suite does not test that it does -- the file breaks no rule, so silence is conformant, exactly as for unplaceable-below-origin, the other shape of the same sentence. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with, and its extent is the accumulation of its payloads.",
+      "expect": "Accept. The .jsonl file is the expected projection, and the declared extents are 6 for pid 0 and 5 for pid 1. pid 0's first record is at [0,6) and its second carries no seq_start on a stream whose first record has one, so it is UNPLACEABLE -- it covers no byte of the stream and contributes nothing, so the extent stays 6 and those six bytes are in no offset at all. A reader that appended them at [6,12) is reading an offset the file does not state. Which range a reader reports for the record is not pinned; two readers may differ there while both give extent 6. A reader SHOULD report the record, and the suite does not test that it does -- the file breaks no rule, so silence is conformant, exactly as for unplaceable-below-origin, the other shape of the same sentence. pid 1 is NOT this rule's case: no record of that participant carries a seq_start, so its stream is not sequence-anchored to begin with, and its extent is the accumulation of its payloads. Since 0.21 the floor is stated against a record's PREDECESSOR rather than the origin, and applies whether or not the participant carries an isn: pid 0 has none, its origin is its first captured byte, and a reader that applied no floor for want of an isn would place the second record somewhere and report more than 6.",
       "has_jsonl": true,
       "extents": [
         {
@@ -1581,9 +1581,75 @@
         "0x0063",
         "0x0070"
       ],
-      "summary": "A below-origin record CARRYING PAYLOAD: seq_start 1000 on a stream whose origin is isn + 1 = 1001. Since 0.19 that is not a violation -- the floor stopped being a MUST NOT when the advisory tier stopped pinning repairs -- but the EFFECT survives and is what this vector pins: the record is UNPLACEABLE, so it covers no byte of the stream and its eight bytes are outside the offset space, excluded from the extent and from every coverage answer. What 0.19 dropped is the exact range a reader reports for it; two readers may differ there and still agree on every extent. A reader that trusts the wrapped offset places it near 2**32 and corrupts the extent for every other record, which is the reading this vector exists to fail.",
+      "summary": "A below-origin record CARRYING PAYLOAD: seq_start 1000 on a stream whose origin is isn + 1 = 1001. Since 0.19 that is not a violation -- the floor stopped being a MUST NOT when the advisory tier stopped pinning repairs -- but the EFFECT survives and is what this vector pins: the record is UNPLACEABLE, so it covers no byte of the stream and its eight bytes are outside the offset space, excluded from the extent and from every coverage answer. What 0.19 dropped is the exact range a reader reports for it; two readers may differ there and still agree on every extent. A reader that trusts the wrapped offset places it near 2**32 and corrupts the extent for every other record, which is the reading this vector exists to fail. Since 0.21 the floor binds each record to its PREDECESSOR, the origin being the first record's, and this is the first-record case of that rule. An unplaceable record anchors nothing: the second record measures from the origin, not from seq_start 1000, so it sits at 0 and the extent is 16 -- a reader that let the first record anchor would put it at 1 and report 17.",
       "spec_section": "Referencing the source by stream offset -- unplaceable records",
       "expect": "Accept. The .jsonl file is the expected projection, and the declared extent is 16. The first record is unplaceable: it contributes nothing to the extent and covers no byte, so the participant's stream is [0,16) -- the two later records -- and the eight bytes of the first are in no offset at all. Which range a reader reports for it is not pinned; that it counts for nothing is. It is NOT deleted: a reader still lists it, still reports its timestamp and payload, and a consumer indexing by anything but offset still sees it. A reader SHOULD report the record, and the suite does not test that it does -- the file breaks no rule, so silence is conformant and a harness asserting a clean accept is right to. Two wrong readings diverge visibly here, where the record carries payload, and would not on a zero-length one: one places the record at 4294967295 and reports extent 4294967303, the other drops it and reports two records where the file has three. Rejecting or isolating is NOT conformant.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 7,
+          "pid": 0,
+          "extent": 16
+        }
+      ]
+    },
+    {
+      "name": "stream-past-2gib",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 352,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0063",
+        "0x0070"
+      ],
+      "summary": "A transport stream that passes 2 GiB in one direction: isn 1000, four eight-byte records at offsets 0, 1 GiB, 2 GiB and 3 GiB, every neighbour one serial step of 2**30 from the last. Under 0.20 the third record was BELOW THE ORIGIN: its seq_start is 2**31 past isn + 1, which serial arithmetic cannot tell from 2**31 before it, and the document said so and drew the wrong conclusion. Since 0.21 offsets unwrap along stored order -- each record is its predecessor's offset plus the signed serial delta of their seq_starts, the origin being the first record's predecessor -- so the third record sits at 2**31 and the fourth at 3 * 2**30. The declared extent is 3221225480. A reader that applies the floor against the origin for every record reports two unplaceable records and an extent of 1073741832, which is the reading this vector exists to fail; a reader that trusts the wrapped offset reports 1073741832 as well, for the third record, and something near 2**32 for the fourth.",
+      "spec_section": "Referencing the source by stream offset -- offsets unwrap along stored order",
+      "expect": "Accept. The .jsonl file is the expected projection, and the declared extent is 3221225480: four placeable records at 0, 2**30, 2**31 and 3 * 2**30, the last eight bytes long. No record is unplaceable. A reader that measures each record against the origin under serial arithmetic finds the third and fourth below it and reports an extent of 1073741832; that reading was the document's own until 0.21 and is wrong now. Rejecting or isolating is NOT conformant: every neighbour is within a window's serial distance of the last, so the ordering rule holds throughout.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 7,
+          "pid": 0,
+          "extent": 3221225480
+        }
+      ]
+    },
+    {
+      "name": "stream-wraps-seq",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 248,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0063",
+        "0x0070"
+      ],
+      "summary": "A transport stream whose sequence numbers pass through 2**32: isn is 2**32 - 5, so the origin is 2**32 - 4; the first record starts there with eight bytes and ends, on the wire, at 4; the second starts at 4. The signed serial delta between the two seq_starts is 8, so the second record sits at offset 8 and the extent is 16. This is the COMMONER of the two unwrapping shapes -- any stream wraps with probability length / 2**32 per random isn, so a 2 GiB stream does so one time in two -- and until 0.21 no vector had it and the suite's own extent arithmetic got it wrong: plain seq_start - (isn + 1) gives the second record a range starting at -4294967288 and an extent of 8. A reader that subtracts without the modulus fails here; one that takes the delta unsigned places the second record at 4294967304.",
+      "spec_section": "Referencing the source by stream offset -- offsets unwrap along stored order",
+      "expect": "Accept. The .jsonl file is the expected projection, and the declared extent is 16: the first record at [0,8), the second at [8,16), because the serial delta from seq_start 4294967292 to seq_start 4 is +8. No record is unplaceable. A reader that computes seq_start - (isn + 1) as plain integers places the second record below zero; one that reduces the difference mod 2**32 without treating it as signed places it at 4294967304 and reports an extent of 4294967312. Rejecting or isolating is NOT conformant: under serial-number order seq_start 4 follows 4294967292, which is what the ordering rule means by order.",
       "has_jsonl": true,
       "extents": [
         {

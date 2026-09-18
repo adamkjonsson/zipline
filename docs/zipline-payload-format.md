@@ -720,32 +720,48 @@ handshake and the first captured byte are the leading hole `[0, K)`
 is no room below the first captured byte, so a pre-first-byte loss simply is not
 representable — one more reason `isn` is mandatory once the handshake is seen.
 
-**A record below the origin covers no byte of the stream.** The origin is
-`isn + 1` where the participant carries an `isn`, and the first captured byte
-otherwise; everything above measures from it. A record whose `seq_start` precedes
-the origin therefore has a negative offset in a space that has none, and the
-modular subtraction does not report that — it returns a number just under 2³²,
-which would make the stream measure 4294967295 bytes whatever its data actually
-spans.
+**Offsets unwrap along stored order.** A `seq_start` is 32 bits and wraps; an
+offset is a u64 and does not. The two are reconciled by walking the
+participant's records in stored order: record *k*'s offset is record *k−1*'s
+offset plus the **signed serial delta** of their `seq_start`s — `a − b` under
+[RFC 1982](#causal-ordering-from-tcp-seqack), the comparison every other
+`seq_start` comparison uses — and the first record's offset is its delta from
+the **origin**: `isn + 1` where the participant carries an `isn`, the first
+captured byte otherwise. This is well-defined at any stream length, because the
+[ordering rule](#identifiers--ordering) already requires a participant's records
+to be in serial order, which keeps each within 2³¹ of its predecessor — exactly
+the range in which the delta is defined. A stream carrying more than 2 GiB in one
+direction, or whose sequence numbers pass through 2³², is placed by this walk
+like any other; for a stream under 2 GiB the walk yields `(seq_start − origin)
+mod 2³²` at every record, so nothing under that size reads differently.
+
+**The floor binds each record to its predecessor, and the origin is the first
+record's predecessor.** A record whose `seq_start` is serially *below* the one
+it is measured from has a negative delta in a space that has none. Below the
+origin, it would precede byte 0; below a predecessor, it is the out-of-order
+record the [ordering rule](#identifiers--ordering) forbids a writer to emit, and
+the two rules describe one case. An *unsigned* modular subtraction reports
+neither — it returns a number just under 2³², which would make the stream measure
+4294967295 bytes whatever its data actually spans — which is why the delta above
+is signed.
 
 Such a record is **unplaceable**, and so is one carrying **no `seq_start`** on a
 stream whose other records carry them. An unplaceable record contributes nothing
 to the extent and covers no byte of the stream, whatever range a reader reports
-for it. A reader accepts the file and SHOULD report the record; where this
-document once pinned the exact range, it now does not, so two readers may report
-different ranges for the same unplaceable record while agreeing on every extent
-and every other record.
+for it — and it **anchors nothing**: the predecessor in the walk above is the
+last *placeable* record, so what follows an unplaceable record is measured past
+it, not from it. A reader accepts the file and SHOULD report the record (where
+the record is also out of order, the ordering rule's own options — reject, or
+discard the session — are open to it as well); where this document once pinned
+the exact range, it now does not, so two readers may report different ranges for
+the same unplaceable record while agreeing on every extent and every other
+record.
 
 Zero width is not *deletion* — the record's `timestamp`, `flags` and payload
 remain readable, and a consumer indexing by anything other than offset still sees
 it. Where such a record carries payload those bytes are excluded from the extent
 and from every coverage answer the file supports, which is the price of not
 trusting the wrapped offset.
-
-The floor is only decidable within the serial-arithmetic half-space: the
-comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
-`seq_start` comparison uses, so a `seq_start` more than 2³¹ below the origin is
-indistinguishable from one above it.
 
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
@@ -2427,6 +2443,11 @@ vocabulary stays closed
   `(session_id, participant_id)`, a writer **MUST** emit that participant's
   records in `seq_start` order (logical stream order for non-TCP streams that
   have no sequence numbers) — the order in which it already produced them.
+  *Order* here is **serial-number order**, the
+  [RFC 1982 comparison](#causal-ordering-from-tcp-seqack) every `seq_start`
+  comparison uses: it is what lets a stream's sequence numbers pass through 2³²,
+  and it keeps each record within 2³¹ of its predecessor, which is the range the
+  [unwrapping rule](#referencing-the-source-by-stream-offset) needs.
   **Non-descending**, not strictly ascending: two records MAY share a `seq_start`,
   and where they do, **stored order decides which comes first**. That is not a
   corner — a [handshake record](#record-0x20) sits at the stream origin and the

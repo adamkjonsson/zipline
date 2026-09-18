@@ -76,7 +76,42 @@ reasoning in [docs/RELEASE-0.21-PLAN.md](docs/RELEASE-0.21-PLAN.md).
 
 ### Changed
 
+- **Offsets unwrap along stored order, so a transport stream can be placed
+  past 2 GiB** ([#146](https://github.com/adamkjonsson/zipline/issues/146)).
+  `0.20` measured every record against the origin under serial arithmetic and
+  said in as many words that the floor was *only decidable within the
+  serial-arithmetic half-space* — without drawing the consequence, which is
+  that every record more than 2³¹ bytes into a stream read as *below the
+  origin*. A large download could not be converted: `python-zipline-wire`
+  refuses the third record of a stream sampled at 1 GiB spacing, and a reader
+  with no `isn` to apply the floor against gives the same records zero-width
+  ranges. The rule now: record *k*'s offset is record *k−1*'s plus the
+  **signed serial delta** of their `seq_start`s (RFC 1982), the first record's
+  is its delta from the origin, and the walk is well-defined at any length
+  because the ordering rule already keeps each record within 2³¹ of its
+  predecessor. No byte of any file changes, and no extent under 2 GiB moves —
+  the walk yields `(seq_start − origin) mod 2³²` there — but what a reader
+  *computes* past 2³¹, and what a writer *accepts*, does. Two vectors:
+  `stream-past-2gib` and `stream-wraps-seq`, the second for the commoner shape
+  — sequence numbers passing through 2³² — which no vector had either, and
+  which `check.py`'s own extent arithmetic got wrong until this release (a
+  negative range and an extent of 8 where the rule gives 16). The two retired
+  spellings are in `RETIRED_CLAIMS`, reproducing against `v0.20`. No keyword
+  moves.
+
 ### Clarified
+
+- **The floor binds each record to its predecessor, and the origin is the
+  first record's predecessor** ([#146](https://github.com/adamkjonsson/zipline/issues/146)).
+  One sentence where there were two rules — *below the origin* and *out of
+  order* are the same case, seen from the offset space and from the ordering
+  rule — and it no longer depends on `isn`: a stream with none has its first
+  captured byte as origin and the same floor thereafter, which is the
+  inconsistency the issue reported downstream. An unplaceable record **anchors
+  nothing**: the record after it measures from the last placeable one, so
+  `unplaceable-below-origin`'s extent is 16 and not 17. The ordering rule now
+  says **serial-number order** in as many words; it had said `seq_start` order
+  and left the comparison to be inferred from §Causal ordering.
 
 ### Added
 

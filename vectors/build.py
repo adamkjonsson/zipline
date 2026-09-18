@@ -2959,7 +2959,11 @@ vector(
     "other shape of the same sentence. pid 1 is NOT this rule's case: no "
     "record of that participant carries a seq_start, so its stream is not "
     "sequence-anchored to begin with, and its extent is the accumulation "
-    "of its payloads.",
+    "of its payloads. Since 0.21 the floor is stated against a record's "
+    "PREDECESSOR rather than the origin, and applies whether or not the "
+    "participant carries an isn: pid 0 has none, its origin is its first "
+    "captured byte, and a reader that applied no floor for want of an isn "
+    "would place the second record somewhere and report more than 6.",
     violations=0,
     extents=[(9, 0, 6), (9, 1, 5)],
 )
@@ -3723,7 +3727,13 @@ vector(
     "answer. What 0.19 dropped is the exact range a reader reports for it; two "
     "readers may differ there and still agree on every extent. A reader that "
     "trusts the wrapped offset places it near 2**32 and corrupts the extent for "
-    "every other record, which is the reading this vector exists to fail.",
+    "every other record, which is the reading this vector exists to fail. "
+    "Since 0.21 the floor binds each record to its PREDECESSOR, the origin "
+    "being the first record's, and this is the first-record case of that "
+    "rule. An unplaceable record anchors nothing: the second record measures "
+    "from the origin, not from seq_start 1000, so it sits at 0 and the extent "
+    "is 16 -- a reader that let the first record anchor would put it at 1 "
+    "and report 17.",
     "Referencing the source by stream offset -- unplaceable records",
     [
         file_header(),
@@ -3796,6 +3806,183 @@ vector(
     "record at 4294967295 and reports extent 4294967303, the other drops it "
     "and reports two records where the file has three. Rejecting or "
     "isolating is NOT conformant.",
+    violations=0,
+    extents=[(7, 0, 16)],
+)
+
+# 0.21 (#146). Offsets unwrap along stored order. Two vectors, because two
+# wrong readings fail on different files: the one below defeats a reader that
+# measures every record against the origin under serial arithmetic, and
+# stream-wraps-seq defeats one that subtracts without the modulus.
+GIB = 2**30
+
+vector(
+    "stream-past-2gib",
+    "accept",
+    "A transport stream that passes 2 GiB in one direction: isn 1000, four "
+    "eight-byte records at offsets 0, 1 GiB, 2 GiB and 3 GiB, every neighbour "
+    "one serial step of 2**30 from the last. Under 0.20 the third record was "
+    "BELOW THE ORIGIN: its seq_start is 2**31 past isn + 1, which serial "
+    "arithmetic cannot tell from 2**31 before it, and the document said so and "
+    "drew the wrong conclusion. Since 0.21 offsets unwrap along stored order -- "
+    "each record is its predecessor's offset plus the signed serial delta of "
+    "their seq_starts, the origin being the first record's predecessor -- so "
+    "the third record sits at 2**31 and the fourth at 3 * 2**30. The declared "
+    "extent is 3221225480. A reader that applies the floor against the origin "
+    "for every record reports two unplaceable records and an extent of "
+    "1073741832, which is the reading this vector exists to fail; a reader "
+    "that trusts the wrapped offset reports 1073741832 as well, for the third "
+    "record, and something near 2**32 for the fourth.",
+    "Referencing the source by stream offset -- offsets unwrap along stored order",
+    [
+        file_header(),
+        source(1, 0, [o_uri("bulk.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        record(7, 0, 1, 1000, b"AAAABBBB", flags=0x0001, options=[o_seq_start(1001)]),
+        record(7, 0, 1, 2000, b"CCCCDDDD", flags=0x0001, options=[o_seq_start(1001 + GIB)]),
+        # 2**31 past the origin: serially INDISTINGUISHABLE from 2**31 before it,
+        # which is why the origin cannot be what it is measured from.
+        record(7, 0, 1, 3000, b"EEEEFFFF", flags=0x0001, options=[o_seq_start(1001 + 2 * GIB)]),
+        record(7, 0, 1, 4000, b"GGGGHHHH", flags=0x0001, options=[o_seq_start(1001 + 3 * GIB)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "bulk.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAABBBB"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCCDDDD"),
+            "seq_start": 1001 + GIB,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3000,
+            "flags": ["psh"],
+            "payload": b64(b"EEEEFFFF"),
+            "seq_start": 1001 + 2 * GIB,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 4000,
+            "flags": ["psh"],
+            "payload": b64(b"GGGGHHHH"),
+            "seq_start": 1001 + 3 * GIB,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extent is 3221225480: four placeable records at 0, 2**30, 2**31 and "
+    "3 * 2**30, the last eight bytes long. No record is unplaceable. A reader "
+    "that measures each record against the origin under serial arithmetic "
+    "finds the third and fourth below it and reports an extent of 1073741832; "
+    "that reading was the document's own until 0.21 and is wrong now. "
+    "Rejecting or isolating is NOT conformant: every neighbour is within a "
+    "window's serial distance of the last, so the ordering rule holds "
+    "throughout.",
+    violations=0,
+    extents=[(7, 0, 3 * GIB + 8)],
+)
+
+vector(
+    "stream-wraps-seq",
+    "accept",
+    "A transport stream whose sequence numbers pass through 2**32: isn is "
+    "2**32 - 5, so the origin is 2**32 - 4; the first record starts there with "
+    "eight bytes and ends, on the wire, at 4; the second starts at 4. The "
+    "signed serial delta between the two seq_starts is 8, so the second record "
+    "sits at offset 8 and the extent is 16. This is the COMMONER of the two "
+    "unwrapping shapes -- any stream wraps with probability length / 2**32 per "
+    "random isn, so a 2 GiB stream does so one time in two -- and until 0.21 "
+    "no vector had it and the suite's own extent arithmetic got it wrong: "
+    "plain seq_start - (isn + 1) gives the second record a range starting at "
+    "-4294967288 and an extent of 8. A reader that subtracts without the "
+    "modulus fails here; one that takes the delta unsigned places the second "
+    "record at 4294967304.",
+    "Referencing the source by stream offset -- offsets unwrap along stored order",
+    [
+        file_header(),
+        source(1, 0, [o_uri("wrap.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(2**32 - 5), o_tcp_role(1)]),
+        record(7, 0, 1, 1000, b"AAAABBBB", flags=0x0001, options=[o_seq_start(2**32 - 4)]),
+        # seq 4 is (2**32 - 4) + 8 mod 2**32: the byte after the first record.
+        record(7, 0, 1, 2000, b"CCCCDDDD", flags=0x0001, options=[o_seq_start(4)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "wrap.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 2**32 - 5,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAABBBB"),
+            "seq_start": 2**32 - 4,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCCDDDD"),
+            "seq_start": 4,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extent is 16: the first record at [0,8), the second at [8,16), because "
+    "the serial delta from seq_start 4294967292 to seq_start 4 is +8. No "
+    "record is unplaceable. A reader that computes seq_start - (isn + 1) as "
+    "plain integers places the second record below zero; one that reduces the "
+    "difference mod 2**32 without treating it as signed places it at "
+    "4294967304 and reports an extent of 4294967312. Rejecting or isolating "
+    "is NOT conformant: under serial-number order seq_start 4 follows "
+    "4294967292, which is what the ordering rule means by order.",
     violations=0,
     extents=[(7, 0, 16)],
 )
