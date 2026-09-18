@@ -396,6 +396,61 @@ near 2**32* stays — it is still what a wrong reader does.
 6. Run the old `anchored_ranges` against a scratch `stream-wraps-seq` and
    record that it fails, so the Phase 1 fix has a failure to be seen curing.
 
+**What the grep found (Phase 0, 2026-09-18, against `713f622`).** Sites are in
+the five files `RETIRED_CLAIMS` scans; line numbers are pre-edit.
+
+*The floor, for Phase 1* — the two spellings the plan named, and the sites
+around them that stay:
+
+- spec `:745` — `The floor is only decidable within the serial-arithmetic
+  half-space` and `:747–748` — `more than 2³¹ below the origin is
+  indistinguishable from one above it`. Both retire; both are the claim #146
+  refutes.
+- spec `:723` — `**A record below the origin covers no byte of the stream.**`
+  Stays true of the *first* record and is rewritten rather than retired: the
+  restated floor names the predecessor, and the origin is the first record's.
+  Whether the old bold sentence gets a `RETIRED_CLAIMS` spelling is decided
+  when the new paragraph is written — if it survives verbatim as the
+  first-record case, it is not retired.
+- spec `:727` — `returns a number just under 2³²`; `:743` — `trusting the
+  wrapped offset`; `build.py:3725` and `README.md:113` — `trusts the wrapped
+  offset`. All stay: a reader that trusts the wrapped offset is still wrong.
+- spec `:1702` (handshake records) — `isn itself is one below the origin`;
+  `check.py:491, :637`; `build.py:3733` — all describe the first-record case
+  and stay.
+- No site says *serial-number order*: the ordering rule at `:2425` says
+  `seq_start order` only, which is the gap Phase 1 closes. No site says
+  *against the origin* either — the per-record floor was never spelled out,
+  only implied by `:723`.
+- The companion's `:88` (*why an unplaceable record sits at a running maximum*)
+  argues for a range `0.19` unpinned; it is history and not this release's.
+
+*The enums and the seams, for Phase 2:*
+
+- spec `:2318` — `**Two enums are load-bearing: Source kind and
+  output_layer.**` and `:2882–2883` — `For the two **load-bearing** enums`.
+  Both retire to *three*; both become `ENUMERATIONS` sites.
+- spec `:1993` — `Such a stage emits a Discontinuity at each seam` and `:835` —
+  `obliges it to declare at each such seam`. Both gain the wholesale form; the
+  retiring spelling is the sentence that states the per-seam form as the only
+  one. `build.py:1963–1975` (`reordered-decoded`) says the same in
+  `Since 0.15 the seam between the two records carries a Discontinuity`, which
+  stays true and gains a sentence.
+- spec `:1402` — `the second such case after the Discontinuity block`. A
+  historical claim about `output_layer`; it stays, and the new field's note
+  refers to it.
+- spec `:2107` — `it is the only one that is not`. Stays true under the body
+  field, and Phase 2 checks it.
+
+**What the probe found (step 6).** With `isn = 2³² − 5` and records at
+`2³² − 4` (8 bytes) and `4` (8 bytes), `check.py`'s `anchored_ranges` returns
+`[(0, 8), (−4294967288, −4294967280)]` and an extent of **8**, against the
+rule's `[(0, 8), (8, 16)]` and 16. That is the failure Phase 1 cures. The 2 GiB
+probe — four records at 1 GiB spacing from `isn = 1000` — comes out **right**
+under the plain subtraction, `[(0,8), (2³⁰, …), (2³¹, …), (3·2³⁰, …)]`, because
+`check.py` never applied the serial floor at all. So `stream-past-2gib` tests
+readers that do, and `stream-wraps-seq` is the one that tests the suite.
+
 ---
 
 ## Phase 1 — #146 and #147, the offset space (taggable alone)
