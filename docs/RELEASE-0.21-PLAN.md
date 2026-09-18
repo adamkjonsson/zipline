@@ -597,17 +597,14 @@ The four:
       `stream-past-2gib` and `stream-wraps-seq` exist with declared extents;
       `anchored_ranges` implements the rule and was seen to fail the wrap
       fixture before it did; the ordering rule says *serial-number order*.
-- [ ] The bound and the exit are stated under the rule; `capture-gap` is in
+- [x] The bound and the exit are stated under the rule; `capture-gap` is in
       the row and the Session End text; `session-split-capture-gap` exists;
-      #147 is closed with the ruling and the reserved design. *(All but the
-      closing comment, which waits for the merge to `main` — a port that read
-      it and pulled `main` would find nothing.)*
-- [ ] The Participant body carries `adjacency: u8`; every existing `.zpf` is
+      #147 is closed with the ruling and the reserved design.
+- [x] The Participant body carries `adjacency: u8`; every existing `.zpf` is
       byte-identical and every participant `.jsonl` line carries
       `"adjacency"`; the four vectors exist; `ENUMERATIONS` has the
       load-bearing set at two sites; `reordered-decoded` keeps its block; #80
-      and #106 are closed with the field's text. *(All but the closing
-      comments, which wait for the merge.)*
+      and #106 are closed with the field's text.
 - [x] #125 is closed with the ruling; the reversal of `0.19` scope decision 3
       is recorded here and on the issue.
 
@@ -624,15 +621,16 @@ Release:
 - [x] `ruff check` and `ruff format` clean.
 - [x] `CHANGELOG.md` `[0.21]` dated, with a `Decided` section and the
       Conventions line that admits it.
-- [ ] All three implementations told before the tag.
-- [ ] Tag `v0.21`, on the merge commit, where `v0.20` sits.
+- [x] All three implementations told before the tag. *(Told after it, on the
+      merged commit, as `0.20` did, so the comments could point at `v0.21`.)*
+- [x] Tag `v0.21`, on the merge commit, where `v0.20` sits.
 
 ---
 
 ## What execution changed
 
-*Written 2026-09-18, at the end of Phase 3's pre-merge half. To be completed
-at the tag.*
+*Written 2026-09-18, at the end of Phase 3's pre-merge half; the closing
+paragraph added after the tag.*
 
 **The gate was waived, on the day it was set.** §Mechanics item 3 made Phase 2
 wait for `python-zipline`'s reading of the field against `kober`'s files, or
@@ -689,6 +687,10 @@ annotated as a reserved u16, the block table's row, the *fixed body* sentence,
 and one summary calling `output_layer` the second load-bearing enum with no
 third named.
 
-**Remaining, and gated on the merge to `main`:** the closing comments on #147,
-#80 and #106 with their final text; the three implementation notices; and the
-tag, on the merge commit, where `v0.20` sits.
+**Closed on the merge commit.** `v0.21` is tagged on `4964dee`; #146, #147,
+#80 and #106 are closed with their final text, `python-zipline` and
+`python-zipline-wire` told on the issues they filed from, `kober` through
+python-zipline#58, and the milestone closed. The port's reading of the field's
+name is still open on #58, on shipped text; if it comes back with a better
+pair, that is `0.22`'s first item and a re-churn of 58 projections — the cost
+the waived gate accepted.
