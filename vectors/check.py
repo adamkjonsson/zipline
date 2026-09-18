@@ -68,7 +68,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 20
+MAJOR, MINOR = 0, 21
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -337,6 +337,50 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "derived from two rules three sections apart, with the guarantee's "
         "scope stated inconsistently; the MUST states the consequence once",
     ),
+    # 0.21 (#147). A hole of 2**31 or more between consecutive records has no
+    # representation within one stream -- the delta is undefined and the
+    # ordering rule refuses the pair -- so the exit is two sessions on one key.
+    # The exit was always conformant; what the document did not say was which
+    # word names it, and a reason vocabulary that is open for saying MORE still
+    # wants one spelling for a shape two producers will both meet.
+    (
+        r"it \*\*SHOULD\*\* write `capture-gap` as the "
+        r"\[Session End\]\(#session-end-0x12\) reason",
+        {"SHOULD": 1},
+        "the open vocabulary permitted any word; the SHOULD picks one so that a "
+        "consumer can tell a resumed conversation from a new one across files "
+        "and producers, on the endpoint-spelling argument -- a Changed line, "
+        "since no rule bound the word before",
+    ),
+    # 0.21 (#80, #106). The adjacency body field. Three keywords, each the
+    # field's half of a duty the Discontinuity block already states for one
+    # seam: the consumer's no-splice, now at every seam of a unit sequence; the
+    # reordering stage's licence to declare the participant instead of a block
+    # per seam; and the bar on the transport layer, where stored order defines
+    # nothing and the field would be inert.
+    (
+        r"A consumer \*\*MUST NOT\*\* treat any two records of a participant declared",
+        {"MUST": 1, "MUST NOT": 1},
+        "the no-splice MUST NOT was stated per Discontinuity, and a unit "
+        "sequence carries no block; without this sentence a consumer could "
+        "honour every block in the file and still splice a unit sequence end "
+        "to end -- a Changed line, since no rule bound the pair before",
+    ),
+    (
+        r"it MAY declare the participant `units` instead and emit none",
+        {"MAY": 1},
+        "the reordering paragraph said the per-seam block was the form, in as "
+        "many words; the field is a second form, and a permission is what "
+        "lets a producer take it -- a Changed line",
+    ),
+    (
+        r"A writer \*\*MUST NOT\*\* set `units` on a participant whose records resolve",
+        {"MUST": 1, "MUST NOT": 1},
+        "the field means nothing on a transport stream, whose offsets come "
+        "from sequence numbers; barring it keeps the layer test simple and "
+        "the reader's treatment is the advisory one a transport-layer label "
+        "gets -- a Changed line, advisory strength",
+    ),
 )
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
@@ -488,10 +532,60 @@ RULES = {
     # without anyone saying where the record goes.
     "unplaceable-covers-nothing": (
         "an unplaceable record covers no byte of the stream and contributes "
-        "nothing to the extent -- below the origin, or with no seq_start on a "
-        "sequence-anchored stream. Since 0.19 the RANGE a reader reports for it "
-        "is its own affair; the extent is not",
+        "nothing to the extent -- serially below its predecessor (the origin, "
+        "for the first record), or with no seq_start on a sequence-anchored "
+        "stream. Since 0.19 the RANGE a reader reports for it is its own "
+        "affair; the extent is not. Since 0.21 it anchors nothing either",
         "unplaceable-below-origin",
+    ),
+    # 0.21 (#146). The rule the floor implied and never drew: a record is
+    # measured from its predecessor, not from the origin, so the serial
+    # half-space bounds the DELTA between neighbours and not the stream. Two
+    # vectors, because two readings fail differently: a reader applying the
+    # floor against the origin fails past 2 GiB, and one subtracting without the
+    # modulus fails where the sequence numbers pass through 2**32 -- which is
+    # the commoner shape, and the one check.py's own arithmetic got wrong.
+    "offsets-unwrap-past-2gib": (
+        "a transport stream longer than 2 GiB is placed record by record; a "
+        "record past 2**31 is not below the origin",
+        "stream-past-2gib",
+    ),
+    "offsets-unwrap-through-2**32": (
+        "sequence numbers passing through 2**32 place by signed serial delta; "
+        "the offset keeps counting",
+        "stream-wraps-seq",
+    ),
+    # 0.21 (#147). The one shape the walk cannot place: a consecutive delta of
+    # 2**31 or more. Not a new permission -- two sessions on one key were always
+    # legal -- but the shape now has a name, and a permission with no vector is
+    # how #66 happened.
+    "session-split-on-unmeasurable-hole": (
+        "a hole of 2**31 or more between consecutive records ends the session; "
+        "the next on the same key, reason capture-gap, carries the conversation on",
+        "session-split-capture-gap",
+    ),
+    # 0.21 (#80, #106). The adjacency body field. Like output_layer it is not
+    # an option, so the registry parse cannot see it; its two values and the
+    # two treatments an enum owes are covered only by these entries.
+    "unit-sequence-discharges-seams": (
+        "a participant declared units owes no Discontinuity at any seam; a "
+        "reordering stage may declare it instead of a block per seam",
+        "unit-sequence-reversed",
+    ),
+    "unit-sequence-decomposition": (
+        "a decoder whose units decompose one another declares units; overlap by "
+        "containment is not a non-join and the seam predicate does not apply",
+        "unit-sequence-nested",
+    ),
+    "unknown-adjacency-isolates": (
+        "an unrecognised adjacency leaves every pair's assertion unknown; MUST NOT "
+        "guess, and MUST NOT fall back to contiguous",
+        "isolate-unknown-adjacency",
+    ),
+    "adjacency-transport-advisory": (
+        "units on a transport-layer participant is a MUST NOT whose violation is "
+        "ADVISORY: the field is inert there, so the reader ignores it, reports, accepts",
+        "advisory-transport-adjacency",
     ),
     # 0.18's one rule with a vector. The ordering MUST has never said whether
     # two records may share a seq_start; 0.17's handshake MUST makes the tie
@@ -755,6 +849,46 @@ RETIRED_CLAIMS = {
         "does not set it; what the reassembler discarded, retransmitted or "
         "duplicated, is an Undecoded block against the capture source",
     ),
+    # 0.21 (#146). The floor was stated against the origin for every record and
+    # then conceded that serial arithmetic cannot decide it past 2**31 -- which
+    # is to say every record more than 2 GiB into a stream read as below the
+    # origin. The concession was the defect: the rule that avoids it (offsets
+    # unwrap along stored order, each record measured from its predecessor) was
+    # one sentence away and the document drew the wrong conclusion instead.
+    "floor-undecidable-past-half-space": (
+        (
+            r"The floor is only decidable within the serial-arithmetic half-space",
+            r"more than 2³¹ below the origin is indistinguishable from one above it",
+        ),
+        "0.21",
+        146,
+        "offsets unwrap along stored order: a record's offset is its predecessor's "
+        "plus the signed serial delta of their seq_starts, the origin being the "
+        "first record's predecessor, so the floor is decidable at any stream length",
+    ),
+    # 0.21 (#80, #106). The adjacency body field is the third load-bearing enum,
+    # and the wholesale form of the reordering stage's duty. Two counts and two
+    # sentences stating the per-seam block as the only form.
+    "two-load-bearing-enums": (
+        (
+            r"Two enums are load-bearing",
+            r"For the two \*\*load-bearing\*\* enums",
+        ),
+        "0.21",
+        80,
+        "three enums are load-bearing: Source kind, output_layer and the "
+        "Participant's adjacency, which decides whether two records may be spliced",
+    ),
+    "reordering-owes-a-block-per-seam": (
+        (
+            r"Such a stage emits a Discontinuity at each seam, with \*\*no\*\* `width`: what",
+            r"obliges it to declare at each such seam\.",
+        ),
+        "0.21",
+        80,
+        "a reordering stage has two forms -- a Discontinuity at each seam, or the "
+        "participant declared a unit sequence with adjacency = units",
+    ),
 }
 
 
@@ -825,6 +959,20 @@ ENUMERATIONS = {
             # exercised in both directions from the start.
             "including one emitted by a reassembly decoder",
             "whether or not it has a decoder",
+        ),
+    ),
+    # 0.21 (#80). The load-bearing enums, counted in two places since 0.15 and
+    # stale in both when the third arrived -- "Two enums are load-bearing" and
+    # "the two load-bearing enums" each said two through a release that added
+    # nothing, which is exactly when a count looks safe. A fourth must fail
+    # the build at both sites.
+    "load-bearing enums": (
+        ("kind", "output_layer", "adjacency"),
+        (
+            # Enums -- where the set is stated
+            "enums are load-bearing",
+            # Conformance -- the unrecognised-value bullet
+            "cannot interpret any",
         ),
     ),
 }
@@ -1143,6 +1291,58 @@ def _slug(heading: str) -> str:
     return re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", heading.lower())).strip("-")
 
 
+def check_worked_example() -> list[str]:
+    """Compare the specification's byte-level worked example with raw-minimal, byte for byte.
+
+    The README has said "identical to the specification's worked example" since
+    0.12, and nothing checked it: 0.21's sweep found the example still stamping
+    version_minor = 18 in its bytes, three releases stale, because the example
+    is hand-maintained and a stamp touches every OTHER copy of the version
+    mechanically. Only the offset and hex columns are compared -- the
+    annotations are the specification's prose and may say more than the
+    generated .hex does.
+    """
+    text = read_text(SPEC)
+    start = text.find("### Worked example: a minimal capture-sourced file")
+    if start < 0:
+        return ["worked example: heading not found in the specification"]
+    body = text[start:]
+    fenced, spec_lines = False, []
+    for line in body.splitlines():
+        if line.startswith("```"):
+            if fenced:
+                break
+            fenced = True
+            continue
+        if fenced and re.match(r"^[0-9A-F]{4} ", line):
+            spec_lines.append(line)
+    hex_lines = [
+        ln
+        for ln in read_text(os.path.join(HERE, "raw-minimal", "raw-minimal.hex")).splitlines()
+        if re.match(r"^[0-9A-F]{4} ", ln)
+    ]
+
+    def cols(line: str) -> tuple[str, str]:
+        off, rest = line[:4], line[4:29].strip()
+        return off, rest
+
+    out = []
+    for i, (a, b) in enumerate(zip(spec_lines, hex_lines, strict=False)):
+        if cols(a) != cols(b):
+            out.append(
+                f"worked example: line {i} differs from raw-minimal.hex -- "
+                f"spec {a[:29].strip()!r}, vector {b[:29].strip()!r}"
+            )
+    if len(spec_lines) != len(hex_lines):
+        out.append(
+            f"worked example: {len(spec_lines)} byte lines in the specification, "
+            f"{len(hex_lines)} in raw-minimal.hex"
+        )
+    if not out:
+        print(f"  worked example: {len(spec_lines)} byte lines, identical to raw-minimal.hex")
+    return out
+
+
 def check_anchor_links() -> list[str]:
     """Every in-document link must resolve to a heading that exists.
 
@@ -1413,18 +1613,40 @@ def anchored_extents(lines: list[dict]) -> dict[tuple[int, int], int]:
     return ext
 
 
+def serial_delta(a: int, b: int) -> int:
+    """RFC 1982 `a - b` over the u32 sequence space: signed, defined within 2**31."""
+    return ((a - b + 2**31) % 2**32) - 2**31
+
+
 def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
-    """Each record's [start, end) in its stream's offset space, from seq_start - (isn + 1)."""
+    """Each placeable record's [start, end) in its stream's offset space.
+
+    This is the unwrapping rule of Referencing the source by stream offset, and
+    since 0.21 (#146) it is the ONLY arithmetic here: a record's offset is its
+    predecessor's plus the signed serial delta of their seq_starts, the first
+    record's predecessor being the origin, isn + 1. A record serially below its
+    predecessor is unplaceable -- it is left out, and it anchors nothing, so the
+    next record measures from the last placeable one. Plain `seq_start - (isn +
+    1)` was what stood here before, and it returned a negative range on the first
+    fixture whose sequence numbers passed through 2**32 (the Phase 0 probe in
+    RELEASE-0.21-PLAN.md); stream-wraps-seq is the vector that keeps it gone.
+    """
     import base64
 
-    isn, out = {}, []
+    prev: dict[tuple[int, int], tuple[int, int]] = {}  # key -> (seq_start, offset)
+    out = []
     for o in lines:
         if o.get("type") == "participant" and "isn" in o:
-            isn[(o["session_id"], o["pid"])] = o["isn"]
+            prev[(o["session_id"], o["pid"])] = (o["isn"] + 1, 0)
         elif o.get("type") == "record" and "seq_start" in o:
             k = (o["session_id"], o["sender_pid"])
-            start = o["seq_start"] - (isn[k] + 1)
+            seq_prev, off_prev = prev[k]
+            delta = serial_delta(o["seq_start"], seq_prev)
+            if delta < 0:
+                continue  # unplaceable: covers nothing, anchors nothing
+            start = off_prev + delta
             end = start + len(base64.b64decode(o["payload"]))
+            prev[k] = (o["seq_start"], start)
             out.append((k, start, end) if keyed else (start, end))
     return out
 
@@ -1805,6 +2027,7 @@ def main() -> int:
     failures += check_enumerations()
     failures += check_normative_split()
     failures += check_anchor_links()
+    failures += check_worked_example()
 
     if failures:
         print("\nFAILURES:")

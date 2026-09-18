@@ -54,7 +54,7 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 0.20 — a design in progress. Not ready for production.**
+**Version 0.21 — a design in progress. Not ready for production.**
 
 `0.x` means what it says: any minor release may change anything, including in
 ways that break existing readers. A reader must reject a `version_minor` it does
@@ -63,7 +63,7 @@ not implement.
 A release was designated `1.0` in July 2026, before any implementation existed.
 That was premature — the first implementation found enough to force a breaking
 revision — so it is retroactively designated `0.9`, and the work since is `0.10`
-through `0.20`. (`0.20` follows `0.9`; the components are integers, not decimals.)
+through `0.21`. (`0.21` follows `0.9`; the components are integers, not decimals.)
 `1.0` is reserved for a specification that has survived implementation. More `0.x` rounds
 are expected.
 
@@ -137,6 +137,13 @@ rounds as they happened, not plans:
   fixture. Two design questions are answered with a decision and a `0.21`
   milestone rather than syntax. Ends with what execution changed, which was
   mostly what `0.19` had left behind.
+- [docs/RELEASE-0.21-PLAN.md](docs/RELEASE-0.21-PLAN.md) — the design release:
+  the offset-space rule a port found missing (offsets unwrap along stored
+  order, so a stream can be placed past 2 GiB), the first body field since
+  `0.15` (a participant's `adjacency`, for the reordering and nested-decoding
+  shapes that owed a block per seam), a ruling on the one hole that rule cannot
+  place, and Package D declined after two releases of deferral, with the
+  reversal argued.
 
 ## License
 

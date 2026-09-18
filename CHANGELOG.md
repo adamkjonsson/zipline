@@ -41,13 +41,19 @@ first:
   block body, or the meaning of an existing field, and a reader MUST reject a
   `version_major` it does not implement.
 
-**Change categories.** Keep a Changelog's six types, plus one:
+**Change categories.** Keep a Changelog's six types, plus two:
 
 - **Clarified** — behaviour the previous version left undefined or stated
   ambiguously, now pinned down. Distinguished from *Changed* because no
   conformant file and no correct reader becomes wrong: only under-specified
   cases are affected. Implementers should read these first — they are where two
   independent implementations most easily disagree.
+- **Decided** — a design question answered *without* a change to the text: a
+  representation declined, a proposal closed with its shape recorded, a
+  package of deletions turned down. Nothing in the specification moves, so
+  nothing else in the entry would show it; the heading exists so an implementer
+  who filed the question finds the ruling where they look for changes, and so
+  the ruling has a version it belongs to.
 
 Entries state the delta only; the specification itself remains the normative
 text.
@@ -57,6 +63,151 @@ does not implement, and that is the intended behaviour. The entries below still
 distinguish *Clarified* from *Changed*, because the distinction tells an
 implementer whether their existing code was wrong or merely incomplete — but
 neither is safe to skip within `0.x`.
+
+---
+
+## [0.21] — 2026-09-18
+
+**The design release.** One rule the offset space was missing — offsets unwrap
+along stored order, so a transport stream can be placed past 2 GiB — and one
+body field, the first since `0.15`: a Participant Descriptor's `adjacency`,
+saying whether its stored neighbours join. Two rulings, no option. Scope and
+reasoning in [docs/RELEASE-0.21-PLAN.md](docs/RELEASE-0.21-PLAN.md).
+
+### Changed
+
+- **Offsets unwrap along stored order, so a transport stream can be placed
+  past 2 GiB** ([#146](https://github.com/adamkjonsson/zipline/issues/146)).
+  `0.20` measured every record against the origin under serial arithmetic and
+  said in as many words that the floor was *only decidable within the
+  serial-arithmetic half-space* — without drawing the consequence, which is
+  that every record more than 2³¹ bytes into a stream read as *below the
+  origin*. A large download could not be converted: `python-zipline-wire`
+  refuses the third record of a stream sampled at 1 GiB spacing, and a reader
+  with no `isn` to apply the floor against gives the same records zero-width
+  ranges. The rule now: record *k*'s offset is record *k−1*'s plus the
+  **signed serial delta** of their `seq_start`s (RFC 1982), the first record's
+  is its delta from the origin, and the walk is well-defined at any length
+  because the ordering rule already keeps each record within 2³¹ of its
+  predecessor. No byte of any file changes, and no extent under 2 GiB moves —
+  the walk yields `(seq_start − origin) mod 2³²` there — but what a reader
+  *computes* past 2³¹, and what a writer *accepts*, does. Two vectors:
+  `stream-past-2gib` and `stream-wraps-seq`, the second for the commoner shape
+  — sequence numbers passing through 2³² — which no vector had either, and
+  which `check.py`'s own extent arithmetic got wrong until this release (a
+  negative range and an extent of 8 where the rule gives 16). The two retired
+  spellings are in `RETIRED_CLAIMS`, reproducing against `v0.20`. No keyword
+  moves.
+- **A Participant Descriptor carries `adjacency`, a body field, and its
+  reserved u16 is now `u8 + u8`**
+  ([#80](https://github.com/adamkjonsson/zipline/issues/80),
+  [#106](https://github.com/adamkjonsson/zipline/issues/106)). `0` =
+  `contiguous`: stored neighbours join, which is what every file written
+  before the field existed says and meant. `1` = `units`: the participant is a
+  **unit sequence** — its offset space is still the stored-order
+  concatenation, every record addressable and citable, but no two adjacent
+  records may be assumed to join. It is the wholesale form of what a
+  Discontinuity says at one seam, for the two shapes with no honest per-seam
+  form: a stage that reorders a participant's records (#80's candidate, which
+  had to land in `0.x` or not at all), and a decoder whose units decompose one
+  another (#106's `kober` files, 176 nested DNS records built almost entirely
+  of pairs the seam predicate declines to test). A **body field, not an
+  option**, for the reason `output_layer` is one: as an option it would not
+  have been safe to skip — a reader that retained it but ignored it would
+  splice a unit sequence at every seam, the `0x22` failure over again — and in
+  the body there is nothing to skip. Numbering `contiguous` as `0` is what
+  makes it free: **no byte of any existing file changes**, and every
+  participant `.jsonl` line gains `"adjacency"`, since body fields always
+  project. It is the **third load-bearing enum**, so an unrecognised value is
+  the isolate condition `kind` and `output_layer` already have; the two places
+  that counted *two* now count three and are an `ENUMERATIONS` set. **Three
+  keywords**, each in `NORMATIVE_ADDITIONS`: a consumer **MUST NOT** treat any
+  two records of a `units` participant as contiguous, and a decode stage
+  reading one carries the break at every seam; a reordering stage **MAY**
+  declare `units` instead of a block per seam; a writer **MUST NOT** set
+  `units` on a transport-layer participant, where stored order defines nothing
+  — advisory, in the shape of a transport-layer label. The seam predicate does
+  not apply to a `units` participant; the block stays permitted there (a
+  `width` still counts); `reordered-decoded` keeps its block, the per-seam
+  form being right for a stream that mostly joins. Every stream that does not
+  say `units` keeps today's meaning. §Terminology defines *unit sequence*.
+  Four retired spellings — the two counts, the two sentences stating the
+  per-seam block as the only form — reproduce against `v0.20`.
+
+### Clarified
+
+- **The floor binds each record to its predecessor, and the origin is the
+  first record's predecessor** ([#146](https://github.com/adamkjonsson/zipline/issues/146)).
+  One sentence where there were two rules — *below the origin* and *out of
+  order* are the same case, seen from the offset space and from the ordering
+  rule — and it no longer depends on `isn`: a stream with none has its first
+  captured byte as origin and the same floor thereafter, which is the
+  inconsistency the issue reported downstream. An unplaceable record **anchors
+  nothing**: the record after it measures from the last placeable one, so
+  `unplaceable-below-origin`'s extent is 16 and not 17. The ordering rule now
+  says **serial-number order** in as many words; it had said `seq_start` order
+  and left the comparison to be inferred from §Causal ordering.
+
+### Added
+
+- **`capture-gap` as a Session End reason, and the vector for the hole it
+  names** ([#147](https://github.com/adamkjonsson/zipline/issues/147)). A hole
+  of 2³¹ bytes or more between two consecutive records of one participant is
+  the one shape the unwrapping rule cannot place — the delta is undefined, and
+  the ordering rule refuses the pair — so a producer that knows the far side is
+  real ends the session at the hole and opens another on the same key with no
+  `isn`. That exit was always conformant; the word for it was not fixed.
+  **New keyword:** the producer **SHOULD** write `capture-gap`, so that two
+  producers name the shape the same way and a consumer can tell a resumed
+  conversation from a new one (the endpoint-spelling argument; entry in
+  `NORMATIVE_ADDITIONS`). §Session End and the registry row list the value
+  beside `capture-end`, with the distinction: the capture stopped, or it
+  resumed and the stream could not. `session-split-capture-gap` is the
+  fixture.
+- **Four vectors for `adjacency`, and the `load-bearing enums` set**
+  ([#80](https://github.com/adamkjonsson/zipline/issues/80),
+  [#106](https://github.com/adamkjonsson/zipline/issues/106)).
+  `unit-sequence-reversed` — four records emitted in reverse, spans descending
+  at every step, no block; `unit-sequence-nested` — a DNS header, its flags
+  word, and three sub-fields of the flags word, input bytes `[2,4)` at five
+  output offsets, the suite's first spans overlapping by containment;
+  `isolate-unknown-adjacency` — value `2`, the twin of
+  `isolate-unknown-output-layer`; `advisory-transport-adjacency` — `units` on a
+  capture-sourced TCP participant, accepted and reported. `ENUMERATIONS` gains
+  the load-bearing set at both sites it is counted, so a fourth fails the
+  build. **62 vectors, 35 options, 34 rules.**
+
+### Decided
+
+- **Package D is declined, and #125 closes with its shape recorded**
+  ([#125](https://github.com/adamkjonsson/zipline/issues/125)). `0.19`'s
+  scope decision 3 chose D-pair — delete `input_extents`, `reason_class`, the
+  `dropped` MUST and the seam predicate, and verify coverage across a pair of
+  files — and two releases did not take it. This one reverses it, for four
+  reasons recorded in the plan: `0.20` built on the apparatus twice (the merge
+  twin is single-file *because* of `input_extents`; the `extents` key uses its
+  shape); #106's evidence against the predicate is answered by `adjacency`
+  rather than by deletion, and the predicate is now honest about what it
+  declines; the cost D was pricing has been paid, `python-zipline`
+  implementing every piece of it; and D rewrites the lines `adjacency` edits,
+  so it had to go before the field or never. #125's own analysis is its
+  answer: removal is orthogonal to recoverability, so a second removal word,
+  when a producer needs one, is a **flag beside `reason_class`**, not a third
+  value. Not built: no producer has written such a word, and a flag a checker
+  keys on is safe to skip, so it can arrive as a `1.x` minor. No deadline.
+
+- **The unmeasurable hole gets no representation within one stream**
+  ([#147](https://github.com/adamkjonsson/zipline/issues/147)). The issue
+  offered a `u64 offset` Record option and a width-bearing Discontinuity on a
+  transport stream, and asked first whether the shape deserved either. It does
+  not, in this release: both carve an exception into the ordering rule as well
+  as adding syntax, the two-sessions exit loses only true position across a
+  hole nothing downstream can use, and — the deciding point — the option is
+  **safe to add later**. A reader that ignored it would meet the ordering
+  violation and stop rather than misplace a byte, which is the property a
+  `1.x` minor requires; so unlike #80's field it carries no `0.x` deadline.
+  §Referencing says so in one sentence, and the `u64 offset` option is the
+  recorded design if a capture with the shape arrives.
 
 ---
 

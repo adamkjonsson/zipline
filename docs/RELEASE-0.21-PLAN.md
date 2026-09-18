@@ -396,6 +396,61 @@ near 2**32* stays — it is still what a wrong reader does.
 6. Run the old `anchored_ranges` against a scratch `stream-wraps-seq` and
    record that it fails, so the Phase 1 fix has a failure to be seen curing.
 
+**What the grep found (Phase 0, 2026-09-18, against `713f622`).** Sites are in
+the five files `RETIRED_CLAIMS` scans; line numbers are pre-edit.
+
+*The floor, for Phase 1* — the two spellings the plan named, and the sites
+around them that stay:
+
+- spec `:745` — `The floor is only decidable within the serial-arithmetic
+  half-space` and `:747–748` — `more than 2³¹ below the origin is
+  indistinguishable from one above it`. Both retire; both are the claim #146
+  refutes.
+- spec `:723` — `**A record below the origin covers no byte of the stream.**`
+  Stays true of the *first* record and is rewritten rather than retired: the
+  restated floor names the predecessor, and the origin is the first record's.
+  Whether the old bold sentence gets a `RETIRED_CLAIMS` spelling is decided
+  when the new paragraph is written — if it survives verbatim as the
+  first-record case, it is not retired.
+- spec `:727` — `returns a number just under 2³²`; `:743` — `trusting the
+  wrapped offset`; `build.py:3725` and `README.md:113` — `trusts the wrapped
+  offset`. All stay: a reader that trusts the wrapped offset is still wrong.
+- spec `:1702` (handshake records) — `isn itself is one below the origin`;
+  `check.py:491, :637`; `build.py:3733` — all describe the first-record case
+  and stay.
+- No site says *serial-number order*: the ordering rule at `:2425` says
+  `seq_start order` only, which is the gap Phase 1 closes. No site says
+  *against the origin* either — the per-record floor was never spelled out,
+  only implied by `:723`.
+- The companion's `:88` (*why an unplaceable record sits at a running maximum*)
+  argues for a range `0.19` unpinned; it is history and not this release's.
+
+*The enums and the seams, for Phase 2:*
+
+- spec `:2318` — `**Two enums are load-bearing: Source kind and
+  output_layer.**` and `:2882–2883` — `For the two **load-bearing** enums`.
+  Both retire to *three*; both become `ENUMERATIONS` sites.
+- spec `:1993` — `Such a stage emits a Discontinuity at each seam` and `:835` —
+  `obliges it to declare at each such seam`. Both gain the wholesale form; the
+  retiring spelling is the sentence that states the per-seam form as the only
+  one. `build.py:1963–1975` (`reordered-decoded`) says the same in
+  `Since 0.15 the seam between the two records carries a Discontinuity`, which
+  stays true and gains a sentence.
+- spec `:1402` — `the second such case after the Discontinuity block`. A
+  historical claim about `output_layer`; it stays, and the new field's note
+  refers to it.
+- spec `:2107` — `it is the only one that is not`. Stays true under the body
+  field, and Phase 2 checks it.
+
+**What the probe found (step 6).** With `isn = 2³² − 5` and records at
+`2³² − 4` (8 bytes) and `4` (8 bytes), `check.py`'s `anchored_ranges` returns
+`[(0, 8), (−4294967288, −4294967280)]` and an extent of **8**, against the
+rule's `[(0, 8), (8, 16)]` and 16. That is the failure Phase 1 cures. The 2 GiB
+probe — four records at 1 GiB spacing from `isn = 1000` — comes out **right**
+under the plain subtraction, `[(0,8), (2³⁰, …), (2³¹, …), (3·2³⁰, …)]`, because
+`check.py` never applied the serial floor at all. So `stream-past-2gib` tests
+readers that do, and `stream-wraps-seq` is the one that tests the suite.
+
 ---
 
 ## Phase 1 — #146 and #147, the offset space (taggable alone)
@@ -538,32 +593,102 @@ says so.
 
 The four:
 
-- [ ] §Referencing states the unwrap rule and the predecessor-bound floor;
+- [x] §Referencing states the unwrap rule and the predecessor-bound floor;
       `stream-past-2gib` and `stream-wraps-seq` exist with declared extents;
       `anchored_ranges` implements the rule and was seen to fail the wrap
       fixture before it did; the ordering rule says *serial-number order*.
 - [ ] The bound and the exit are stated under the rule; `capture-gap` is in
       the row and the Session End text; `session-split-capture-gap` exists;
-      #147 is closed with the ruling and the reserved design.
+      #147 is closed with the ruling and the reserved design. *(All but the
+      closing comment, which waits for the merge to `main` — a port that read
+      it and pulled `main` would find nothing.)*
 - [ ] The Participant body carries `adjacency: u8`; every existing `.zpf` is
       byte-identical and every participant `.jsonl` line carries
       `"adjacency"`; the four vectors exist; `ENUMERATIONS` has the
       load-bearing set at two sites; `reordered-decoded` keeps its block; #80
-      and #106 are closed with the field's text.
-- [ ] #125 is closed with the ruling; the reversal of `0.19` scope decision 3
+      and #106 are closed with the field's text. *(All but the closing
+      comments, which wait for the merge.)*
+- [x] #125 is closed with the ruling; the reversal of `0.19` scope decision 3
       is recorded here and on the issue.
 
 Release:
 
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.21`;
+- [x] `python3 vectors/check.py` green; every vector stamps `0.21`;
       `reject-unknown-minor` rolled to `0/22` out of its own bytes. **62
-      vectors, 35 options, 34 rules**, or whatever the numbers turn out to be
-      with the difference explained under *What execution changed*.
-- [ ] Every keyword the release adds or retires has its `NORMATIVE_ADDITIONS`
+      vectors, 35 options, 34 rules** — the numbers the plan expected.
+- [x] Every keyword the release adds or retires has its `NORMATIVE_ADDITIONS`
       or `NORMATIVE_REMOVALS` entry; every retired spelling reproduces against
-      `v0.20` and is absent now.
-- [ ] `ruff check` and `ruff format` clean.
-- [ ] `CHANGELOG.md` `[0.21]` dated, with a `Decided` section and the
+      `v0.20` and is absent now. *(Four additions, no removals: the split is
+      `v0.18` less 23 removals plus 6 additions — MAY 54, MUST 124, MUST NOT
+      44, SHOULD 28. The replaced floor paragraphs carried no keyword.)*
+- [x] `ruff check` and `ruff format` clean.
+- [x] `CHANGELOG.md` `[0.21]` dated, with a `Decided` section and the
       Conventions line that admits it.
 - [ ] All three implementations told before the tag.
 - [ ] Tag `v0.21`, on the merge commit, where `v0.20` sits.
+
+---
+
+## What execution changed
+
+*Written 2026-09-18, at the end of Phase 3's pre-merge half. To be completed
+at the tag.*
+
+**The gate was waived, on the day it was set.** §Mechanics item 3 made Phase 2
+wait for `python-zipline`'s reading of the field against `kober`'s files, or
+seven days. The design was posted in Phase 0 and Phase 2 was started the same
+afternoon, by decision — the port's answer is still wanted, but it is now a
+review of shipped text on a branch rather than of a proposal, and the name is
+correspondingly harder to change. The risk table's *name changed after Phase
+2's first commit* row is therefore live rather than mitigated; if the port
+proposes a better pair before the merge, the substitution is one scripted pass
+over 58 dicts and two `ENUMS` labels, and the churn is on this branch only.
+
+**Phase 1 found what Phase 0's probe predicted, and one thing it did not.**
+The wrap fixture failed `anchored_ranges` as recorded and passed once the rule
+was in. What the plan had not said is that the *first* draft of the floor
+paragraph read wrong once the delta was signed — *the modular subtraction
+reports neither* describes the unsigned mistake, not the rule — and had to say
+so. Small, but it is the kind of sentence a port quotes.
+
+**One slip the house rule caught late.** The first draft of the two
+`unit-sequence-*` vectors derived their `.jsonl` lines from the same tuples as
+their bytes, through a helper — which is the single-sourcing `0.20` refused,
+because the hand-written face is the second opinion that gives the face check
+its meaning. It was rewritten by hand before the commit. The helper was
+convenient, and convenience is exactly how the second opinion goes away.
+
+**The face check did the work §Mechanics item 1 assigned it.** 58 hand-written
+participant dicts lagged the body field, the build refused at the first and
+named it, one scripted pass added the key after `pid`, and the build then
+passed with no `.zpf` byte changed — 59 `.hex` annotations and 44 `.jsonl`
+files. It was then seen to refuse a face claiming `units` against bytes saying
+`0`, on a scratch copy, before the vectors that say `units` for real were
+written — the order the risk table asked for.
+
+**The numbers landed where the plan put them**: 62 vectors, 35 options, 34
+rules; four keywords added (one SHOULD, one MAY, two MUST NOTs), none retired.
+The Phase 3 items — closing #147, #80 and #106 with their text, telling the
+three implementations, the README line, the date, the tag — wait for the merge.
+
+**The sweep found three releases of drift in one place the guards did not
+reach.** The byte-level worked example stamped `version_minor = 18` in its
+bytes and its annotation — through `0.19`, `0.20` and this release's own stamp —
+while the README called `raw-minimal` *identical* to it. A stamp touches every
+other copy of the version mechanically; this one is hand-maintained prose inside
+a code fence, which is why no `RETIRED_CLAIMS` spelling, no anchor check and no
+count could see it. The status blockquote's history stopped at `0.18` and its
+renumbering note said *`0.10` through `0.18`*; the numbering example used
+`0.18`; the vectors README's first line said `0.20`, the very line `0.20` had
+found saying `0.18`. `check.py` gains `check_worked_example`, comparing the
+example's offset and hex columns to `raw-minimal.hex` line for line, seen to
+fail on the pre-sweep text before it was trusted. The rest of the sweep was
+this release's own debt: twelve JSONL examples with participant lines lacking
+the field that always projects, the worked example's participant still
+annotated as a reserved u16, the block table's row, the *fixed body* sentence,
+and one summary calling `output_layer` the second load-bearing enum with no
+third named.
+
+**Remaining, and gated on the merge to `main`:** the closing comments on #147,
+#80 and #106 with their final text; the three implementation notices; and the
+tag, on the merge commit, where `v0.20` sits.

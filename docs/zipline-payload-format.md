@@ -1,21 +1,22 @@
-# Zipline Payload Format (v0.20)
+# Zipline Payload Format (v0.21)
 
-> Status: **version 0.20** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.21** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
 > `0.10` was the first revision informed by a real implementation; `0.11`,
-> `0.12`, `0.14`, `0.16` and `0.18` corrected what successive reviews of them
-> found; `0.13` was the first since `0.9` to *add* capability rather than only
-> correct, `0.15` is the first to change what already-written files mean, and
-> `0.17` the first driven by an implementation decoding at field granularity.
-> More are expected.
+> `0.12`, `0.14`, `0.16`, `0.18` and `0.20` corrected what successive reviews
+> of them found; `0.13` was the first since `0.9` to *add* capability rather
+> than only correct, `0.15` the first to change what already-written files mean,
+> `0.17` the first driven by an implementation decoding at field granularity,
+> `0.19` the first to *remove* rules rather than add them, and `0.21` the first
+> since `0.15` to change a block body. More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` through `0.18`
-> followed. Note `0.18` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.21`
+> followed. Note `0.21` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -59,6 +60,13 @@ because what it did is worth recording, not because it produced units. The words
 are used in that sense throughout; **decoded** always names a
 [layer](#layers-transport-and-decoded-live-in-separate-streams), never a synonym
 for *derived*.
+
+A **unit sequence** is a decoded participant whose stored order is not stream
+order: every record is addressable at its concatenation offset, and no two
+adjacent ones may be assumed to join. It is declared, per participant, by
+[`adjacency = units`](#participant-descriptor-0x11); a participant that does not
+declare it is a **stream**, whose neighbours join unless a
+[Discontinuity](#discontinuity-0x22) says otherwise.
 
 ## Goals
 
@@ -214,7 +222,7 @@ Block types:
 | 0x02 | Source Descriptor       | one input these bytes came from — a *capture* (file/interface) or another *`.zpf`* this file was derived from; has an id and a `kind` |
 | 0x03 | Decoder Descriptor      | a decoder's id, name, version, params digest    |
 | 0x10 | Session Descriptor      | session id, protocol, flow key, metadata        |
-| 0x11 | Participant Descriptor  | participant id within a session, endpoint, TCP ISN |
+| 0x11 | Participant Descriptor  | participant id within a session, what its stored adjacency asserts, endpoint, TCP ISN |
 | 0x12 | Session End             | optional: no further blocks reference this session; how it ended |
 | 0x20 | Record                  | a directed payload unit (see fields below)      |
 | 0x21 | Undecoded               | a region the transform did not decode, referencing the predecessor's bytes (see Layers) |
@@ -281,13 +289,13 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.21","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
-{"type":"participant","session_id":8,"pid":0,"endpoint":["alice"]}
-{"type":"participant","session_id":8,"pid":1,"endpoint":["bob"]}
-{"type":"participant","session_id":8,"pid":2,"endpoint":["carol"]}
+{"type":"participant","session_id":8,"pid":0,"adjacency":"contiguous","endpoint":["alice"]}
+{"type":"participant","session_id":8,"pid":1,"adjacency":"contiguous","endpoint":["bob"]}
+{"type":"participant","session_id":8,"pid":2,"adjacency":"contiguous","endpoint":["carol"]}
 
 {"type":"record","session_id":8,"sender_pid":0,"source_id":1,"ts":2000,
  "payload":"aGksIGFsbCE="}
@@ -296,7 +304,7 @@ that line.
 {"type":"record","session_id":8,"sender_pid":1,"source_id":1,"ts":2150,
  "payload":"bW9ybmluZw=="}
 
-{"type":"participant","session_id":8,"pid":3,"endpoint":["dave"]}
+{"type":"participant","session_id":8,"pid":3,"adjacency":"contiguous","endpoint":["dave"]}
 {"type":"record","session_id":8,"sender_pid":3,"source_id":1,"ts":2300,
  "payload":"YW0gSSBsYXRlPw=="}
 
@@ -476,14 +484,14 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.21","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
 {"type":"session","session_id":7,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000}
-{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000}
+{"type":"participant","session_id":7,"pid":0,"adjacency":"contiguous","endpoint":["10.0.0.1:51000"],"isn":1000}
+{"type":"participant","session_id":7,"pid":1,"adjacency":"contiguous","endpoint":["93.184.216.34:80"],"isn":5000}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
  "seq_start":1001,"ack":5001,
@@ -565,15 +573,15 @@ identity span, naming the input's ids, is what ties it back — and stores the t
 records in causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.21","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
 
 {"type":"session","session_id":1,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80","sequenced":true}
-{"type":"participant","session_id":1,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000}
-{"type":"participant","session_id":1,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000}
+{"type":"participant","session_id":1,"pid":0,"adjacency":"contiguous","endpoint":["10.0.0.1:51000"],"isn":1000}
+{"type":"participant","session_id":1,"pid":1,"adjacency":"contiguous","endpoint":["93.184.216.34:80"],"isn":5000}
 
 {"type":"record","session_id":1,"sender_pid":0,"source_id":1,"ts":1000,
  "seq_start":1001,"ack":5001,"payload":"R0VUIC8gSFRUUC8xLjENCg0K",
@@ -720,32 +728,64 @@ handshake and the first captured byte are the leading hole `[0, K)`
 is no room below the first captured byte, so a pre-first-byte loss simply is not
 representable — one more reason `isn` is mandatory once the handshake is seen.
 
-**A record below the origin covers no byte of the stream.** The origin is
-`isn + 1` where the participant carries an `isn`, and the first captured byte
-otherwise; everything above measures from it. A record whose `seq_start` precedes
-the origin therefore has a negative offset in a space that has none, and the
-modular subtraction does not report that — it returns a number just under 2³²,
-which would make the stream measure 4294967295 bytes whatever its data actually
-spans.
+**Offsets unwrap along stored order.** A `seq_start` is 32 bits and wraps; an
+offset is a u64 and does not. The two are reconciled by walking the
+participant's records in stored order: record *k*'s offset is record *k−1*'s
+offset plus the **signed serial delta** of their `seq_start`s — `a − b` under
+[RFC 1982](#causal-ordering-from-tcp-seqack), the comparison every other
+`seq_start` comparison uses — and the first record's offset is its delta from
+the **origin**: `isn + 1` where the participant carries an `isn`, the first
+captured byte otherwise. This is well-defined at any stream length, because the
+[ordering rule](#identifiers--ordering) already requires a participant's records
+to be in serial order, which keeps each within 2³¹ of its predecessor — exactly
+the range in which the delta is defined. A stream carrying more than 2 GiB in one
+direction, or whose sequence numbers pass through 2³², is placed by this walk
+like any other; for a stream under 2 GiB the walk yields `(seq_start − origin)
+mod 2³²` at every record, so nothing under that size reads differently.
+
+**A hole of 2³¹ bytes or more between two consecutive records is not
+representable within one stream**, and this is a bound, not an omission. The
+delta the walk needs is undefined there: a record 2³¹ + *x* past its predecessor
+is, in serial arithmetic, 2³¹ − *x* before it, and the ordering rule refuses the
+pair as out of order. A producer that knows the far side is real — it may have a
+clock the sequence number is not, such as the TCP Timestamps option — ends the
+session at the hole and opens another on the same key, with no `isn`, so the
+stream resumes at its first captured byte; it **SHOULD** write `capture-gap` as
+the [Session End](#session-end-0x12) reason, so that two producers name the
+shape the same way and a consumer can tell a resumed conversation from a new
+one. What is lost is true position on the far side, which nothing downstream
+can use across a hole that wide. A Record option stating the offset outright
+would let one stream span it; it is not defined here, and it would be safe to
+add later — a reader that ignored it would meet the ordering violation and stop
+rather than misplace a byte.
+
+**The floor binds each record to its predecessor, and the origin is the first
+record's predecessor.** A record whose `seq_start` is serially *below* the one
+it is measured from has a negative delta in a space that has none. Below the
+origin, it would precede byte 0; below a predecessor, it is the out-of-order
+record the [ordering rule](#identifiers--ordering) forbids a writer to emit, and
+the two rules describe one case. An *unsigned* modular subtraction reports
+neither — it returns a number just under 2³², which would make the stream measure
+4294967295 bytes whatever its data actually spans — which is why the delta above
+is signed.
 
 Such a record is **unplaceable**, and so is one carrying **no `seq_start`** on a
 stream whose other records carry them. An unplaceable record contributes nothing
 to the extent and covers no byte of the stream, whatever range a reader reports
-for it. A reader accepts the file and SHOULD report the record; where this
-document once pinned the exact range, it now does not, so two readers may report
-different ranges for the same unplaceable record while agreeing on every extent
-and every other record.
+for it — and it **anchors nothing**: the predecessor in the walk above is the
+last *placeable* record, so what follows an unplaceable record is measured past
+it, not from it. A reader accepts the file and SHOULD report the record (where
+the record is also out of order, the ordering rule's own options — reject, or
+discard the session — are open to it as well); where this document once pinned
+the exact range, it now does not, so two readers may report different ranges for
+the same unplaceable record while agreeing on every extent and every other
+record.
 
 Zero width is not *deletion* — the record's `timestamp`, `flags` and payload
 remain readable, and a consumer indexing by anything other than offset still sees
 it. Where such a record carries payload those bytes are excluded from the extent
 and from every coverage answer the file supports, which is the price of not
 trusting the wrapped offset.
-
-The floor is only decidable within the serial-arithmetic half-space: the
-comparison is the [RFC 1982 one](#causal-ordering-from-tcp-seqack) every other
-`seq_start` comparison uses, so a `seq_start` more than 2³¹ below the origin is
-indistinguishable from one above it.
 
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
@@ -758,7 +798,9 @@ a [sessionization stage](#conceptual-model), or re-emitted by a pass-through. A
 offset space is the **concatenation of that participant's decoded record payloads
 in stored order, plus the declared `width` of any
 [Discontinuity](#discontinuity-0x22) between them**, with byte 0 the first byte of
-the first such record.
+the first such record. A participant declared a
+[unit sequence](#participant-descriptor-0x11) has exactly this space — the
+declaration changes what adjacency *asserts*, not where anything *is*.
 
 It follows that a decoded stream is hole-inclusive **only** where a Discontinuity
 declares a width — unlike a transport stream, which is hole-inclusive throughout.
@@ -831,8 +873,9 @@ changes them — and its records carry `spans` naming the input ranges they came
 from. Those spans will not ascend with stored order, which is expected: nothing
 requires them to, and coverage depends only on which ranges are covered, not on
 the order they appear in. Records it stores as neighbours that were not neighbours
-in the stream no longer join, which
-[Discontinuity](#discontinuity-0x22) obliges it to declare at each such seam.
+in the stream no longer join, which [Discontinuity](#discontinuity-0x22) obliges
+it to declare — at each such seam, or once for the participant, as a
+[unit sequence](#participant-descriptor-0x11).
 
 One consequence follows: because every `params_digest` in such a file belongs to
 an *inherited* decoder, the transform's own configuration has none to live in.
@@ -1028,7 +1071,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.21","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1036,8 +1079,8 @@ equal to the output's here — not copying them):
  "params_digest":"sha256:00ab…"}
 
 {"type":"session","session_id":7,"proto":"http"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"]}
-{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"]}
+{"type":"participant","session_id":7,"pid":0,"adjacency":"contiguous","endpoint":["10.0.0.1:51000"]}
+{"type":"participant","session_id":7,"pid":1,"adjacency":"contiguous","endpoint":["93.184.216.34:80"]}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
  "decoder_id":1,
@@ -1093,14 +1136,14 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.20","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.21","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
  "version":"1.1","params_digest":"sha256:2f60"}
 
 {"type":"session","session_id":10,"proto":"tcp","key":"10.8.0.2:44300 -> 10.8.0.9:80"}
-{"type":"participant","session_id":10,"pid":0,"endpoint":["10.8.0.2:44300"],"isn":1000}
+{"type":"participant","session_id":10,"pid":0,"adjacency":"contiguous","endpoint":["10.8.0.2:44300"],"isn":1000}
 {"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1000,"payload":"…40 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":0,"off_end":60}],
  "seq_start":1001}
@@ -1111,7 +1154,7 @@ hole-inclusive. It also **fans out** — one input stream becomes two sessions:
  "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
 
 {"type":"session","session_id":11,"proto":"tcp","key":"10.8.0.2:44301 -> 10.8.0.9:53"}
-{"type":"participant","session_id":11,"pid":0,"endpoint":["10.8.0.2:44301"],"isn":5000}
+{"type":"participant","session_id":11,"pid":0,"adjacency":"contiguous","endpoint":["10.8.0.2:44301"],"isn":5000}
 {"type":"record","session_id":11,"sender_pid":0,"source_id":1,"ts":1100,"payload":"…20 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":60,"off_end":100}],
  "seq_start":5001}
@@ -1243,7 +1286,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.18` is the eighteenth minor and is **greater** than `0.9`. A writer stamps
+number: `0.21` is the twenty-first minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -1340,8 +1383,9 @@ file was produced by something, and a capture-sourced file may name it.
 
 ### Descriptor blocks
 
-Each fixed body ends with a `_reserved: u16` (0) where needed to round it to a
-multiple of 4 bytes. The `Options` line under each table lists that block's TLV
+Each fixed body is rounded to a multiple of 4 bytes with reserved bytes (0)
+where needed — a `_reserved: u16`, or a `_reserved: u8` beside a one-byte enum
+that took the other half (`output_layer`, `adjacency`). The `Options` line under each table lists that block's TLV
 options (see the [id registry](#tlv-option-framing--id-registry)).
 
 #### Source Descriptor (`0x02`)
@@ -1466,11 +1510,48 @@ MUST be written 0, and MUST be ignored on read.
 |------------------|------|-----------------------------------------|
 | `session_id`     | u64  | session this participant belongs to     |
 | `participant_id` | u16  | id within that session (the `pid`)      |
-| `_reserved`      | u16  | 0                                       |
+| `adjacency`      | u8   | what stored adjacency asserts: `0` = `contiguous`, `1` = `units` (see [enums](#enums), and below) |
+| `_reserved`      | u8   | 0                                       |
 
 Options: `endpoint` (string, **may repeat** — see below), `isn` (u32, the SYN's
 TCP sequence number — see below), `tcp_role` (u8, see enums), `identity`
 (string), `comment`.
+
+**`adjacency` says what two records stored side by side assert about each
+other.** `contiguous` (`0`) — the value every file written before the field
+existed carries — means what stored adjacency has always meant on a decoded
+stream: neighbours join, and a consumer may splice them unless a
+[Discontinuity](#discontinuity-0x22) stands between. `units` (`1`) declares the
+participant a **unit sequence**: its offset space is still the stored-order
+concatenation of its payloads plus declared widths — every record stays
+addressable and citable, and nothing about the arithmetic changes — but **no two
+adjacent records may be assumed to join**, anywhere. It is the wholesale form of
+the statement a Discontinuity makes at one seam, and it exists for two shapes
+that have no honest per-seam form: a stage that reorders a participant's
+records, where every seam is a break; and a decoder whose units decompose one
+another — a header record followed by the fields carved out of it — where
+adjacency was never a claim about continuity at all. What each value obliges a
+producer and a consumer to is stated with the
+[Discontinuity duties](#discontinuity-0x22), and nowhere else. Every stream that
+does not declare `units` keeps today's meaning: the field adds a way to say
+*none of these join*, and takes nothing from what silence says.
+
+**A body field, for the reason `output_layer` is one** (see
+[the note there](#decoder-descriptor-0x03)). As an option it would have been
+*not safe to skip*: a reader that retained it but ignored it semantically would
+splice a unit sequence at every seam, silently — the `0x22` failure over again,
+and the reason the candidate had to land before `1.0` or not at all. In the body
+there is nothing to skip. Numbering `contiguous` as `0` is what lets it take the
+reserved half-word without changing a byte of any existing file, every one of
+which holds `0` there and meant exactly that.
+
+**On a transport-layer participant it says nothing**, because a transport
+stream's offsets come from its sequence numbers and stored order defines nothing
+there. A writer **MUST NOT** set `units` on a participant whose records resolve
+to the transport layer; a reader that finds it there gives it the treatment a
+transport-layer [label](#typing-a-decoded-record) gets — ignores the field,
+reports it, and accepts the file — and for the same reason: ignoring it loses
+nothing.
 
 `tcp_role` records, **when the handshake was observed**, which side opened the
 connection: the participant that sent the initial SYN is the *initiator* (active
@@ -1534,11 +1615,14 @@ Options: `reason` (string), `input_extents` (packed, derived files; **repeatable
 
 `reason` says *how* the session ended — an open vocabulary with suggested
 values `fin` (clean TCP close), `rst` (reset), `timeout` (idle eviction),
-`capture-end` (the capture stopped while the session was live). Note the
+`capture-end` (the capture stopped while the session was live), `capture-gap`
+(the capture resumed, and the stream could not — see
+[the unmeasurable hole](#referencing-the-source-by-stream-offset)). Note the
 distinction: the block itself only asserts the **file** is done with the
 session; whether the *wire* conversation actually terminated is what `reason`
-conveys (`fin`/`rst` = it ended; `timeout`/`capture-end` = the writer merely
-stopped tracking). Reaching the [End block](#end-of-file-0x41) or end-of-stream
+conveys (`fin`/`rst` = it ended; `timeout`/`capture-end`/`capture-gap` = the
+writer merely stopped tracking, and under `capture-gap` the next session on the
+same key is the same conversation, carried on). Reaching the [End block](#end-of-file-0x41) or end-of-stream
 implicitly closes every still-open session, so a Session End as a file's last
 act is redundant but harmless; readers MUST NOT require the block (a crashed
 writer never wrote it). A transform SHOULD emit a Session End for an output
@@ -1941,6 +2025,13 @@ of the first into the start of the second.
 **This duty is stated here and nowhere else; every other mention refers to it.**
 It binds any stream whose offsets are the **concatenation of its own record
 payloads**, which is what makes a break inexpressible in it without this block.
+A participant declaring [`adjacency = units`](#participant-descriptor-0x11)
+discharges it **wholesale**: it asserts no join anywhere, so there is no seam at
+which the assertion is false and no block owed at any. The block remains
+permitted in such a participant — a `width` is a term in the positional
+arithmetic whether or not the no-join claim beside it is redundant — and nothing
+about `contiguous` changes: a stream that does not say `units` owes this duty at
+every seam exactly as before.
 That is the property, not the file kind: a transport stream is exempt for the
 mirror-image reason, its hole-inclusive offsets having already expressed the break
 (see *A transport-layer stream MUST NOT carry one*, below).
@@ -1990,8 +2081,12 @@ between them at all.
 reorders a participant's records withholds nothing — every byte reaches the output
 — but stored order *defines* this offset space, so two records stored as
 neighbours assert that they join, and for reordered neighbours that assertion is
-false. Such a stage emits a Discontinuity at each seam, with **no** `width`: what
-lies between two units that were never adjacent is not a hole to be counted.
+false. Such a stage has two honest forms and picks one: it emits a
+Discontinuity at each seam, with **no** `width` — what lies between two units
+that were never adjacent is not a hole to be counted — or, where every seam is a
+break, it MAY declare the participant `units` instead and emit none. A stream
+that mostly joins with a seam or two takes the first form; a fully reordered one
+is the shape the second exists for.
 
 **Two cases are decidable from a single file.** Where an Undecoded region of the
 **`hole`** class lies between the input regions of two adjacent output units, no
@@ -2005,7 +2100,9 @@ checker may raise either from the file alone.
 which case; this says how to test it. The layer test comes first, because the
 whole check is inapplicable without it:
 
-> The check applies only to **decoded-layer** output streams. For each output
+> The check applies only to **decoded-layer** output streams whose participant
+> is **not** declared `units` — a unit sequence asserts no join, so there is
+> nothing for a missing block to contradict. For each output
 > participant, for each adjacent pair of records `(r1, r2)` in stored order, and
 > each input stream `S = (source_id, session_id, participant_id)` cited by the
 > `spans` of **both**: let `A` be the maximum `off_end` over `r1`'s spans on `S`,
@@ -2046,6 +2143,15 @@ rather than to narrow it to what a checker can see.
 either side of a Discontinuity as contiguous. A decode stage reading an input that
 carries one **MUST NOT** emit a unit whose `spans` cross it without emitting a
 Discontinuity of its own in the corresponding position of its output.
+
+**And what it owes a unit sequence is the same, at every seam.** A consumer
+**MUST NOT** treat any two records of a participant declared
+[`units`](#participant-descriptor-0x11) as contiguous, and a decode stage reading
+one carries the break at every seam as it would a declared one: a unit whose
+`spans` cross two input units either sits in an output participant declared
+`units` itself, or has a Discontinuity emitted where they meet. No third case is
+defined — a stage that knows two units join has the same recourse as one that
+knows it for a declared break, which is to say none but the declaration.
 
 The no-splice sentence is what carries the property down a chain, and it is worth
 stating explicitly because it is easy to think the MUST NOT before it covers the
@@ -2233,7 +2339,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical five, and MUST agree with the class if it accompanies one of them |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
-| `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
+| `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/`capture-gap`/… (open vocabulary; `capture-gap` is the value for [the unmeasurable hole](#referencing-the-source-by-stream-offset)) |
 | `0x00C1` | input_extents    | packed     | Session End (derived)    | length of each input participant stream this session drew on, in that stream's own offset space: `source_id: u16, pid: u16, session_id: u64, extent: u64` — ids in the source's namespace; **repeatable**, occurrences concatenate (see [Session End](#session-end-0x12)) |
 | `0x00D0` | width            | u64        | Discontinuity            | extent of the break in this stream's own offset space; **absent means unknown**, and an absent width contributes 0 to positional arithmetic (see [Discontinuity](#discontinuity-0x22)) |
 | `0x00D1` | reason           | string     | Discontinuity            | why the stream breaks here: `tls-record-lost`/`decrypt-failed`/`stream-gap`/`records-dropped`/`reordered`/… (open vocabulary) |
@@ -2315,12 +2421,19 @@ space.)
 present — it is a body field, so there is no absent case (see
 [Decoder Descriptor](#decoder-descriptor-0x03) for why `decoded` is `0`).
 
-**Two enums are load-bearing: Source `kind` and `output_layer`.** Both decide how
-offsets are *read*, so a value neither the registry nor this document defines
-leaves a reader unable to compute a stream's offset space at all. A reader
-**MUST NOT** guess one, and treats the stream as a semantic violation it may
-isolate — unlike `tcp_role`, where an unknown value is advisory and carrying the
-raw number forward loses nothing.
+`adjacency` (Participant **body**, u8): `0` = contiguous, `1` = units. Always
+present — a body field — and `0` is what every file written before it existed
+says (see [Participant Descriptor](#participant-descriptor-0x11) for what each
+value asserts).
+
+**Three enums are load-bearing: Source `kind`, `output_layer` and `adjacency`.**
+The first two decide how offsets are *read*, so a value neither the registry nor
+this document defines leaves a reader unable to compute a stream's offset space
+at all; the third decides whether two adjacent records may be spliced, so an
+undefined value leaves a reader unable to say what any pair of them asserts. A
+reader **MUST NOT** guess one, and treats the stream as a semantic violation it
+may isolate — unlike `tcp_role`, where an unknown value is advisory and carrying
+the raw number forward loses nothing.
 
 `tcp_role` (Participant option, u8): `0` = unknown (handshake not observed),
 `1` = initiator (active open, sent the SYN), `2` = responder (passive open). In
@@ -2427,6 +2540,11 @@ vocabulary stays closed
   `(session_id, participant_id)`, a writer **MUST** emit that participant's
   records in `seq_start` order (logical stream order for non-TCP streams that
   have no sequence numbers) — the order in which it already produced them.
+  *Order* here is **serial-number order**, the
+  [RFC 1982 comparison](#causal-ordering-from-tcp-seqack) every `seq_start`
+  comparison uses: it is what lets a stream's sequence numbers pass through 2³²,
+  and it keeps each record within 2³¹ of its predecessor, which is the range the
+  [unwrapping rule](#referencing-the-source-by-stream-offset) needs.
   **Non-descending**, not strictly ascending: two records MAY share a `seq_start`,
   and where they do, **stored order decides which comes first**. That is not a
   corner — a [handshake record](#record-0x20) sits at the stream origin and the
@@ -2742,10 +2860,11 @@ readers in two tiers, split by what the violation poisons:
   [width-mismatch rule](#enums), the
   [origin floor](#referencing-the-source-by-stream-offset)), that rule
   **displaces this licence**: a reader applies the stated rule instead, whether it
-  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and a
-  transport-layer label both keep the record, ignore the part that is wrong, and
-  report — so reading them as instances of a tier headed *the reader MAY isolate*
-  gets them backwards.
+  is stronger or weaker than isolation. Some are weaker — the `prim:` rule, a
+  transport-layer label and [`units` on a transport-layer
+  participant](#participant-descriptor-0x11) all keep the record, ignore the
+  part that is wrong, and report — so reading them as instances of a tier headed
+  *the reader MAY isolate* gets them backwards.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**
@@ -2763,16 +2882,18 @@ the enums this document defines differ (see [Enums](#enums)):
 
 - `tcp_role` is advisory, so an unrecognised value means simply "unknown",
   exactly as an omitted option does. A reader carries it and moves on.
-- Source `kind` and Decoder `output_layer` are **load-bearing**: `kind` fixes a
-  stream's provenance, tells a decoder-less record apart as capture-sourced or
-  pass-through, and selects how a `spans` entry's offsets are read (capture-file
-  byte offsets vs logical stream offsets — see the
-  [span-list rule](#tlv-option-framing--id-registry)); `output_layer` decides
-  which offset space a stream's records live in. A reader that does not
-  recognise a Source's `kind`, or a Decoder's `output_layer`, therefore cannot
-  interpret any record or span referencing it, and this **is** an isolatable
-  semantic condition: the reader MAY reject the file, or discard that Source or
-  Decoder together with everything referencing it, and SHOULD report it. It
+- Source `kind`, Decoder `output_layer` and Participant `adjacency` are
+  **load-bearing**: `kind` fixes a stream's provenance, tells a decoder-less
+  record apart as capture-sourced or pass-through, and selects how a `spans`
+  entry's offsets are read (capture-file byte offsets vs logical stream offsets
+  — see the [span-list rule](#tlv-option-framing--id-registry));
+  `output_layer` decides which offset space a stream's records live in;
+  `adjacency` decides whether any two of a participant's records may be
+  spliced. A reader that does not recognise a Source's `kind`, a Decoder's
+  `output_layer` or a Participant's `adjacency` therefore cannot interpret any
+  record or span referencing it, and this **is** an isolatable semantic
+  condition: the reader MAY reject the file, or discard that Source, Decoder or
+  Participant together with everything referencing it, and SHOULD report it. It
   MUST NOT guess a value.
 
 A consequence worth stating for future editors: **`kind` is not a free extension
@@ -2875,11 +2996,11 @@ general naming rule covers it.
   MUST NOT assume a `bytes` option is text, even when it decodes to printable
   ASCII.
 - **Enums** render as their defined **string label**: `kind` as
-  `"capture"`/`"zpf-input"`, `output_layer` as `"decoded"`/`"transport"` (always
-  present, since it is a body field), `tcp_role` as
-  `"initiator"`/`"responder"` (omitted
+  `"capture"`/`"zpf-input"`, `output_layer` as `"decoded"`/`"transport"` and
+  `adjacency` as `"contiguous"`/`"units"` (each always present, since it is a
+  body field), `tcp_role` as `"initiator"`/`"responder"` (omitted
   when unknown). A value with **no defined label** renders as its raw number
-  (see [the escapes](#unrecognised-data-the-four-escapes)). For the two
+  (see [the escapes](#unrecognised-data-the-four-escapes)). For the three
   **load-bearing** enums that number is not a value a reader may act on — it
   preserves the byte through a round-trip and nothing more.
 - **Flag bitfields** render by name, never as the raw integer: the single-bit
@@ -2983,7 +3104,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  12 00                    version_minor = 18   (0.18, little-endian)
+000E  15 00                    version_minor = 21   (0.21, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
@@ -3013,7 +3134,8 @@ Offsets are hex; each line is annotated.
 0050  28 00 00 00              length = 40
 0054  07 00 00 00 00 00 00 00  session_id = 7  (u64)
 005C  00 00                    participant_id = 0
-005E  00 00                    _reserved
+005E  00                       adjacency = 0  (contiguous)
+005F  00                       _reserved
 0060  60 00 0E 00              option 0x0060 endpoint, len = 14
 0064  31 30 2E 30 2E 30 2E 31  "10.0.0.1
 006C  3A 35 31 30 30 30        :51000"
