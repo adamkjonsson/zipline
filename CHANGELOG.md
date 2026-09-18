@@ -98,6 +98,41 @@ reasoning in [docs/RELEASE-0.21-PLAN.md](docs/RELEASE-0.21-PLAN.md).
   negative range and an extent of 8 where the rule gives 16). The two retired
   spellings are in `RETIRED_CLAIMS`, reproducing against `v0.20`. No keyword
   moves.
+- **A Participant Descriptor carries `adjacency`, a body field, and its
+  reserved u16 is now `u8 + u8`**
+  ([#80](https://github.com/adamkjonsson/zipline/issues/80),
+  [#106](https://github.com/adamkjonsson/zipline/issues/106)). `0` =
+  `contiguous`: stored neighbours join, which is what every file written
+  before the field existed says and meant. `1` = `units`: the participant is a
+  **unit sequence** — its offset space is still the stored-order
+  concatenation, every record addressable and citable, but no two adjacent
+  records may be assumed to join. It is the wholesale form of what a
+  Discontinuity says at one seam, for the two shapes with no honest per-seam
+  form: a stage that reorders a participant's records (#80's candidate, which
+  had to land in `0.x` or not at all), and a decoder whose units decompose one
+  another (#106's `kober` files, 176 nested DNS records built almost entirely
+  of pairs the seam predicate declines to test). A **body field, not an
+  option**, for the reason `output_layer` is one: as an option it would not
+  have been safe to skip — a reader that retained it but ignored it would
+  splice a unit sequence at every seam, the `0x22` failure over again — and in
+  the body there is nothing to skip. Numbering `contiguous` as `0` is what
+  makes it free: **no byte of any existing file changes**, and every
+  participant `.jsonl` line gains `"adjacency"`, since body fields always
+  project. It is the **third load-bearing enum**, so an unrecognised value is
+  the isolate condition `kind` and `output_layer` already have; the two places
+  that counted *two* now count three and are an `ENUMERATIONS` set. **Three
+  keywords**, each in `NORMATIVE_ADDITIONS`: a consumer **MUST NOT** treat any
+  two records of a `units` participant as contiguous, and a decode stage
+  reading one carries the break at every seam; a reordering stage **MAY**
+  declare `units` instead of a block per seam; a writer **MUST NOT** set
+  `units` on a transport-layer participant, where stored order defines nothing
+  — advisory, in the shape of a transport-layer label. The seam predicate does
+  not apply to a `units` participant; the block stays permitted there (a
+  `width` still counts); `reordered-decoded` keeps its block, the per-seam
+  form being right for a stream that mostly joins. Every stream that does not
+  say `units` keeps today's meaning. §Terminology defines *unit sequence*.
+  Four retired spellings — the two counts, the two sentences stating the
+  per-seam block as the only form — reproduce against `v0.20`.
 
 ### Clarified
 
@@ -128,9 +163,38 @@ reasoning in [docs/RELEASE-0.21-PLAN.md](docs/RELEASE-0.21-PLAN.md).
   `NORMATIVE_ADDITIONS`). §Session End and the registry row list the value
   beside `capture-end`, with the distinction: the capture stopped, or it
   resumed and the stream could not. `session-split-capture-gap` is the
-  fixture. **58 vectors, 35 options, 30 rules** after Phase 1.
+  fixture.
+- **Four vectors for `adjacency`, and the `load-bearing enums` set**
+  ([#80](https://github.com/adamkjonsson/zipline/issues/80),
+  [#106](https://github.com/adamkjonsson/zipline/issues/106)).
+  `unit-sequence-reversed` — four records emitted in reverse, spans descending
+  at every step, no block; `unit-sequence-nested` — a DNS header, its flags
+  word, and three sub-fields of the flags word, input bytes `[2,4)` at five
+  output offsets, the suite's first spans overlapping by containment;
+  `isolate-unknown-adjacency` — value `2`, the twin of
+  `isolate-unknown-output-layer`; `advisory-transport-adjacency` — `units` on a
+  capture-sourced TCP participant, accepted and reported. `ENUMERATIONS` gains
+  the load-bearing set at both sites it is counted, so a fourth fails the
+  build. **62 vectors, 35 options, 34 rules.**
 
 ### Decided
+
+- **Package D is declined, and #125 closes with its shape recorded**
+  ([#125](https://github.com/adamkjonsson/zipline/issues/125)). `0.19`'s
+  scope decision 3 chose D-pair — delete `input_extents`, `reason_class`, the
+  `dropped` MUST and the seam predicate, and verify coverage across a pair of
+  files — and two releases did not take it. This one reverses it, for four
+  reasons recorded in the plan: `0.20` built on the apparatus twice (the merge
+  twin is single-file *because* of `input_extents`; the `extents` key uses its
+  shape); #106's evidence against the predicate is answered by `adjacency`
+  rather than by deletion, and the predicate is now honest about what it
+  declines; the cost D was pricing has been paid, `python-zipline`
+  implementing every piece of it; and D rewrites the lines `adjacency` edits,
+  so it had to go before the field or never. #125's own analysis is its
+  answer: removal is orthogonal to recoverability, so a second removal word,
+  when a producer needs one, is a **flag beside `reason_class`**, not a third
+  value. Not built: no producer has written such a word, and a flag a checker
+  keys on is safe to skip, so it can arrive as a `1.x` minor. No deadline.
 
 - **The unmeasurable hole gets no representation within one stream**
   ([#147](https://github.com/adamkjonsson/zipline/issues/147)). The issue

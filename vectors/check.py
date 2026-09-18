@@ -564,6 +564,29 @@ RULES = {
         "the next on the same key, reason capture-gap, carries the conversation on",
         "session-split-capture-gap",
     ),
+    # 0.21 (#80, #106). The adjacency body field. Like output_layer it is not
+    # an option, so the registry parse cannot see it; its two values and the
+    # two treatments an enum owes are covered only by these entries.
+    "unit-sequence-discharges-seams": (
+        "a participant declared units owes no Discontinuity at any seam; a "
+        "reordering stage may declare it instead of a block per seam",
+        "unit-sequence-reversed",
+    ),
+    "unit-sequence-decomposition": (
+        "a decoder whose units decompose one another declares units; overlap by "
+        "containment is not a non-join and the seam predicate does not apply",
+        "unit-sequence-nested",
+    ),
+    "unknown-adjacency-isolates": (
+        "an unrecognised adjacency leaves every pair's assertion unknown; MUST NOT "
+        "guess, and MUST NOT fall back to contiguous",
+        "isolate-unknown-adjacency",
+    ),
+    "adjacency-transport-advisory": (
+        "units on a transport-layer participant is a MUST NOT whose violation is "
+        "ADVISORY: the field is inert there, so the reader ignores it, reports, accepts",
+        "advisory-transport-adjacency",
+    ),
     # 0.18's one rule with a vector. The ordering MUST has never said whether
     # two records may share a seq_start; 0.17's handshake MUST makes the tie
     # mandatory in every file recording a handshake, and no vector carried one.

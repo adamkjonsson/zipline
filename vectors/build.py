@@ -242,13 +242,25 @@ def session_end(session_id: int, options: tuple[Opt, ...] | list[Opt] = ()) -> B
     return block(0x12, "Session End", body, options, fields={"session_id": session_id})
 
 
-def participant(session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt] = ()) -> Blk:
+def participant(
+    session_id: int, pid: int, options: tuple[Opt, ...] | list[Opt] = (), adjacency: int = 0
+) -> Blk:
+    """Build a Participant Descriptor (0x11).
+
+    adjacency is a BODY field, not an option: 0 = contiguous, 1 = units. It took
+    the reserved u16's first byte in 0.21 the way output_layer took the
+    Decoder's, and numbering contiguous 0 is what made that free -- every file
+    written before it holds 0 there, and every one of them meant that stored
+    neighbours join.
+    """
+    adj_name = ENUMS["adjacency"].get(adjacency, "?")
     body = [
         P(u64(session_id), f"session_id = {session_id}  (u64)"),
         P(u16(pid), f"participant_id = {pid}"),
-        P(u16(0), "_reserved"),
+        P(u8(adjacency), f"adjacency = {adjacency}  ({adj_name})"),
+        P(u8(0), "_reserved"),
     ]
-    fields = {"session_id": session_id, "participant_id": pid}
+    fields = {"session_id": session_id, "participant_id": pid, "adjacency": adjacency}
     return block(0x11, "Participant Descriptor", body, options, fields=fields)
 
 
@@ -605,6 +617,7 @@ ALIASES = {"timestamp": "ts", "participant_id": "pid", "flow_key": "key"}
 ENUMS = {
     "kind": {0: "capture", 1: "zpf-input"},
     "output_layer": {0: "decoded", 1: "transport"},
+    "adjacency": {0: "contiguous", 1: "units"},
     "tcp_role": {1: "initiator", 2: "responder"},  # 0 = unknown, and is omitted
 }
 
@@ -844,6 +857,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -925,8 +939,20 @@ vector(
             "params_digest": "sha256:00ab",
         },
         {"type": "session", "session_id": 7, "proto": "http"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
-        {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -1085,7 +1111,13 @@ vector(
             "version": "2.0",
         },
         {"type": "session", "session_id": 31, "proto": "acme"},
-        {"type": "participant", "session_id": 31, "pid": 0, "endpoint": ["10.0.0.1:9000"]},
+        {
+            "type": "participant",
+            "session_id": 31,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:9000"],
+        },
         {
             "type": "record",
             "session_id": 31,
@@ -1192,7 +1224,13 @@ vector(
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -1229,6 +1267,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "tcp_role": 7,
         },
@@ -1256,7 +1295,13 @@ vector(
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -1330,7 +1375,13 @@ vector(
             "version": "0.4",
         },
         {"type": "session", "session_id": 7, "proto": "http"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -1417,7 +1468,13 @@ vector(
             "version": "1.0",
         },
         {"type": "session", "session_id": 7, "proto": "http"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "undecoded",
             "source_id": 1,
@@ -1479,7 +1536,13 @@ vector(
         },
         {"type": "decoder", "decoder_id": 1, "output_layer": "decoded", "name": "http/1.1"},
         {"type": "session", "session_id": 7, "proto": "http"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "undecoded",
             "source_id": 1,
@@ -1547,7 +1610,13 @@ vector(
             "version": "0.2",
         },
         {"type": "session", "session_id": 7, "proto": "tls"},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -1653,9 +1722,21 @@ vector(
             "version": "0.1",
         },
         {"type": "session", "session_id": 100, "proto": "http"},
-        {"type": "participant", "session_id": 100, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 100,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {"type": "session", "session_id": 101, "proto": "http"},
-        {"type": "participant", "session_id": 101, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 101,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 100,
@@ -1796,7 +1877,13 @@ vector(
             "version": "0.1",
         },
         {"type": "session", "session_id": 9, "proto": "quic"},
-        {"type": "participant", "session_id": 9, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 9,
@@ -1861,7 +1948,13 @@ vector(
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
         {"type": "session", "session_id": 7, "proto": "tcp", "external_session_id": b64(UUID)},
-        {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -1913,6 +2006,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "identity": "alice@example.com",
         },
@@ -1972,7 +2066,11 @@ vector(
     "records carries a Discontinuity: the stage withholds nothing, but stored "
     "neighbours assert that they join and these two never did. No width -- what "
     "lies between two records that were never adjacent is not a hole to count, "
-    "so the output offsets are unchanged at [0,50) and [50,150).",
+    "so the output offsets are unchanged at [0,50) and [50,150). Since 0.21 a "
+    "reordering stage has a second form -- declare the participant a unit "
+    "sequence with adjacency = units and emit no block at all "
+    "(unit-sequence-reversed) -- and this vector keeps the first: one seam in "
+    "a stream that otherwise joins is what the per-seam block is for.",
     "Layers -- filtering and reordering a decoded stream",
     [
         file_header(
@@ -2037,7 +2135,13 @@ vector(
             "version": "0.4",
         },
         {"type": "session", "session_id": 7, "proto": "http"},
-        {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -2159,7 +2263,13 @@ vector(
             "version": "0.4",
         },
         {"type": "session", "session_id": 7, "proto": "http"},
-        {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+        },
         {
             "type": "record",
             "session_id": 7,
@@ -2293,6 +2403,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -2391,6 +2502,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -2469,7 +2581,13 @@ vector(
             "version": "0.4",
         },
         {"type": "session", "session_id": 3, "proto": "http"},
-        {"type": "participant", "session_id": 3, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 3,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 3,
@@ -2551,6 +2669,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -2667,7 +2786,13 @@ vector(
             "version": "0.4",
         },
         {"type": "session", "session_id": 10, "proto": "http"},
-        {"type": "participant", "session_id": 10, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 10,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 10,
@@ -2689,6 +2814,7 @@ vector(
             "type": "participant",
             "session_id": 11,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.2:25"],
             "isn": 4000,
         },
@@ -2734,8 +2860,20 @@ vector(
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
         {"type": "session", "session_id": 8, "proto": "irc"},
-        {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["alice"]},
-        {"type": "participant", "session_id": 8, "pid": 1, "endpoint": ["bob"]},
+        {
+            "type": "participant",
+            "session_id": 8,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["alice"],
+        },
+        {
+            "type": "participant",
+            "session_id": 8,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["bob"],
+        },
         {
             "type": "record",
             "session_id": 8,
@@ -2797,6 +2935,7 @@ vector(
             "type": "participant",
             "session_id": 1,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -2804,6 +2943,7 @@ vector(
             "type": "participant",
             "session_id": 1,
             "pid": 1,
+            "adjacency": "contiguous",
             "endpoint": ["93.184.216.34:80"],
             "isn": 5000,
         },
@@ -2863,8 +3003,20 @@ vector(
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "chat.pcap"},
         {"type": "session", "session_id": 8, "proto": "irc"},
-        {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["alice"]},
-        {"type": "participant", "session_id": 8, "pid": 1, "endpoint": ["bob"]},
+        {
+            "type": "participant",
+            "session_id": 8,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["alice"],
+        },
+        {
+            "type": "participant",
+            "session_id": 8,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["bob"],
+        },
         {
             "type": "record",
             "session_id": 8,
@@ -2916,8 +3068,20 @@ vector(
         {"type": "file", "format": FORMAT, "tick_hz": 1000000},
         {"type": "source", "source_id": 1, "kind": "capture", "uri": "mixed.pcap"},
         {"type": "session", "session_id": 9, "proto": "udp"},
-        {"type": "participant", "session_id": 9, "pid": 0, "endpoint": ["10.0.0.1:5000"]},
-        {"type": "participant", "session_id": 9, "pid": 1, "endpoint": ["10.0.0.2:5000"]},
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:5000"],
+        },
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.2:5000"],
+        },
         {
             "type": "record",
             "session_id": 9,
@@ -3462,6 +3626,7 @@ vector(
             "type": "participant",
             "session_id": 50,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -3545,6 +3710,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
             "tcp_role": "initiator",
@@ -3553,6 +3719,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 1,
+            "adjacency": "contiguous",
             "endpoint": ["93.184.216.34:80"],
             "isn": 5000,
             "tcp_role": "responder",
@@ -3685,6 +3852,7 @@ vector(
             "type": "participant",
             "session_id": 51,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -3755,6 +3923,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
             "tcp_role": "initiator",
@@ -3855,6 +4024,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
             "tcp_role": "initiator",
@@ -3948,6 +4118,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 2**32 - 5,
             "tcp_role": "initiator",
@@ -4034,6 +4205,7 @@ vector(
             "type": "participant",
             "session_id": 7,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
             "tcp_role": "initiator",
@@ -4050,7 +4222,13 @@ vector(
         },
         {"type": "session_end", "session_id": 7, "reason": "capture-gap"},
         {"type": "session", "session_id": 8, "proto": "tcp", "key": KEY},
-        {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "participant",
+            "session_id": 8,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
         {
             "type": "record",
             "session_id": 8,
@@ -4077,6 +4255,493 @@ vector(
     "session 7.",
     violations=0,
     extents=[(7, 0, 8), (8, 0, 8)],
+)
+
+# 0.21 (#80, #106). The adjacency body field, in its four shapes: the two the
+# milestone comment asked for, and the two every load-bearing enum owes.
+DNS_HEADER = b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00"
+
+
+vector(
+    "unit-sequence-reversed",
+    "accept",
+    "#80's shape: a stage that REVERSES a participant's four decoded records, "
+    "and declares the participant a unit sequence instead of emitting a "
+    "Discontinuity at each of its three seams. Input pid 1 held A = [0,40), "
+    "B = [40,80), C = [80,120), D = [120,160); the output stores D, C, B, A, "
+    "so the spans run downward at every step and no two stored neighbours "
+    "were ever neighbours on the wire. Under the per-seam form that is N-1 "
+    "blocks saying the same thing; adjacency = units says it once, for the "
+    "participant, and is the truer statement -- the stream's contiguity claim "
+    "is void as a whole, not at three points. The offset space is UNCHANGED: "
+    "D at [0,40), C at [40,80), B at [80,120), A at [120,160), extent 160, "
+    "every record addressable and citable. What changed is what adjacency "
+    "asserts, which is nothing. A reader that applies the reordering "
+    "predicate regardless of the field, or splices any two of these records, "
+    "has ignored a body field. Like reordered-decoded it is a decode stage "
+    "with an inherited decoder and its own config in transform_params_digest; "
+    "unlike it, no block.",
+    "Participant Descriptor -- adjacency",
+    [
+        file_header(
+            options=[
+                o_produced_by("zpf-reverse 0.1"),
+                o_produced_at(1719540000),
+                o_transform_params_digest("sha256:9b2f"),
+            ]
+        ),
+        source(1, 1, [o_uri("decoded.zpf"), o_digest("sha256:44dd")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        # THE FIELD: units. Every seam below is a break, and none is marked.
+        participant(7, 1, [o_endpoint("93.184.216.34:80")], adjacency=1),
+        record(
+            7,
+            1,
+            1,
+            995,
+            b"D" * 40,
+            options=[o_decoder_id(1), o_spans([(1, 7, 1, 120, 160)])],
+        ),
+        record(
+            7,
+            1,
+            1,
+            994,
+            b"C" * 40,
+            options=[o_decoder_id(1), o_spans([(1, 7, 1, 80, 120)])],
+        ),
+        record(
+            7,
+            1,
+            1,
+            993,
+            b"B" * 40,
+            options=[o_decoder_id(1), o_spans([(1, 7, 1, 40, 80)])],
+        ),
+        record(
+            7,
+            1,
+            1,
+            992,
+            b"A" * 40,
+            options=[o_decoder_id(1), o_spans([(1, 7, 1, 0, 40)])],
+        ),
+        session_end(7, [o_input_extents([(1, 7, 1, 160)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-reverse 0.1",
+            "produced_at": 1719540000,
+            "transform_params_digest": "sha256:9b2f",
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "decoded.zpf",
+            "digest": "sha256:44dd",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "http/1.1",
+            "version": "0.4",
+        },
+        {"type": "session", "session_id": 7, "proto": "http"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "units",
+            "endpoint": ["93.184.216.34:80"],
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 995,
+            "payload": b64(b"D" * 40),
+            "decoder_id": 1,
+            "spans": [
+                {"source_id": 1, "session_id": 7, "pid": 1, "off_start": 120, "off_end": 160}
+            ],
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 994,
+            "payload": b64(b"C" * 40),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 1, "off_start": 80, "off_end": 120}],
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 993,
+            "payload": b64(b"B" * 40),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 1, "off_start": 40, "off_end": 80}],
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 992,
+            "payload": b64(b"A" * 40),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 7, "pid": 1, "off_start": 0, "off_end": 40}],
+        },
+        {
+            "type": "session_end",
+            "session_id": 7,
+            "input_extents": [{"source_id": 1, "session_id": 7, "pid": 1, "extent": 160}],
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extent is 160: four 40-byte records at [0,40), [40,80), [80,120) and "
+    "[120,160) in stored order, the same arithmetic as any decoded stream. "
+    "The participant is a unit sequence, so a consumer MUST NOT treat any two "
+    "of its records as contiguous, and the file owes no Discontinuity at any "
+    "seam. A reader that raises the reordering predicate here has not read "
+    "the body field; one that reports the file as missing three blocks has "
+    "applied the per-seam form to a participant that took the other. "
+    "Coverage is complete -- four spans, [0,160), meeting the declared "
+    "extent -- and descending spans are no finding, as reordered-decoded "
+    "already shows.",
+    violations=0,
+    extents=[(7, 1, 160)],
+)
+
+vector(
+    "unit-sequence-nested",
+    "accept",
+    "#106's shape: a decoder whose units DECOMPOSE one another. A 12-byte DNS "
+    "header is emitted whole, then its flags word, then three sub-fields of "
+    "the flags word -- so input bytes [2,4) appear at FIVE different offsets "
+    "of the output stream, and the stream is a pre-order flattening of a tree "
+    "with the tree removed. The seam duty asks whether two adjacent units "
+    "JOIN, and here the question does not apply: `flags.qr` is not "
+    "continuous with `flags`, it is INSIDE it, and adjacency was never a claim "
+    "about continuity. Before 0.21 such a file was untested rather than "
+    "conformant -- the seam predicate declines every A >= B pair, and this "
+    "file is built entirely out of them. Now it says what it is: "
+    "adjacency = units, no block owed, the offset space still the "
+    "concatenation (12 + 2 + 1 + 1 + 1 = 17) so every field is citable by a "
+    "downstream stage. kober's DNS output in miniature, and the first vector "
+    "in the suite whose spans overlap by containment. Coverage: the header's "
+    "span covers [0,12) of the input, which is at-least-once; the sub-field "
+    "spans overlap it, which is permitted.",
+    "Participant Descriptor -- adjacency",
+    [
+        file_header(options=[o_produced_by("zpf-dnsfields 0.1"), o_produced_at(1719810000)]),
+        source(1, 1, [o_uri("frames.zpf"), o_digest("sha256:6a1c")]),
+        decoder(1, [o_dec_name("dns-fields"), o_dec_version("0.1")]),
+        session(31, [o_proto("dns")]),
+        participant(31, 0, [o_endpoint("10.0.0.1:53000")], adjacency=1),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            DNS_HEADER,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 30, 0, 0, 12)]),
+                o_content_type("prim:bytes"),
+                o_role("header"),
+            ],
+        ),
+        # The flags word, stored little-endian as prim: requires; the wire is
+        # big-endian 0x8180 and the decoder byte-swapped it.
+        record(
+            31,
+            0,
+            1,
+            1000,
+            struct.pack("<H", 0x8180),
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 30, 0, 2, 4)]),
+                o_content_type("prim:u16"),
+                o_role("flags"),
+            ],
+        ),
+        # Three fields carved out of the two bytes just emitted. Sub-byte
+        # fields widen to prim:u8 and cite the byte containing them.
+        record(
+            31,
+            0,
+            1,
+            1000,
+            b"\x01",
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 30, 0, 2, 3)]),
+                o_content_type("prim:u8"),
+                o_role("flags.qr"),
+            ],
+        ),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            b"\x00",
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 30, 0, 2, 3)]),
+                o_content_type("prim:u8"),
+                o_role("flags.opcode"),
+            ],
+        ),
+        record(
+            31,
+            0,
+            1,
+            1000,
+            b"\x00",
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 30, 0, 3, 4)]),
+                o_content_type("prim:u8"),
+                o_role("flags.rcode"),
+            ],
+        ),
+        session_end(31, [o_input_extents([(1, 30, 0, 12)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-dnsfields 0.1",
+            "produced_at": 1719810000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "frames.zpf",
+            "digest": "sha256:6a1c",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "dns-fields",
+            "version": "0.1",
+        },
+        {"type": "session", "session_id": 31, "proto": "dns"},
+        {
+            "type": "participant",
+            "session_id": 31,
+            "pid": 0,
+            "adjacency": "units",
+            "endpoint": ["10.0.0.1:53000"],
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(DNS_HEADER),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 0, "off_end": 12}],
+            "content_type": "prim:bytes",
+            "role": "header",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(struct.pack("<H", 0x8180)),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 2, "off_end": 4}],
+            "content_type": "prim:u16",
+            "role": "flags",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"\x01"),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 2, "off_end": 3}],
+            "content_type": "prim:u8",
+            "role": "flags.qr",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"\x00"),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 2, "off_end": 3}],
+            "content_type": "prim:u8",
+            "role": "flags.opcode",
+        },
+        {
+            "type": "record",
+            "session_id": 31,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"\x00"),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 30, "pid": 0, "off_start": 3, "off_end": 4}],
+            "content_type": "prim:u8",
+            "role": "flags.rcode",
+        },
+        {
+            "type": "session_end",
+            "session_id": 31,
+            "input_extents": [{"source_id": 1, "session_id": 30, "pid": 0, "extent": 12}],
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extent is 17: five records at [0,12), [12,14), [14,15), [15,16) and "
+    "[16,17), the stored-order concatenation, exactly as for any decoded "
+    "stream. The participant is a unit sequence, so no two of these records "
+    "may be treated as contiguous -- which is right, since the third is "
+    "inside the second -- and the seam predicate does not apply to it. A "
+    "reader that owes this file a Discontinuity between any pair has misread "
+    "the field; one that rejects the overlapping spans has misread the "
+    "coverage rule, which requires at least once and forbids only "
+    "spanned-and-Undecoded. Rejecting or isolating is NOT conformant.",
+    violations=0,
+    extents=[(31, 0, 17)],
+)
+
+vector(
+    "isolate-unknown-adjacency",
+    "isolate",
+    "A Participant declaring an adjacency this version does not define. The "
+    "third load-bearing enum, and the load-bearing twin of "
+    "isolate-unknown-output-layer for the same reason: the value decides "
+    "whether any two of this participant's records may be spliced, so a "
+    "reader that does not recognise it cannot say what a single pair of them "
+    "asserts. Contrast escape-unknown-enum, where an unknown tcp_role is "
+    "advisory. The file is otherwise conformant -- a decoded stream with one "
+    "record -- and the failure is entirely in what the reader cannot conclude.",
+    "Enums -- load-bearing values",
+    [
+        file_header(options=[o_produced_by("zpf-decode 0.9"), o_produced_at(1719820000)]),
+        source(1, 1, [o_uri("transport.zpf"), o_digest("sha256:2e9d")]),
+        decoder(1, [o_dec_name("http/1.1"), o_dec_version("0.4")]),
+        session(7, [o_proto("http")]),
+        # THE VIOLATION: adjacency 2, which nothing defines.
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")], adjacency=2),
+        record(
+            7,
+            0,
+            1,
+            1000,
+            b"GET / HTTP/1.1\r\n\r\n",
+            options=[o_decoder_id(1), o_spans([(1, 7, 0, 0, 18)])],
+        ),
+        end_block(),
+    ],
+    expect="MAY reject the file, or discard participant 0 of session 7 together "
+    "with everything referencing it. MUST NOT guess a value, and MUST NOT "
+    "fall back to contiguous -- 0 and an unrecognised value are different "
+    "statements, and treating them alike would splice records the writer "
+    "may have declared unjoinable. This is the same condition as an unknown "
+    "Source kind or output_layer and is handled the same way.",
+    violations=1,
+)
+
+vector(
+    "advisory-transport-adjacency",
+    "accept",
+    "adjacency = units on a TRANSPORT-layer participant: a capture-sourced TCP "
+    "stream whose offsets come from its sequence numbers, where stored order "
+    "defines nothing and the field says nothing. A writer MUST NOT set it "
+    "there, and the violation is ADVISORY in the shape of a transport-layer "
+    "label: the reader ignores the field, reports it, and accepts the file, "
+    "because ignoring it loses nothing -- every offset is still exactly where "
+    "seq_start puts it. Not the isolate shape of isolate-discontinuity-in-raw: "
+    "that block contradicts the offsets, this field is merely inert. The "
+    "extent is 16 by seq_start arithmetic, and a reader that changed it on "
+    "account of the field has read a body field the layer told it to ignore.",
+    "Participant Descriptor -- adjacency on a transport-layer participant",
+    [
+        file_header(),
+        source(1, 0, [o_uri("c.pcap")]),
+        session(7, [o_proto("tcp")]),
+        # THE VIOLATION: units on a participant whose records are byte runs.
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)], adjacency=1),
+        record(7, 0, 1, 1000, b"AAAABBBB", flags=0x0001, options=[o_seq_start(1001)]),
+        record(7, 0, 1, 2000, b"CCCCDDDD", flags=0x0001, options=[o_seq_start(1009)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "c.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "units",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAABBBB"),
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCCDDDD"),
+            "seq_start": 1009,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, having reported the field: adjacency = units on a "
+    "transport-layer participant breaks a MUST NOT whose violation is "
+    "advisory. The reader ignores the field and reads the stream as any "
+    "sequence-anchored transport stream -- two records at [0,8) and [8,16), "
+    "extent 16. The .jsonl file is the expected projection and carries the "
+    "field as written, since a projection preserves what it does not act "
+    "on. Rejecting or isolating this file is NOT conformant: the advisory "
+    "strength is stated in Participant Descriptor, by reference to the "
+    "treatment a transport-layer label gets.",
+    violations=1,
+    advisory=True,
+    extents=[(7, 0, 16)],
 )
 
 vector(
@@ -4313,6 +4978,7 @@ def build_chain() -> None:
                 "type": "participant",
                 "session_id": 7,
                 "pid": 0,
+                "adjacency": "contiguous",
                 "endpoint": ["10.0.0.1:51000"],
                 "isn": 1000,
             },
@@ -4320,6 +4986,7 @@ def build_chain() -> None:
                 "type": "participant",
                 "session_id": 7,
                 "pid": 1,
+                "adjacency": "contiguous",
                 "endpoint": ["93.184.216.34:80"],
                 "isn": 5000,
             },
@@ -4414,8 +5081,20 @@ def build_chain() -> None:
                 "version": "0.4",
             },
             {"type": "session", "session_id": 7, "proto": "http"},
-            {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
-            {"type": "participant", "session_id": 7, "pid": 1, "endpoint": ["93.184.216.34:80"]},
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.0.0.1:51000"],
+            },
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 1,
+                "adjacency": "contiguous",
+                "endpoint": ["93.184.216.34:80"],
+            },
             {
                 "type": "record",
                 "session_id": 7,
@@ -4539,12 +5218,14 @@ def build_chain() -> None:
                 "type": "participant",
                 "session_id": 7,
                 "pid": 0,
+                "adjacency": "contiguous",
                 "endpoint": ["10.0.0.1:51000"],
             },
             {
                 "type": "participant",
                 "session_id": 7,
                 "pid": 1,
+                "adjacency": "contiguous",
                 "endpoint": ["93.184.216.34:80"],
             },
             {"type": "name", "session_id": 7, "pid": 1, "label": "example.com", "kind": "tls-sni"},
@@ -4677,7 +5358,13 @@ def build_splice() -> None:
                 "version": "0.2",
             },
             {"type": "session", "session_id": 7, "proto": "tls"},
-            {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.0.0.1:51000"],
+            },
             {
                 "type": "record",
                 "session_id": 7,
@@ -4772,7 +5459,13 @@ def build_splice() -> None:
                 "version": "0.4",
             },
             {"type": "session", "session_id": 7, "proto": "http"},
-            {"type": "participant", "session_id": 7, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.0.0.1:51000"],
+            },
             {
                 "type": "record",
                 "session_id": 7,
@@ -4884,7 +5577,13 @@ def build_tunnel() -> None:
                 "proto": "udp",
                 "key": "198.51.100.7:51820 -> 203.0.113.9:51820",
             },
-            {"type": "participant", "session_id": 1, "pid": 0, "endpoint": ["198.51.100.7:51820"]},
+            {
+                "type": "participant",
+                "session_id": 1,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["198.51.100.7:51820"],
+            },
             *(
                 {
                     "type": "record",
@@ -4998,7 +5697,13 @@ def build_tunnel() -> None:
                 "params_digest": "sha256:aa10",
             },
             {"type": "session", "session_id": 5, "proto": "ip"},
-            {"type": "participant", "session_id": 5, "pid": 0, "endpoint": ["10.8.0.2"]},
+            {
+                "type": "participant",
+                "session_id": 5,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.8.0.2"],
+            },
             {
                 "type": "record",
                 "session_id": 5,
@@ -5153,6 +5858,7 @@ def build_tunnel() -> None:
                 "type": "participant",
                 "session_id": 10,
                 "pid": 0,
+                "adjacency": "contiguous",
                 "endpoint": ["10.8.0.2:44300"],
                 "isn": 1000,
             },
@@ -5197,6 +5903,7 @@ def build_tunnel() -> None:
                 "type": "participant",
                 "session_id": 11,
                 "pid": 0,
+                "adjacency": "contiguous",
                 "endpoint": ["10.8.0.2:44301"],
                 "isn": 5000,
             },
@@ -5292,7 +5999,13 @@ def build_tunnel() -> None:
                 "version": "0.4",
             },
             {"type": "session", "session_id": 20, "proto": "http"},
-            {"type": "participant", "session_id": 20, "pid": 0, "endpoint": ["10.8.0.2:44300"]},
+            {
+                "type": "participant",
+                "session_id": 20,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.8.0.2:44300"],
+            },
             {
                 "type": "record",
                 "session_id": 20,
@@ -5555,6 +6268,7 @@ def merge_output_jsonl(a_dg: str, b_dg: str, *, gap: bool) -> list[dict]:
             "type": "participant",
             "session_id": 1,
             "pid": 0,
+            "adjacency": "contiguous",
             "endpoint": ["10.0.0.1:51000"],
             "isn": 1000,
         },
@@ -5562,6 +6276,7 @@ def merge_output_jsonl(a_dg: str, b_dg: str, *, gap: bool) -> list[dict]:
             "type": "participant",
             "session_id": 1,
             "pid": 1,
+            "adjacency": "contiguous",
             "endpoint": ["93.184.216.34:80"],
             "isn": 5000,
         },
@@ -5664,6 +6379,7 @@ def build_merge() -> None:
                 "type": "participant",
                 "session_id": 7,
                 "pid": 0,
+                "adjacency": "contiguous",
                 "endpoint": ["10.0.0.1:51000"],
                 "isn": 1000,
             },
@@ -5713,6 +6429,7 @@ def build_merge() -> None:
                 "type": "participant",
                 "session_id": 3,
                 "pid": 0,
+                "adjacency": "contiguous",
                 "endpoint": ["93.184.216.34:80"],
                 "isn": 5000,
             },

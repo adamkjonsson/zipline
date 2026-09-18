@@ -304,11 +304,27 @@ being the first record's predecessor, and an unplaceable record anchors nothing
 (#146). No extent under 2 GiB moves. The third vector is the one shape the walk
 cannot place, and what a producer does instead (#147).
 
+The other four are the **`adjacency` body field** (#80, #106), the first change
+to a block body since `0.15`: a Participant Descriptor's reserved u16 became
+`adjacency: u8` plus a reserved u8, numbered so that every existing file's `0`
+means what it always meant — `contiguous`, stored neighbours join. `units`
+declares a **unit sequence**: the offset space unchanged, no join asserted
+anywhere, so a reordering stage owes no block per seam and a decomposing decoder
+owes none between a parent and the field carved out of it. It is a body field
+for the reason `output_layer` is — as an option it would not have been safe to
+skip — and it is the third load-bearing enum. **Every participant `.jsonl` line
+now carries `adjacency`**, since body fields always project; no `.zpf` byte
+changed.
+
 | Vector | What it carries |
 |--------|-----------------|
 | `stream-past-2gib` | *(accept)* Four eight-byte records at offsets 0, 1 GiB, 2 GiB and 3 GiB from `isn 1000`, every neighbour one serial step of 2³⁰ from the last; extent `3221225480`. The third record is 2³¹ past the origin, which serial arithmetic cannot tell from 2³¹ before it — so a reader measuring against the origin reports two unplaceable records and `1073741832`, the reading this vector exists to fail. |
 | `stream-wraps-seq` | *(accept)* `isn = 2³² − 5`, the first record at the origin `2³² − 4` with eight bytes, the second at `seq_start 4`; extent 16. The **commoner** shape — a stream wraps with probability `length / 2³²` per random `isn` — and until `0.21` the suite's own extent arithmetic got it wrong: plain `seq_start − (isn + 1)` gave the second record a negative range and an extent of 8. A reader subtracting without the modulus fails here; one taking the delta unsigned places the second record at `4294967304`. |
 | `session-split-capture-gap` | *(accept)* The one shape the walk cannot place: a hole of 2³¹ bytes or more between consecutive records, whose far side serial arithmetic reads as *before* the near side. The exit the format offers, and `0.21` names: session 7 ends at the hole with `reason = capture-gap`, session 8 opens on the **same key** with no `isn`, and the resumed stream starts at its first captured byte. Extents 8 and 8; no stream spans the hole. A repeated `flow_key` is not a duplicate id, and the ordering rule binds within a `(session_id, participant_id)` (#147). |
+| `unit-sequence-reversed` | *(accept)* #80's shape: a stage that **reverses** four decoded records and declares the participant `units` instead of emitting three Discontinuities. Spans run downward at every step; offsets are unchanged at `[0,40)` … `[120,160)`, extent 160. A reader that raises the reordering predicate here, or splices any two records, has ignored a body field. `reordered-decoded` keeps the per-seam form for a stream that mostly joins. |
+| `unit-sequence-nested` | *(accept)* #106's shape: a DNS header emitted whole, then its flags word, then three sub-fields of the flags word — input bytes `[2,4)` at five different output offsets, spans overlapping **by containment**, extent 17. Adjacency was never a claim about continuity here, and before `0.21` such a file was untested rather than conformant (the seam predicate declines every `A ≥ B` pair). Now it says what it is. `kober`'s DNS output in miniature. |
+| `isolate-unknown-adjacency` | *(isolate)* An `adjacency` value this version does not define — the load-bearing twin of `isolate-unknown-output-layer`: the value decides whether any two of the participant's records may be spliced, so a reader cannot say what a single pair asserts. MUST NOT guess, and MUST NOT fall back to `contiguous`. |
+| `advisory-transport-adjacency` | *(accept, **advisory**)* `units` on a **transport-layer** participant, where offsets come from sequence numbers and the field says nothing. A writer MUST NOT set it there; a reader ignores it, reports it, and accepts — the treatment a transport-layer label gets, and for the same reason. Not the isolate shape of `isolate-discontinuity-in-raw`: that block contradicts the offsets, this field is inert. Extent 16. |
 
 ## Multi-file fixtures
 

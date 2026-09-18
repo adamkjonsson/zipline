@@ -52,7 +52,8 @@
 0090  20 00 00 00              length = 32
 0094  03 00 00 00 00 00 00 00  session_id = 3  (u64)
 009C  00 00                    participant_id = 0
-009E  00 00                    _reserved
+009E  00                       adjacency = 0  (contiguous)
+009F  00                       _reserved
 00A0  60 00 0E 00              option 0x0060 endpoint, len = 14
 00A4  31 30 2E 30 2E 30 2E 31  "10.0.0.1:51000"
 00AC  3A 35 31 30 30 30

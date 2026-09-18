@@ -42,7 +42,8 @@
 0078  30 00 00 00              length = 48
 007C  07 00 00 00 00 00 00 00  session_id = 7  (u64)
 0084  00 00                    participant_id = 0
-0086  00 00                    _reserved
+0086  00                       adjacency = 0  (contiguous)
+0087  00                       _reserved
 0088  60 00 0E 00              option 0x0060 endpoint, len = 14
 008C  31 30 2E 30 2E 30 2E 31  "10.0.0.1:51000"
 0094  3A 35 31 30 30 30
@@ -96,7 +97,8 @@
 0144  20 00 00 00              length = 32
 0148  08 00 00 00 00 00 00 00  session_id = 8  (u64)
 0150  00 00                    participant_id = 0
-0152  00 00                    _reserved
+0152  00                       adjacency = 0  (contiguous)
+0153  00                       _reserved
 0154  60 00 0E 00              option 0x0060 endpoint, len = 14
 0158  31 30 2E 30 2E 30 2E 31  "10.0.0.1:51000"
 0160  3A 35 31 30 30 30

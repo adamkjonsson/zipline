@@ -71,7 +71,8 @@
 00F4  18 00 00 00              length = 24
 00F8  05 00 00 00 00 00 00 00  session_id = 5  (u64)
 0100  00 00                    participant_id = 0
-0102  00 00                    _reserved
+0102  00                       adjacency = 0  (contiguous)
+0103  00                       _reserved
 0104  60 00 08 00              option 0x0060 endpoint, len = 8
 0108  31 30 2E 38 2E 30 2E 32  "10.8.0.2"
 
