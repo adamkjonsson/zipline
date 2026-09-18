@@ -60,6 +60,13 @@ are used in that sense throughout; **decoded** always names a
 [layer](#layers-transport-and-decoded-live-in-separate-streams), never a synonym
 for *derived*.
 
+A **unit sequence** is a decoded participant whose stored order is not stream
+order: every record is addressable at its concatenation offset, and no two
+adjacent ones may be assumed to join. It is declared, per participant, by
+[`adjacency = units`](#participant-descriptor-0x11); a participant that does not
+declare it is a **stream**, whose neighbours join unless a
+[Discontinuity](#discontinuity-0x22) says otherwise.
+
 ## Goals
 
 - Hold **more than one session** per file.
@@ -790,7 +797,9 @@ a [sessionization stage](#conceptual-model), or re-emitted by a pass-through. A
 offset space is the **concatenation of that participant's decoded record payloads
 in stored order, plus the declared `width` of any
 [Discontinuity](#discontinuity-0x22) between them**, with byte 0 the first byte of
-the first such record.
+the first such record. A participant declared a
+[unit sequence](#participant-descriptor-0x11) has exactly this space — the
+declaration changes what adjacency *asserts*, not where anything *is*.
 
 It follows that a decoded stream is hole-inclusive **only** where a Discontinuity
 declares a width — unlike a transport stream, which is hole-inclusive throughout.
@@ -863,8 +872,9 @@ changes them — and its records carry `spans` naming the input ranges they came
 from. Those spans will not ascend with stored order, which is expected: nothing
 requires them to, and coverage depends only on which ranges are covered, not on
 the order they appear in. Records it stores as neighbours that were not neighbours
-in the stream no longer join, which
-[Discontinuity](#discontinuity-0x22) obliges it to declare at each such seam.
+in the stream no longer join, which [Discontinuity](#discontinuity-0x22) obliges
+it to declare — at each such seam, or once for the participant, as a
+[unit sequence](#participant-descriptor-0x11).
 
 One consequence follows: because every `params_digest` in such a file belongs to
 an *inherited* decoder, the transform's own configuration has none to live in.
@@ -1498,11 +1508,48 @@ MUST be written 0, and MUST be ignored on read.
 |------------------|------|-----------------------------------------|
 | `session_id`     | u64  | session this participant belongs to     |
 | `participant_id` | u16  | id within that session (the `pid`)      |
-| `_reserved`      | u16  | 0                                       |
+| `adjacency`      | u8   | what stored adjacency asserts: `0` = `contiguous`, `1` = `units` (see [enums](#enums), and below) |
+| `_reserved`      | u8   | 0                                       |
 
 Options: `endpoint` (string, **may repeat** — see below), `isn` (u32, the SYN's
 TCP sequence number — see below), `tcp_role` (u8, see enums), `identity`
 (string), `comment`.
+
+**`adjacency` says what two records stored side by side assert about each
+other.** `contiguous` (`0`) — the value every file written before the field
+existed carries — means what stored adjacency has always meant on a decoded
+stream: neighbours join, and a consumer may splice them unless a
+[Discontinuity](#discontinuity-0x22) stands between. `units` (`1`) declares the
+participant a **unit sequence**: its offset space is still the stored-order
+concatenation of its payloads plus declared widths — every record stays
+addressable and citable, and nothing about the arithmetic changes — but **no two
+adjacent records may be assumed to join**, anywhere. It is the wholesale form of
+the statement a Discontinuity makes at one seam, and it exists for two shapes
+that have no honest per-seam form: a stage that reorders a participant's
+records, where every seam is a break; and a decoder whose units decompose one
+another — a header record followed by the fields carved out of it — where
+adjacency was never a claim about continuity at all. What each value obliges a
+producer and a consumer to is stated with the
+[Discontinuity duties](#discontinuity-0x22), and nowhere else. Every stream that
+does not declare `units` keeps today's meaning: the field adds a way to say
+*none of these join*, and takes nothing from what silence says.
+
+**A body field, for the reason `output_layer` is one** (see
+[the note there](#decoder-descriptor-0x03)). As an option it would have been
+*not safe to skip*: a reader that retained it but ignored it semantically would
+splice a unit sequence at every seam, silently — the `0x22` failure over again,
+and the reason the candidate had to land before `1.0` or not at all. In the body
+there is nothing to skip. Numbering `contiguous` as `0` is what lets it take the
+reserved half-word without changing a byte of any existing file, every one of
+which holds `0` there and meant exactly that.
+
+**On a transport-layer participant it says nothing**, because a transport
+stream's offsets come from its sequence numbers and stored order defines nothing
+there. A writer **MUST NOT** set `units` on a participant whose records resolve
+to the transport layer; a reader that finds it there gives it the treatment a
+transport-layer [label](#typing-a-decoded-record) gets — ignores the field,
+reports it, and accepts the file — and for the same reason: ignoring it loses
+nothing.
 
 `tcp_role` records, **when the handshake was observed**, which side opened the
 connection: the participant that sent the initial SYN is the *initiator* (active
@@ -1976,6 +2023,13 @@ of the first into the start of the second.
 **This duty is stated here and nowhere else; every other mention refers to it.**
 It binds any stream whose offsets are the **concatenation of its own record
 payloads**, which is what makes a break inexpressible in it without this block.
+A participant declaring [`adjacency = units`](#participant-descriptor-0x11)
+discharges it **wholesale**: it asserts no join anywhere, so there is no seam at
+which the assertion is false and no block owed at any. The block remains
+permitted in such a participant — a `width` is a term in the positional
+arithmetic whether or not the no-join claim beside it is redundant — and nothing
+about `contiguous` changes: a stream that does not say `units` owes this duty at
+every seam exactly as before.
 That is the property, not the file kind: a transport stream is exempt for the
 mirror-image reason, its hole-inclusive offsets having already expressed the break
 (see *A transport-layer stream MUST NOT carry one*, below).
@@ -2025,8 +2079,12 @@ between them at all.
 reorders a participant's records withholds nothing — every byte reaches the output
 — but stored order *defines* this offset space, so two records stored as
 neighbours assert that they join, and for reordered neighbours that assertion is
-false. Such a stage emits a Discontinuity at each seam, with **no** `width`: what
-lies between two units that were never adjacent is not a hole to be counted.
+false. Such a stage has two honest forms and picks one: it emits a
+Discontinuity at each seam, with **no** `width` — what lies between two units
+that were never adjacent is not a hole to be counted — or, where every seam is a
+break, it MAY declare the participant `units` instead and emit none. A stream
+that mostly joins with a seam or two takes the first form; a fully reordered one
+is the shape the second exists for.
 
 **Two cases are decidable from a single file.** Where an Undecoded region of the
 **`hole`** class lies between the input regions of two adjacent output units, no
@@ -2040,7 +2098,9 @@ checker may raise either from the file alone.
 which case; this says how to test it. The layer test comes first, because the
 whole check is inapplicable without it:
 
-> The check applies only to **decoded-layer** output streams. For each output
+> The check applies only to **decoded-layer** output streams whose participant
+> is **not** declared `units` — a unit sequence asserts no join, so there is
+> nothing for a missing block to contradict. For each output
 > participant, for each adjacent pair of records `(r1, r2)` in stored order, and
 > each input stream `S = (source_id, session_id, participant_id)` cited by the
 > `spans` of **both**: let `A` be the maximum `off_end` over `r1`'s spans on `S`,
@@ -2081,6 +2141,15 @@ rather than to narrow it to what a checker can see.
 either side of a Discontinuity as contiguous. A decode stage reading an input that
 carries one **MUST NOT** emit a unit whose `spans` cross it without emitting a
 Discontinuity of its own in the corresponding position of its output.
+
+**And what it owes a unit sequence is the same, at every seam.** A consumer
+**MUST NOT** treat any two records of a participant declared
+[`units`](#participant-descriptor-0x11) as contiguous, and a decode stage reading
+one carries the break at every seam as it would a declared one: a unit whose
+`spans` cross two input units either sits in an output participant declared
+`units` itself, or has a Discontinuity emitted where they meet. No third case is
+defined — a stage that knows two units join has the same recourse as one that
+knows it for a declared break, which is to say none but the declaration.
 
 The no-splice sentence is what carries the property down a chain, and it is worth
 stating explicitly because it is easy to think the MUST NOT before it covers the
@@ -2350,12 +2419,19 @@ space.)
 present — it is a body field, so there is no absent case (see
 [Decoder Descriptor](#decoder-descriptor-0x03) for why `decoded` is `0`).
 
-**Two enums are load-bearing: Source `kind` and `output_layer`.** Both decide how
-offsets are *read*, so a value neither the registry nor this document defines
-leaves a reader unable to compute a stream's offset space at all. A reader
-**MUST NOT** guess one, and treats the stream as a semantic violation it may
-isolate — unlike `tcp_role`, where an unknown value is advisory and carrying the
-raw number forward loses nothing.
+`adjacency` (Participant **body**, u8): `0` = contiguous, `1` = units. Always
+present — a body field — and `0` is what every file written before it existed
+says (see [Participant Descriptor](#participant-descriptor-0x11) for what each
+value asserts).
+
+**Three enums are load-bearing: Source `kind`, `output_layer` and `adjacency`.**
+The first two decide how offsets are *read*, so a value neither the registry nor
+this document defines leaves a reader unable to compute a stream's offset space
+at all; the third decides whether two adjacent records may be spliced, so an
+undefined value leaves a reader unable to say what any pair of them asserts. A
+reader **MUST NOT** guess one, and treats the stream as a semantic violation it
+may isolate — unlike `tcp_role`, where an unknown value is advisory and carrying
+the raw number forward loses nothing.
 
 `tcp_role` (Participant option, u8): `0` = unknown (handshake not observed),
 `1` = initiator (active open, sent the SYN), `2` = responder (passive open). In
@@ -2782,10 +2858,11 @@ readers in two tiers, split by what the violation poisons:
   [width-mismatch rule](#enums), the
   [origin floor](#referencing-the-source-by-stream-offset)), that rule
   **displaces this licence**: a reader applies the stated rule instead, whether it
-  is stronger or weaker than isolation. Some are weaker — the `prim:` rule and a
-  transport-layer label both keep the record, ignore the part that is wrong, and
-  report — so reading them as instances of a tier headed *the reader MAY isolate*
-  gets them backwards.
+  is stronger or weaker than isolation. Some are weaker — the `prim:` rule, a
+  transport-layer label and [`units` on a transport-layer
+  participant](#participant-descriptor-0x11) all keep the record, ignore the
+  part that is wrong, and report — so reading them as instances of a tier headed
+  *the reader MAY isolate* gets them backwards.
 
 A reader that tolerates a semantic violation or discards data SHOULD surface a
 diagnostic — data must never vanish silently. **Bytes after a valid End block**
@@ -2803,16 +2880,18 @@ the enums this document defines differ (see [Enums](#enums)):
 
 - `tcp_role` is advisory, so an unrecognised value means simply "unknown",
   exactly as an omitted option does. A reader carries it and moves on.
-- Source `kind` and Decoder `output_layer` are **load-bearing**: `kind` fixes a
-  stream's provenance, tells a decoder-less record apart as capture-sourced or
-  pass-through, and selects how a `spans` entry's offsets are read (capture-file
-  byte offsets vs logical stream offsets — see the
-  [span-list rule](#tlv-option-framing--id-registry)); `output_layer` decides
-  which offset space a stream's records live in. A reader that does not
-  recognise a Source's `kind`, or a Decoder's `output_layer`, therefore cannot
-  interpret any record or span referencing it, and this **is** an isolatable
-  semantic condition: the reader MAY reject the file, or discard that Source or
-  Decoder together with everything referencing it, and SHOULD report it. It
+- Source `kind`, Decoder `output_layer` and Participant `adjacency` are
+  **load-bearing**: `kind` fixes a stream's provenance, tells a decoder-less
+  record apart as capture-sourced or pass-through, and selects how a `spans`
+  entry's offsets are read (capture-file byte offsets vs logical stream offsets
+  — see the [span-list rule](#tlv-option-framing--id-registry));
+  `output_layer` decides which offset space a stream's records live in;
+  `adjacency` decides whether any two of a participant's records may be
+  spliced. A reader that does not recognise a Source's `kind`, a Decoder's
+  `output_layer` or a Participant's `adjacency` therefore cannot interpret any
+  record or span referencing it, and this **is** an isolatable semantic
+  condition: the reader MAY reject the file, or discard that Source, Decoder or
+  Participant together with everything referencing it, and SHOULD report it. It
   MUST NOT guess a value.
 
 A consequence worth stating for future editors: **`kind` is not a free extension
@@ -2915,11 +2994,11 @@ general naming rule covers it.
   MUST NOT assume a `bytes` option is text, even when it decodes to printable
   ASCII.
 - **Enums** render as their defined **string label**: `kind` as
-  `"capture"`/`"zpf-input"`, `output_layer` as `"decoded"`/`"transport"` (always
-  present, since it is a body field), `tcp_role` as
-  `"initiator"`/`"responder"` (omitted
+  `"capture"`/`"zpf-input"`, `output_layer` as `"decoded"`/`"transport"` and
+  `adjacency` as `"contiguous"`/`"units"` (each always present, since it is a
+  body field), `tcp_role` as `"initiator"`/`"responder"` (omitted
   when unknown). A value with **no defined label** renders as its raw number
-  (see [the escapes](#unrecognised-data-the-four-escapes)). For the two
+  (see [the escapes](#unrecognised-data-the-four-escapes)). For the three
   **load-bearing** enums that number is not a value a reader may act on — it
   preserves the byte through a round-trip and nothing more.
 - **Flag bitfields** render by name, never as the raw integer: the single-bit

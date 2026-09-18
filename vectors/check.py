@@ -352,6 +352,35 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "and producers, on the endpoint-spelling argument -- a Changed line, "
         "since no rule bound the word before",
     ),
+    # 0.21 (#80, #106). The adjacency body field. Three keywords, each the
+    # field's half of a duty the Discontinuity block already states for one
+    # seam: the consumer's no-splice, now at every seam of a unit sequence; the
+    # reordering stage's licence to declare the participant instead of a block
+    # per seam; and the bar on the transport layer, where stored order defines
+    # nothing and the field would be inert.
+    (
+        r"A consumer \*\*MUST NOT\*\* treat any two records of a participant declared",
+        {"MUST": 1, "MUST NOT": 1},
+        "the no-splice MUST NOT was stated per Discontinuity, and a unit "
+        "sequence carries no block; without this sentence a consumer could "
+        "honour every block in the file and still splice a unit sequence end "
+        "to end -- a Changed line, since no rule bound the pair before",
+    ),
+    (
+        r"it MAY declare the participant `units` instead and emit none",
+        {"MAY": 1},
+        "the reordering paragraph said the per-seam block was the form, in as "
+        "many words; the field is a second form, and a permission is what "
+        "lets a producer take it -- a Changed line",
+    ),
+    (
+        r"A writer \*\*MUST NOT\*\* set `units` on a participant whose records resolve",
+        {"MUST": 1, "MUST NOT": 1},
+        "the field means nothing on a transport stream, whose offsets come "
+        "from sequence numbers; barring it keeps the layer test simple and "
+        "the reader's treatment is the advisory one a transport-layer label "
+        "gets -- a Changed line, advisory strength",
+    ),
 )
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
@@ -814,6 +843,29 @@ RETIRED_CLAIMS = {
         "plus the signed serial delta of their seq_starts, the origin being the "
         "first record's predecessor, so the floor is decidable at any stream length",
     ),
+    # 0.21 (#80, #106). The adjacency body field is the third load-bearing enum,
+    # and the wholesale form of the reordering stage's duty. Two counts and two
+    # sentences stating the per-seam block as the only form.
+    "two-load-bearing-enums": (
+        (
+            r"Two enums are load-bearing",
+            r"For the two \*\*load-bearing\*\* enums",
+        ),
+        "0.21",
+        80,
+        "three enums are load-bearing: Source kind, output_layer and the "
+        "Participant's adjacency, which decides whether two records may be spliced",
+    ),
+    "reordering-owes-a-block-per-seam": (
+        (
+            r"Such a stage emits a Discontinuity at each seam, with \*\*no\*\* `width`: what",
+            r"obliges it to declare at each such seam\.",
+        ),
+        "0.21",
+        80,
+        "a reordering stage has two forms -- a Discontinuity at each seam, or the "
+        "participant declared a unit sequence with adjacency = units",
+    ),
 }
 
 
@@ -884,6 +936,20 @@ ENUMERATIONS = {
             # exercised in both directions from the start.
             "including one emitted by a reassembly decoder",
             "whether or not it has a decoder",
+        ),
+    ),
+    # 0.21 (#80). The load-bearing enums, counted in two places since 0.15 and
+    # stale in both when the third arrived -- "Two enums are load-bearing" and
+    # "the two load-bearing enums" each said two through a release that added
+    # nothing, which is exactly when a count looks safe. A fourth must fail
+    # the build at both sites.
+    "load-bearing enums": (
+        ("kind", "output_layer", "adjacency"),
+        (
+            # Enums -- where the set is stated
+            "enums are load-bearing",
+            # Conformance -- the unrecognised-value bullet
+            "cannot interpret any",
         ),
     ),
 }
