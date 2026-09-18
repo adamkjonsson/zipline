@@ -1291,6 +1291,58 @@ def _slug(heading: str) -> str:
     return re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", heading.lower())).strip("-")
 
 
+def check_worked_example() -> list[str]:
+    """Compare the specification's byte-level worked example with raw-minimal, byte for byte.
+
+    The README has said "identical to the specification's worked example" since
+    0.12, and nothing checked it: 0.21's sweep found the example still stamping
+    version_minor = 18 in its bytes, three releases stale, because the example
+    is hand-maintained and a stamp touches every OTHER copy of the version
+    mechanically. Only the offset and hex columns are compared -- the
+    annotations are the specification's prose and may say more than the
+    generated .hex does.
+    """
+    text = read_text(SPEC)
+    start = text.find("### Worked example: a minimal capture-sourced file")
+    if start < 0:
+        return ["worked example: heading not found in the specification"]
+    body = text[start:]
+    fenced, spec_lines = False, []
+    for line in body.splitlines():
+        if line.startswith("```"):
+            if fenced:
+                break
+            fenced = True
+            continue
+        if fenced and re.match(r"^[0-9A-F]{4} ", line):
+            spec_lines.append(line)
+    hex_lines = [
+        ln
+        for ln in read_text(os.path.join(HERE, "raw-minimal", "raw-minimal.hex")).splitlines()
+        if re.match(r"^[0-9A-F]{4} ", ln)
+    ]
+
+    def cols(line: str) -> tuple[str, str]:
+        off, rest = line[:4], line[4:29].strip()
+        return off, rest
+
+    out = []
+    for i, (a, b) in enumerate(zip(spec_lines, hex_lines, strict=False)):
+        if cols(a) != cols(b):
+            out.append(
+                f"worked example: line {i} differs from raw-minimal.hex -- "
+                f"spec {a[:29].strip()!r}, vector {b[:29].strip()!r}"
+            )
+    if len(spec_lines) != len(hex_lines):
+        out.append(
+            f"worked example: {len(spec_lines)} byte lines in the specification, "
+            f"{len(hex_lines)} in raw-minimal.hex"
+        )
+    if not out:
+        print(f"  worked example: {len(spec_lines)} byte lines, identical to raw-minimal.hex")
+    return out
+
+
 def check_anchor_links() -> list[str]:
     """Every in-document link must resolve to a heading that exists.
 
@@ -1975,6 +2027,7 @@ def main() -> int:
     failures += check_enumerations()
     failures += check_normative_split()
     failures += check_anchor_links()
+    failures += check_worked_example()
 
     if failures:
         print("\nFAILURES:")
