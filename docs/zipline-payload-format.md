@@ -5,17 +5,18 @@
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
 > `0.10` was the first revision informed by a real implementation; `0.11`,
-> `0.12`, `0.14`, `0.16` and `0.18` corrected what successive reviews of them
-> found; `0.13` was the first since `0.9` to *add* capability rather than only
-> correct, `0.15` is the first to change what already-written files mean, and
-> `0.17` the first driven by an implementation decoding at field granularity.
-> More are expected.
+> `0.12`, `0.14`, `0.16`, `0.18` and `0.20` corrected what successive reviews
+> of them found; `0.13` was the first since `0.9` to *add* capability rather
+> than only correct, `0.15` the first to change what already-written files mean,
+> `0.17` the first driven by an implementation decoding at field granularity,
+> `0.19` the first to *remove* rules rather than add them, and `0.21` the first
+> since `0.15` to change a block body. More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` through `0.18`
-> followed. Note `0.18` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.21`
+> followed. Note `0.21` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -221,7 +222,7 @@ Block types:
 | 0x02 | Source Descriptor       | one input these bytes came from — a *capture* (file/interface) or another *`.zpf`* this file was derived from; has an id and a `kind` |
 | 0x03 | Decoder Descriptor      | a decoder's id, name, version, params digest    |
 | 0x10 | Session Descriptor      | session id, protocol, flow key, metadata        |
-| 0x11 | Participant Descriptor  | participant id within a session, endpoint, TCP ISN |
+| 0x11 | Participant Descriptor  | participant id within a session, what its stored adjacency asserts, endpoint, TCP ISN |
 | 0x12 | Session End             | optional: no further blocks reference this session; how it ended |
 | 0x20 | Record                  | a directed payload unit (see fields below)      |
 | 0x21 | Undecoded               | a region the transform did not decode, referencing the predecessor's bytes (see Layers) |
@@ -292,9 +293,9 @@ that line.
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
-{"type":"participant","session_id":8,"pid":0,"endpoint":["alice"]}
-{"type":"participant","session_id":8,"pid":1,"endpoint":["bob"]}
-{"type":"participant","session_id":8,"pid":2,"endpoint":["carol"]}
+{"type":"participant","session_id":8,"pid":0,"adjacency":"contiguous","endpoint":["alice"]}
+{"type":"participant","session_id":8,"pid":1,"adjacency":"contiguous","endpoint":["bob"]}
+{"type":"participant","session_id":8,"pid":2,"adjacency":"contiguous","endpoint":["carol"]}
 
 {"type":"record","session_id":8,"sender_pid":0,"source_id":1,"ts":2000,
  "payload":"aGksIGFsbCE="}
@@ -303,7 +304,7 @@ that line.
 {"type":"record","session_id":8,"sender_pid":1,"source_id":1,"ts":2150,
  "payload":"bW9ybmluZw=="}
 
-{"type":"participant","session_id":8,"pid":3,"endpoint":["dave"]}
+{"type":"participant","session_id":8,"pid":3,"adjacency":"contiguous","endpoint":["dave"]}
 {"type":"record","session_id":8,"sender_pid":3,"source_id":1,"ts":2300,
  "payload":"YW0gSSBsYXRlPw=="}
 
@@ -489,8 +490,8 @@ The canonical case for seq/ack ordering — the two directions captured to
 
 {"type":"session","session_id":7,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000}
-{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000}
+{"type":"participant","session_id":7,"pid":0,"adjacency":"contiguous","endpoint":["10.0.0.1:51000"],"isn":1000}
+{"type":"participant","session_id":7,"pid":1,"adjacency":"contiguous","endpoint":["93.184.216.34:80"],"isn":5000}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
  "seq_start":1001,"ack":5001,
@@ -579,8 +580,8 @@ records in causal order despite the inverted timestamps:
 
 {"type":"session","session_id":1,"proto":"tcp",
  "key":"10.0.0.1:51000 <-> 93.184.216.34:80","sequenced":true}
-{"type":"participant","session_id":1,"pid":0,"endpoint":["10.0.0.1:51000"],"isn":1000}
-{"type":"participant","session_id":1,"pid":1,"endpoint":["93.184.216.34:80"],"isn":5000}
+{"type":"participant","session_id":1,"pid":0,"adjacency":"contiguous","endpoint":["10.0.0.1:51000"],"isn":1000}
+{"type":"participant","session_id":1,"pid":1,"adjacency":"contiguous","endpoint":["93.184.216.34:80"],"isn":5000}
 
 {"type":"record","session_id":1,"sender_pid":0,"source_id":1,"ts":1000,
  "seq_start":1001,"ack":5001,"payload":"R0VUIC8gSFRUUC8xLjENCg0K",
@@ -1078,8 +1079,8 @@ equal to the output's here — not copying them):
  "params_digest":"sha256:00ab…"}
 
 {"type":"session","session_id":7,"proto":"http"}
-{"type":"participant","session_id":7,"pid":0,"endpoint":["10.0.0.1:51000"]}
-{"type":"participant","session_id":7,"pid":1,"endpoint":["93.184.216.34:80"]}
+{"type":"participant","session_id":7,"pid":0,"adjacency":"contiguous","endpoint":["10.0.0.1:51000"]}
+{"type":"participant","session_id":7,"pid":1,"adjacency":"contiguous","endpoint":["93.184.216.34:80"]}
 
 {"type":"record","session_id":7,"sender_pid":0,"source_id":1,"ts":1000,
  "decoder_id":1,
@@ -1142,7 +1143,7 @@ hole-inclusive. It also **fans out** — one input stream becomes two sessions:
  "version":"1.1","params_digest":"sha256:2f60"}
 
 {"type":"session","session_id":10,"proto":"tcp","key":"10.8.0.2:44300 -> 10.8.0.9:80"}
-{"type":"participant","session_id":10,"pid":0,"endpoint":["10.8.0.2:44300"],"isn":1000}
+{"type":"participant","session_id":10,"pid":0,"adjacency":"contiguous","endpoint":["10.8.0.2:44300"],"isn":1000}
 {"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1000,"payload":"…40 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":0,"off_end":60}],
  "seq_start":1001}
@@ -1153,7 +1154,7 @@ hole-inclusive. It also **fans out** — one input stream becomes two sessions:
  "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
 
 {"type":"session","session_id":11,"proto":"tcp","key":"10.8.0.2:44301 -> 10.8.0.9:53"}
-{"type":"participant","session_id":11,"pid":0,"endpoint":["10.8.0.2:44301"],"isn":5000}
+{"type":"participant","session_id":11,"pid":0,"adjacency":"contiguous","endpoint":["10.8.0.2:44301"],"isn":5000}
 {"type":"record","session_id":11,"sender_pid":0,"source_id":1,"ts":1100,"payload":"…20 B…",
  "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":60,"off_end":100}],
  "seq_start":5001}
@@ -1285,7 +1286,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.18` is the eighteenth minor and is **greater** than `0.9`. A writer stamps
+number: `0.21` is the twenty-first minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -1382,8 +1383,9 @@ file was produced by something, and a capture-sourced file may name it.
 
 ### Descriptor blocks
 
-Each fixed body ends with a `_reserved: u16` (0) where needed to round it to a
-multiple of 4 bytes. The `Options` line under each table lists that block's TLV
+Each fixed body is rounded to a multiple of 4 bytes with reserved bytes (0)
+where needed — a `_reserved: u16`, or a `_reserved: u8` beside a one-byte enum
+that took the other half (`output_layer`, `adjacency`). The `Options` line under each table lists that block's TLV
 options (see the [id registry](#tlv-option-framing--id-registry)).
 
 #### Source Descriptor (`0x02`)
@@ -3102,7 +3104,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  12 00                    version_minor = 18   (0.18, little-endian)
+000E  15 00                    version_minor = 21   (0.21, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
@@ -3132,7 +3134,8 @@ Offsets are hex; each line is annotated.
 0050  28 00 00 00              length = 40
 0054  07 00 00 00 00 00 00 00  session_id = 7  (u64)
 005C  00 00                    participant_id = 0
-005E  00 00                    _reserved
+005E  00                       adjacency = 0  (contiguous)
+005F  00                       _reserved
 0060  60 00 0E 00              option 0x0060 endpoint, len = 14
 0064  31 30 2E 30 2E 30 2E 31  "10.0.0.1
 006C  3A 35 31 30 30 30        :51000"

@@ -66,7 +66,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.21] — unreleased
+## [0.21] — 2026-09-18
 
 **The design release.** One rule the offset space was missing — offsets unwrap
 along stored order, so a transport stream can be placed past 2 GiB — and one

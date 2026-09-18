@@ -4825,7 +4825,8 @@ vector(
     "isolate",
     "A Decoder declaring an output_layer this version does not define. The "
     "load-bearing twin of isolate-unknown-source-kind, and the second enum of "
-    "which that is true: the value decides whether this stream's offsets are "
+    "which that is true (adjacency, since 0.21, is the third -- see "
+    "isolate-unknown-adjacency): the value decides whether this stream's offsets are "
     "hole-inclusive positions or a payload concatenation, so a reader that "
     "does not recognise it cannot compute a single record's range. Contrast "
     "escape-unknown-enum, where an unknown tcp_role is advisory and carrying "
