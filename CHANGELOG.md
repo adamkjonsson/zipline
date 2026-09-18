@@ -41,13 +41,19 @@ first:
   block body, or the meaning of an existing field, and a reader MUST reject a
   `version_major` it does not implement.
 
-**Change categories.** Keep a Changelog's six types, plus one:
+**Change categories.** Keep a Changelog's six types, plus two:
 
 - **Clarified** — behaviour the previous version left undefined or stated
   ambiguously, now pinned down. Distinguished from *Changed* because no
   conformant file and no correct reader becomes wrong: only under-specified
   cases are affected. Implementers should read these first — they are where two
   independent implementations most easily disagree.
+- **Decided** — a design question answered *without* a change to the text: a
+  representation declined, a proposal closed with its shape recorded, a
+  package of deletions turned down. Nothing in the specification moves, so
+  nothing else in the entry would show it; the heading exists so an implementer
+  who filed the question finds the ruling where they look for changes, and so
+  the ruling has a version it belongs to.
 
 Entries state the delta only; the specification itself remains the normative
 text.
@@ -57,6 +63,24 @@ does not implement, and that is the intended behaviour. The entries below still
 distinguish *Clarified* from *Changed*, because the distinction tells an
 implementer whether their existing code was wrong or merely incomplete — but
 neither is safe to skip within `0.x`.
+
+---
+
+## [0.21] — unreleased
+
+**The design release.** One rule the offset space was missing — offsets unwrap
+along stored order, so a transport stream can be placed past 2 GiB — and one
+body field, the first since `0.15`: a Participant Descriptor's `adjacency`,
+saying whether its stored neighbours join. Two rulings, no option. Scope and
+reasoning in [docs/RELEASE-0.21-PLAN.md](docs/RELEASE-0.21-PLAN.md).
+
+### Changed
+
+### Clarified
+
+### Added
+
+### Decided
 
 ---
 
