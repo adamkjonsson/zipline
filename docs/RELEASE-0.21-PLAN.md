@@ -593,32 +593,80 @@ says so.
 
 The four:
 
-- [ ] §Referencing states the unwrap rule and the predecessor-bound floor;
+- [x] §Referencing states the unwrap rule and the predecessor-bound floor;
       `stream-past-2gib` and `stream-wraps-seq` exist with declared extents;
       `anchored_ranges` implements the rule and was seen to fail the wrap
       fixture before it did; the ordering rule says *serial-number order*.
 - [ ] The bound and the exit are stated under the rule; `capture-gap` is in
       the row and the Session End text; `session-split-capture-gap` exists;
-      #147 is closed with the ruling and the reserved design.
+      #147 is closed with the ruling and the reserved design. *(All but the
+      closing comment, which waits for the merge to `main` — a port that read
+      it and pulled `main` would find nothing.)*
 - [ ] The Participant body carries `adjacency: u8`; every existing `.zpf` is
       byte-identical and every participant `.jsonl` line carries
       `"adjacency"`; the four vectors exist; `ENUMERATIONS` has the
       load-bearing set at two sites; `reordered-decoded` keeps its block; #80
-      and #106 are closed with the field's text.
-- [ ] #125 is closed with the ruling; the reversal of `0.19` scope decision 3
+      and #106 are closed with the field's text. *(All but the closing
+      comments, which wait for the merge.)*
+- [x] #125 is closed with the ruling; the reversal of `0.19` scope decision 3
       is recorded here and on the issue.
 
 Release:
 
-- [ ] `python3 vectors/check.py` green; every vector stamps `0.21`;
+- [x] `python3 vectors/check.py` green; every vector stamps `0.21`;
       `reject-unknown-minor` rolled to `0/22` out of its own bytes. **62
-      vectors, 35 options, 34 rules**, or whatever the numbers turn out to be
-      with the difference explained under *What execution changed*.
-- [ ] Every keyword the release adds or retires has its `NORMATIVE_ADDITIONS`
+      vectors, 35 options, 34 rules** — the numbers the plan expected.
+- [x] Every keyword the release adds or retires has its `NORMATIVE_ADDITIONS`
       or `NORMATIVE_REMOVALS` entry; every retired spelling reproduces against
-      `v0.20` and is absent now.
-- [ ] `ruff check` and `ruff format` clean.
+      `v0.20` and is absent now. *(Four additions, no removals: the split is
+      `v0.18` less 23 removals plus 6 additions — MAY 54, MUST 124, MUST NOT
+      44, SHOULD 28. The replaced floor paragraphs carried no keyword.)*
+- [x] `ruff check` and `ruff format` clean.
 - [ ] `CHANGELOG.md` `[0.21]` dated, with a `Decided` section and the
       Conventions line that admits it.
 - [ ] All three implementations told before the tag.
 - [ ] Tag `v0.21`, on the merge commit, where `v0.20` sits.
+
+---
+
+## What execution changed
+
+*Written 2026-09-18, at the end of Phase 2, before the merge. To be completed
+at the tag.*
+
+**The gate was waived, on the day it was set.** §Mechanics item 3 made Phase 2
+wait for `python-zipline`'s reading of the field against `kober`'s files, or
+seven days. The design was posted in Phase 0 and Phase 2 was started the same
+afternoon, by decision — the port's answer is still wanted, but it is now a
+review of shipped text on a branch rather than of a proposal, and the name is
+correspondingly harder to change. The risk table's *name changed after Phase
+2's first commit* row is therefore live rather than mitigated; if the port
+proposes a better pair before the merge, the substitution is one scripted pass
+over 58 dicts and two `ENUMS` labels, and the churn is on this branch only.
+
+**Phase 1 found what Phase 0's probe predicted, and one thing it did not.**
+The wrap fixture failed `anchored_ranges` as recorded and passed once the rule
+was in. What the plan had not said is that the *first* draft of the floor
+paragraph read wrong once the delta was signed — *the modular subtraction
+reports neither* describes the unsigned mistake, not the rule — and had to say
+so. Small, but it is the kind of sentence a port quotes.
+
+**One slip the house rule caught late.** The first draft of the two
+`unit-sequence-*` vectors derived their `.jsonl` lines from the same tuples as
+their bytes, through a helper — which is the single-sourcing `0.20` refused,
+because the hand-written face is the second opinion that gives the face check
+its meaning. It was rewritten by hand before the commit. The helper was
+convenient, and convenience is exactly how the second opinion goes away.
+
+**The face check did the work §Mechanics item 1 assigned it.** 58 hand-written
+participant dicts lagged the body field, the build refused at the first and
+named it, one scripted pass added the key after `pid`, and the build then
+passed with no `.zpf` byte changed — 59 `.hex` annotations and 44 `.jsonl`
+files. It was then seen to refuse a face claiming `units` against bytes saying
+`0`, on a scratch copy, before the vectors that say `units` for real were
+written — the order the risk table asked for.
+
+**The numbers landed where the plan put them**: 62 vectors, 35 options, 34
+rules; four keywords added (one SHOULD, one MAY, two MUST NOTs), none retired.
+The Phase 3 items — closing #147, #80 and #106 with their text, telling the
+three implementations, the README line, the date, the tag — wait for the merge.
