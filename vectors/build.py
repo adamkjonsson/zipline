@@ -3987,6 +3987,98 @@ vector(
     extents=[(7, 0, 16)],
 )
 
+# 0.21 (#147). The one shape the walk above cannot place, and its exit.
+KEY = "10.0.0.1:51000 <-> 93.184.216.34:80"
+
+vector(
+    "session-split-capture-gap",
+    "accept",
+    "A hole of 2**31 bytes or more between two consecutive records of one "
+    "participant, which is the one shape the unwrapping rule cannot place: "
+    "the far side is 2**31 + 8 past the near side, which serial arithmetic "
+    "reads as 2**31 - 8 BEFORE it, and the ordering rule refuses the pair. "
+    "The producer knew the hole was real -- it had a clock the sequence "
+    "number is not -- and this is what the format offers: end session 7 at "
+    "the hole with reason capture-gap, open session 8 on the same key with "
+    "no isn, and carry on from the first captured byte. Two sessions where "
+    "the wire had one conversation, and the reason word plus the repeated key "
+    "are what say so. Session 7's extent is 8, session 8's is 8; no offset "
+    "spans the hole because no stream does. A reader that treats the repeated "
+    "flow_key as a duplicate, or the second session's first record as out of "
+    "order against the first session's, has misread the split: ids belong to "
+    "sessions, and the ordering rule is per (session_id, participant_id).",
+    "Referencing the source by stream offset -- the unmeasurable hole",
+    [
+        file_header(),
+        source(1, 0, [o_uri("paused.pcap")]),
+        session(7, [o_proto("tcp"), o_flow_key(KEY)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        record(7, 0, 1, 1000, b"AAAABBBB", flags=0x0001, options=[o_seq_start(1001)]),
+        # The next segment of this direction is 2**31 + 8 bytes on: unplaceable
+        # in session 7, so session 7 ends here and says why.
+        session_end(7, [o_end_reason("capture-gap")]),
+        session(8, [o_proto("tcp"), o_flow_key(KEY)]),
+        # No isn: the origin of the resumed stream is its first captured byte.
+        participant(8, 0, [o_endpoint("10.0.0.1:51000")]),
+        record(
+            8, 0, 1, 90_000_000, b"CCCCDDDD", flags=0x0001, options=[o_seq_start(1001 + 2**31 + 8)]
+        ),
+        session_end(8, [o_end_reason("capture-end")]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "paused.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp", "key": KEY},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAABBBB"),
+            "seq_start": 1001,
+        },
+        {"type": "session_end", "session_id": 7, "reason": "capture-gap"},
+        {"type": "session", "session_id": 8, "proto": "tcp", "key": KEY},
+        {"type": "participant", "session_id": 8, "pid": 0, "endpoint": ["10.0.0.1:51000"]},
+        {
+            "type": "record",
+            "session_id": 8,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 90_000_000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCCDDDD"),
+            "seq_start": 1001 + 2**31 + 8,
+        },
+        {"type": "session_end", "session_id": 8, "reason": "capture-end"},
+        {"type": "end"},
+    ],
+    expect="Accept. The .jsonl file is the expected projection, and the declared "
+    "extents are 8 for session 7 and 8 for session 8. Session 7's one record "
+    "is at [0,8) from its isn; session 8 has no isn, so its one record is at "
+    "[0,8) from its own first captured byte, whatever its seq_start says "
+    "about the other session's stream. The two sessions are one wire "
+    "conversation, which is what reason = capture-gap on session 7 states; a "
+    "reader is not required to join them and nothing in the file lets it. "
+    "Rejecting or isolating is NOT conformant: a repeated flow_key is not a "
+    "duplicate id, and the ordering rule binds within a (session_id, "
+    "participant_id), so session 8's seq_start is compared with nothing in "
+    "session 7.",
+    violations=0,
+    extents=[(7, 0, 8), (8, 0, 8)],
+)
+
 vector(
     "isolate-unmarked-drop",
     "isolate",

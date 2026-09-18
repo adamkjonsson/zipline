@@ -115,7 +115,35 @@ reasoning in [docs/RELEASE-0.21-PLAN.md](docs/RELEASE-0.21-PLAN.md).
 
 ### Added
 
+- **`capture-gap` as a Session End reason, and the vector for the hole it
+  names** ([#147](https://github.com/adamkjonsson/zipline/issues/147)). A hole
+  of 2³¹ bytes or more between two consecutive records of one participant is
+  the one shape the unwrapping rule cannot place — the delta is undefined, and
+  the ordering rule refuses the pair — so a producer that knows the far side is
+  real ends the session at the hole and opens another on the same key with no
+  `isn`. That exit was always conformant; the word for it was not fixed.
+  **New keyword:** the producer **SHOULD** write `capture-gap`, so that two
+  producers name the shape the same way and a consumer can tell a resumed
+  conversation from a new one (the endpoint-spelling argument; entry in
+  `NORMATIVE_ADDITIONS`). §Session End and the registry row list the value
+  beside `capture-end`, with the distinction: the capture stopped, or it
+  resumed and the stream could not. `session-split-capture-gap` is the
+  fixture. **58 vectors, 35 options, 30 rules** after Phase 1.
+
 ### Decided
+
+- **The unmeasurable hole gets no representation within one stream**
+  ([#147](https://github.com/adamkjonsson/zipline/issues/147)). The issue
+  offered a `u64 offset` Record option and a width-bearing Discontinuity on a
+  transport stream, and asked first whether the shape deserved either. It does
+  not, in this release: both carve an exception into the ordering rule as well
+  as adding syntax, the two-sessions exit loses only true position across a
+  hole nothing downstream can use, and — the deciding point — the option is
+  **safe to add later**. A reader that ignored it would meet the ordering
+  violation and stop rather than misplace a byte, which is the property a
+  `1.x` minor requires; so unlike #80's field it carries no `0.x` deadline.
+  §Referencing says so in one sentence, and the `u64 offset` option is the
+  recorded design if a capture with the shape arrives.
 
 ---
 

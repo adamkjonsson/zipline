@@ -301,12 +301,14 @@ origin under serial arithmetic and conceded that the floor was undecidable past
 Since `0.21` **offsets unwrap along stored order**: a record's offset is its
 predecessor's plus the signed serial delta of their `seq_start`s, the origin
 being the first record's predecessor, and an unplaceable record anchors nothing
-(#146). No extent under 2 GiB moves.
+(#146). No extent under 2 GiB moves. The third vector is the one shape the walk
+cannot place, and what a producer does instead (#147).
 
 | Vector | What it carries |
 |--------|-----------------|
 | `stream-past-2gib` | *(accept)* Four eight-byte records at offsets 0, 1 GiB, 2 GiB and 3 GiB from `isn 1000`, every neighbour one serial step of 2³⁰ from the last; extent `3221225480`. The third record is 2³¹ past the origin, which serial arithmetic cannot tell from 2³¹ before it — so a reader measuring against the origin reports two unplaceable records and `1073741832`, the reading this vector exists to fail. |
 | `stream-wraps-seq` | *(accept)* `isn = 2³² − 5`, the first record at the origin `2³² − 4` with eight bytes, the second at `seq_start 4`; extent 16. The **commoner** shape — a stream wraps with probability `length / 2³²` per random `isn` — and until `0.21` the suite's own extent arithmetic got it wrong: plain `seq_start − (isn + 1)` gave the second record a negative range and an extent of 8. A reader subtracting without the modulus fails here; one taking the delta unsigned places the second record at `4294967304`. |
+| `session-split-capture-gap` | *(accept)* The one shape the walk cannot place: a hole of 2³¹ bytes or more between consecutive records, whose far side serial arithmetic reads as *before* the near side. The exit the format offers, and `0.21` names: session 7 ends at the hole with `reason = capture-gap`, session 8 opens on the **same key** with no `isn`, and the resumed stream starts at its first captured byte. Extents 8 and 8; no stream spans the hole. A repeated `flow_key` is not a duplicate id, and the ordering rule binds within a `(session_id, participant_id)` (#147). |
 
 ## Multi-file fixtures
 

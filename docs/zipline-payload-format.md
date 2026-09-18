@@ -735,6 +735,22 @@ direction, or whose sequence numbers pass through 2³², is placed by this walk
 like any other; for a stream under 2 GiB the walk yields `(seq_start − origin)
 mod 2³²` at every record, so nothing under that size reads differently.
 
+**A hole of 2³¹ bytes or more between two consecutive records is not
+representable within one stream**, and this is a bound, not an omission. The
+delta the walk needs is undefined there: a record 2³¹ + *x* past its predecessor
+is, in serial arithmetic, 2³¹ − *x* before it, and the ordering rule refuses the
+pair as out of order. A producer that knows the far side is real — it may have a
+clock the sequence number is not, such as the TCP Timestamps option — ends the
+session at the hole and opens another on the same key, with no `isn`, so the
+stream resumes at its first captured byte; it **SHOULD** write `capture-gap` as
+the [Session End](#session-end-0x12) reason, so that two producers name the
+shape the same way and a consumer can tell a resumed conversation from a new
+one. What is lost is true position on the far side, which nothing downstream
+can use across a hole that wide. A Record option stating the offset outright
+would let one stream span it; it is not defined here, and it would be safe to
+add later — a reader that ignored it would meet the ordering violation and stop
+rather than misplace a byte.
+
 **The floor binds each record to its predecessor, and the origin is the first
 record's predecessor.** A record whose `seq_start` is serially *below* the one
 it is measured from has a negative delta in a space that has none. Below the
@@ -1550,11 +1566,14 @@ Options: `reason` (string), `input_extents` (packed, derived files; **repeatable
 
 `reason` says *how* the session ended — an open vocabulary with suggested
 values `fin` (clean TCP close), `rst` (reset), `timeout` (idle eviction),
-`capture-end` (the capture stopped while the session was live). Note the
+`capture-end` (the capture stopped while the session was live), `capture-gap`
+(the capture resumed, and the stream could not — see
+[the unmeasurable hole](#referencing-the-source-by-stream-offset)). Note the
 distinction: the block itself only asserts the **file** is done with the
 session; whether the *wire* conversation actually terminated is what `reason`
-conveys (`fin`/`rst` = it ended; `timeout`/`capture-end` = the writer merely
-stopped tracking). Reaching the [End block](#end-of-file-0x41) or end-of-stream
+conveys (`fin`/`rst` = it ended; `timeout`/`capture-end`/`capture-gap` = the
+writer merely stopped tracking, and under `capture-gap` the next session on the
+same key is the same conversation, carried on). Reaching the [End block](#end-of-file-0x41) or end-of-stream
 implicitly closes every still-open session, so a Session End as a file's last
 act is redundant but harmless; readers MUST NOT require the block (a crashed
 writer never wrote it). A transform SHOULD emit a Session End for an output
@@ -2249,7 +2268,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical five, and MUST agree with the class if it accompanies one of them |
 | `0x00B0` | label            | string     | Name/Identity Resolution | the human-readable name being assigned                         |
 | `0x00B1` | kind             | string     | Name/Identity Resolution | source/kind of the label (`nick`/`dns`/`tls-sni`)              |
-| `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/… (open vocabulary) |
+| `0x00C0` | reason           | string     | Session End              | how the session ended: `fin`/`rst`/`timeout`/`capture-end`/`capture-gap`/… (open vocabulary; `capture-gap` is the value for [the unmeasurable hole](#referencing-the-source-by-stream-offset)) |
 | `0x00C1` | input_extents    | packed     | Session End (derived)    | length of each input participant stream this session drew on, in that stream's own offset space: `source_id: u16, pid: u16, session_id: u64, extent: u64` — ids in the source's namespace; **repeatable**, occurrences concatenate (see [Session End](#session-end-0x12)) |
 | `0x00D0` | width            | u64        | Discontinuity            | extent of the break in this stream's own offset space; **absent means unknown**, and an absent width contributes 0 to positional arithmetic (see [Discontinuity](#discontinuity-0x22)) |
 | `0x00D1` | reason           | string     | Discontinuity            | why the stream breaks here: `tls-record-lost`/`decrypt-failed`/`stream-gap`/`records-dropped`/`reordered`/… (open vocabulary) |

@@ -337,6 +337,21 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "derived from two rules three sections apart, with the guarantee's "
         "scope stated inconsistently; the MUST states the consequence once",
     ),
+    # 0.21 (#147). A hole of 2**31 or more between consecutive records has no
+    # representation within one stream -- the delta is undefined and the
+    # ordering rule refuses the pair -- so the exit is two sessions on one key.
+    # The exit was always conformant; what the document did not say was which
+    # word names it, and a reason vocabulary that is open for saying MORE still
+    # wants one spelling for a shape two producers will both meet.
+    (
+        r"it \*\*SHOULD\*\* write `capture-gap` as the "
+        r"\[Session End\]\(#session-end-0x12\) reason",
+        {"SHOULD": 1},
+        "the open vocabulary permitted any word; the SHOULD picks one so that a "
+        "consumer can tell a resumed conversation from a new one across files "
+        "and producers, on the endpoint-spelling argument -- a Changed line, "
+        "since no rule bound the word before",
+    ),
 )
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
@@ -510,6 +525,15 @@ RULES = {
         "sequence numbers passing through 2**32 place by signed serial delta; "
         "the offset keeps counting",
         "stream-wraps-seq",
+    ),
+    # 0.21 (#147). The one shape the walk cannot place: a consecutive delta of
+    # 2**31 or more. Not a new permission -- two sessions on one key were always
+    # legal -- but the shape now has a name, and a permission with no vector is
+    # how #66 happened.
+    "session-split-on-unmeasurable-hole": (
+        "a hole of 2**31 or more between consecutive records ends the session; "
+        "the next on the same key, reason capture-gap, carries the conversation on",
+        "session-split-capture-gap",
     ),
     # 0.18's one rule with a vector. The ordering MUST has never said whether
     # two records may share a seq_start; 0.17's handshake MUST makes the tie

@@ -1660,6 +1660,47 @@
       ]
     },
     {
+      "name": "session-split-capture-gap",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 456,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0051",
+        "0x0060",
+        "0x0061",
+        "0x0063",
+        "0x0070",
+        "0x00C0"
+      ],
+      "summary": "A hole of 2**31 bytes or more between two consecutive records of one participant, which is the one shape the unwrapping rule cannot place: the far side is 2**31 + 8 past the near side, which serial arithmetic reads as 2**31 - 8 BEFORE it, and the ordering rule refuses the pair. The producer knew the hole was real -- it had a clock the sequence number is not -- and this is what the format offers: end session 7 at the hole with reason capture-gap, open session 8 on the same key with no isn, and carry on from the first captured byte. Two sessions where the wire had one conversation, and the reason word plus the repeated key are what say so. Session 7's extent is 8, session 8's is 8; no offset spans the hole because no stream does. A reader that treats the repeated flow_key as a duplicate, or the second session's first record as out of order against the first session's, has misread the split: ids belong to sessions, and the ordering rule is per (session_id, participant_id).",
+      "spec_section": "Referencing the source by stream offset -- the unmeasurable hole",
+      "expect": "Accept. The .jsonl file is the expected projection, and the declared extents are 8 for session 7 and 8 for session 8. Session 7's one record is at [0,8) from its isn; session 8 has no isn, so its one record is at [0,8) from its own first captured byte, whatever its seq_start says about the other session's stream. The two sessions are one wire conversation, which is what reason = capture-gap on session 7 states; a reader is not required to join them and nothing in the file lets it. Rejecting or isolating is NOT conformant: a repeated flow_key is not a duplicate id, and the ordering rule binds within a (session_id, participant_id), so session 8's seq_start is compared with nothing in session 7.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 7,
+          "pid": 0,
+          "extent": 8
+        },
+        {
+          "session_id": 8,
+          "pid": 0,
+          "extent": 8
+        }
+      ]
+    },
+    {
       "name": "isolate-unmarked-drop",
       "tier": "isolate",
       "violations": 1,
