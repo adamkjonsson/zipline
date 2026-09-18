@@ -622,7 +622,7 @@ Release:
       `v0.18` less 23 removals plus 6 additions — MAY 54, MUST 124, MUST NOT
       44, SHOULD 28. The replaced floor paragraphs carried no keyword.)*
 - [x] `ruff check` and `ruff format` clean.
-- [ ] `CHANGELOG.md` `[0.21]` dated, with a `Decided` section and the
+- [x] `CHANGELOG.md` `[0.21]` dated, with a `Decided` section and the
       Conventions line that admits it.
 - [ ] All three implementations told before the tag.
 - [ ] Tag `v0.21`, on the merge commit, where `v0.20` sits.
@@ -631,7 +631,7 @@ Release:
 
 ## What execution changed
 
-*Written 2026-09-18, at the end of Phase 2, before the merge. To be completed
+*Written 2026-09-18, at the end of Phase 3's pre-merge half. To be completed
 at the tag.*
 
 **The gate was waived, on the day it was set.** §Mechanics item 3 made Phase 2
@@ -670,3 +670,25 @@ written — the order the risk table asked for.
 rules; four keywords added (one SHOULD, one MAY, two MUST NOTs), none retired.
 The Phase 3 items — closing #147, #80 and #106 with their text, telling the
 three implementations, the README line, the date, the tag — wait for the merge.
+
+**The sweep found three releases of drift in one place the guards did not
+reach.** The byte-level worked example stamped `version_minor = 18` in its
+bytes and its annotation — through `0.19`, `0.20` and this release's own stamp —
+while the README called `raw-minimal` *identical* to it. A stamp touches every
+other copy of the version mechanically; this one is hand-maintained prose inside
+a code fence, which is why no `RETIRED_CLAIMS` spelling, no anchor check and no
+count could see it. The status blockquote's history stopped at `0.18` and its
+renumbering note said *`0.10` through `0.18`*; the numbering example used
+`0.18`; the vectors README's first line said `0.20`, the very line `0.20` had
+found saying `0.18`. `check.py` gains `check_worked_example`, comparing the
+example's offset and hex columns to `raw-minimal.hex` line for line, seen to
+fail on the pre-sweep text before it was trusted. The rest of the sweep was
+this release's own debt: twelve JSONL examples with participant lines lacking
+the field that always projects, the worked example's participant still
+annotated as a reserved u16, the block table's row, the *fixed body* sentence,
+and one summary calling `output_layer` the second load-bearing enum with no
+third named.
+
+**Remaining, and gated on the merge to `main`:** the closing comments on #147,
+#80 and #106 with their final text; the three implementation notices; and the
+tag, on the merge commit, where `v0.20` sits.
