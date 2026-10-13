@@ -4580,6 +4580,165 @@ vector(
     extents=[(10, 0, 70), (11, 0, 20)],
 )
 
+
+IPV4_SRC, IPV4_DST = bytes([10, 8, 0, 2]), bytes([10, 8, 0, 9])
+
+
+def ipv4(payload: bytes, src: bytes = IPV4_SRC, dst: bytes = IPV4_DST) -> bytes:
+    """Prefix `payload` with a 20-byte IPv4 header: protocol 6, true length and checksum.
+
+    Since 0.22 a packet-preserving stage types its records net:ip, which means
+    LINKTYPE_RAW: the payload IS an IP packet and its first nibble says which
+    version. Filler bytes would make the label false, so the header is real. The
+    TCP header is elided -- the payload follows the IP header directly -- to keep
+    the sizes, and so every offset the worked example quotes.
+    """
+    hdr = bytearray(
+        struct.pack(">BBHHHBBH4s4s", 0x45, 0, 20 + len(payload), 0, 0x4000, 64, 6, 0, src, dst)
+    )
+    words = sum(struct.unpack(">10H", bytes(hdr)))
+    while words > 0xFFFF:
+        words = (words & 0xFFFF) + (words >> 16)
+    struct.pack_into(">H", hdr, 10, ~words & 0xFFFF)
+    return bytes(hdr) + payload
+
+
+ETH_DST, ETH_SRC = bytes.fromhex("aabbcc000002"), bytes.fromhex("aabbcc000001")
+
+
+def ethernet(packet: bytes) -> bytes:
+    """Wrap `packet` as IPv4 in an Ethernet II frame: LINKTYPE_ETHERNET's unit."""
+    return ETH_DST + ETH_SRC + b"\x08\x00" + packet
+
+
+FRAME_1, FRAME_2 = ethernet(ipv4(b"d" * 26)), ethernet(ipv4(b"e" * 16))  # 60 and 50 bytes
+
+# 0.22 (#153). net:'s second value. tunnel carries net:ip; this is the stage
+# whose output is link-layer frames, which is why the scheme has more than one
+# value at all. The input it cites -- an 8-byte VXLAN header (I flag, VNI 5001)
+# before each frame -- is described, not shipped.
+vector(
+    "decap-ethernet",
+    "accept",
+    "A VXLAN decapsulation stage: its input is two 8-byte VXLAN headers each "
+    "followed by an inner Ethernet frame, and its output is one record per "
+    "frame typed net:ethernet -- LINKTYPE_ETHERNET's unit, from the destination "
+    "address, no preamble, no FCS. The frames are real Ethernet II headers on "
+    "real IPv4 headers; a reader that knows the token can hand each record to "
+    "anything that reads a pcap of link type 1. Each record spans its whole "
+    "datagram, VXLAN header included, because the header (its VNI) fed the "
+    "decapsulation -- the correspondence rule tunnel's decrypt stage follows. "
+    "The participant is declared units, since two frames side by side are two "
+    "packets and never one byte run; contiguous with no Discontinuity is also "
+    "conformant, as tunnel shows. The endpoint list runs outer to inner: the "
+    "VNI, then the inner sender's MAC.",
+    "Enums -- the content_type net: vocabulary",
+    [
+        file_header(options=[o_produced_by("zpf-vxlan 0.1"), o_produced_at(1719800000)]),
+        source(1, 1, [o_uri("vxlan.zpf"), o_digest("sha256:91c3")]),
+        decoder(
+            1,
+            [o_dec_name("vxlan-decap"), o_dec_version("0.1"), o_params_digest("sha256:0b7d")],
+        ),
+        session(4, [o_proto("ethernet")]),
+        participant(4, 0, [o_endpoint("vni:5001"), o_endpoint("aa:bb:cc:00:00:01")], adjacency=1),
+        record(
+            4,
+            0,
+            1,
+            1000,
+            FRAME_1,
+            options=[o_decoder_id(1), o_spans([(1, 3, 0, 0, 68)]), o_content_type("net:ethernet")],
+        ),
+        record(
+            4,
+            0,
+            1,
+            1100,
+            FRAME_2,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 3, 0, 68, 126)]),
+                o_content_type("net:ethernet"),
+            ],
+        ),
+        session_end(4, [o_input_extents([(1, 3, 0, 126)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-vxlan 0.1",
+            "produced_at": 1719800000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "vxlan.zpf",
+            "digest": "sha256:91c3",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "vxlan-decap",
+            "version": "0.1",
+            "params_digest": "sha256:0b7d",
+        },
+        {"type": "session", "session_id": 4, "proto": "ethernet"},
+        {
+            "type": "participant",
+            "session_id": 4,
+            "pid": 0,
+            "adjacency": "units",
+            "endpoint": ["vni:5001", "aa:bb:cc:00:00:01"],
+        },
+        {
+            "type": "record",
+            "session_id": 4,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(FRAME_1),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 3, "pid": 0, "off_start": 0, "off_end": 68}],
+            "content_type": "net:ethernet",
+        },
+        {
+            "type": "record",
+            "session_id": 4,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(FRAME_2),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 3, "pid": 0, "off_start": 68, "off_end": 126}],
+            "content_type": "net:ethernet",
+        },
+        {
+            "type": "session_end",
+            "session_id": 4,
+            "input_extents": [{"source_id": 1, "session_id": 3, "pid": 0, "extent": 126}],
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. Two records at [0,60) and [60,110) of a unit sequence, extent "
+    "110; the input stream (source 1, session 3, pid 0) is covered once over "
+    "[0,126). Both records' content_type is net:ethernet, a token this version "
+    "defines: the payload is one Ethernet frame as a LINKTYPE_ETHERNET capture "
+    "stores it. A reader that does not know the net: scheme treats the label "
+    "as opaque and falls back to the decoder name, which is conformant -- an "
+    "unknown scheme is opaque -- but a reader implementing this version knows "
+    "the token. Rejecting or isolating is NOT conformant, and neither is "
+    "checking the label against the payload: net: binds no length and the "
+    "format parses no packet.",
+    violations=0,
+    extents=[(4, 0, 110)],
+)
+
 # 0.21 (#80, #106). The adjacency body field, in its four shapes: the two the
 # milestone comment asked for, and the two every load-bearing enum owes.
 DNS_HEADER = b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00"
@@ -5832,8 +5991,11 @@ def build_splice() -> None:
 # failure rather than as a fixture nobody rechecked.
 
 WG1, WG2, WG3, WG4 = (bytes([c]) * 80 for c in b"WXYZ")  # 4 ciphertext datagrams
-IP_A1, IP_B1, IP_A2 = b"P" * 60, b"Q" * 40, b"R" * 50  # inner packets, once decrypted
 TCP_A1, TCP_A2, TCP_B1 = b"a" * 40, b"b" * 30, b"c" * 20  # inner TCP payloads
+
+
+# Inner packets, once decrypted: each one's TCP payload behind an IPv4 header.
+IP_A1, IP_B1, IP_A2 = ipv4(TCP_A1), ipv4(TCP_B1), ipv4(TCP_A2)
 
 
 def build_tunnel() -> None:
@@ -5945,7 +6107,7 @@ def build_tunnel() -> None:
             1,
             1000,
             IP_A1,
-            options=[o_decoder_id(1), o_spans([(1, 1, 0, 0, 80)]), o_content_type("dec:ip-packet")],
+            options=[o_decoder_id(1), o_spans([(1, 1, 0, 0, 80)]), o_content_type("net:ip")],
         ),
         record(
             5,
@@ -5956,7 +6118,7 @@ def build_tunnel() -> None:
             options=[
                 o_decoder_id(1),
                 o_spans([(1, 1, 0, 80, 160)]),
-                o_content_type("dec:ip-packet"),
+                o_content_type("net:ip"),
             ],
         ),
         # Datagram 3 will not decrypt. The ciphertext exists, so this is
@@ -5983,7 +6145,7 @@ def build_tunnel() -> None:
             options=[
                 o_decoder_id(1),
                 o_spans([(1, 1, 0, 240, 320)]),
-                o_content_type("dec:ip-packet"),
+                o_content_type("net:ip"),
             ],
         ),
         session_end(5, [o_input_extents([(1, 1, 0, 320)])]),
@@ -5992,10 +6154,13 @@ def build_tunnel() -> None:
     packets = member(
         "tunnel",
         "packets",
-        "The decrypt stage. One record per inner IP packet, typed dec:ip-packet "
+        "The decrypt stage. One record per inner IP packet, typed net:ip "
         "because a packet IS a unit -- unlike a reassembly window, which is a "
-        "slice. Its own offset space is the payload concatenation: [0,60) "
-        "[60,100) [100,150), the Discontinuity contributing 0.",
+        "slice -- and since 0.22 the format names that unit itself, so a generic "
+        "sessionizer need not know this decoder's token. Each payload is a real "
+        "20-byte IPv4 header and its TCP payload; the TCP header is elided to "
+        "keep the sizes. Its own offset space is the payload concatenation: "
+        "[0,60) [60,100) [100,150), the Discontinuity contributing 0.",
         packets_blocks,
         [
             {
@@ -6039,7 +6204,7 @@ def build_tunnel() -> None:
                 "spans": [
                     {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 0, "off_end": 80}
                 ],
-                "content_type": "dec:ip-packet",
+                "content_type": "net:ip",
             },
             {
                 "type": "record",
@@ -6052,7 +6217,7 @@ def build_tunnel() -> None:
                 "spans": [
                     {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 80, "off_end": 160}
                 ],
-                "content_type": "dec:ip-packet",
+                "content_type": "net:ip",
             },
             {
                 "type": "undecoded",
@@ -6077,7 +6242,7 @@ def build_tunnel() -> None:
                 "spans": [
                     {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 240, "off_end": 320}
                 ],
-                "content_type": "dec:ip-packet",
+                "content_type": "net:ip",
             },
             {
                 "type": "session_end",

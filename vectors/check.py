@@ -598,6 +598,15 @@ RULES = {
         "carry any break as a hole",
         "sessionized-across-units",
     ),
+    # 0.22 (#153). The scheme is a vocabulary, and its values are covered only
+    # by vectors naming them: net:ip rides on tunnel's decrypt stage, and
+    # net:ethernet has this one, a decapsulation stage emitting frames.
+    "net-types-packets": (
+        "a packet-preserving stage types its records with a net: token -- net:ip "
+        "for an IP packet, net:ethernet for an Ethernet frame -- the unit a "
+        "capture of that link type stores per packet",
+        "decap-ethernet",
+    ),
     # 0.21 (#80, #106). The adjacency body field. Like output_layer it is not
     # an option, so the registry parse cannot see it; its two values and the
     # two treatments an enum owes are covered only by these entries.
@@ -934,6 +943,21 @@ RETIRED_CLAIMS = {
         "input's seams; leaving a crossing undone is what a stage owes only "
         "where it cannot express the break",
     ),
+    # 0.22 (#153). The typing section counted three schemes and told a
+    # packet-preserving stage to use the one whose namespace is private -- so
+    # the one type a generic sessionizer most needs to recognise was the one
+    # it could only match by convention.
+    "packets-typed-by-dec-token": (
+        (
+            r"string with three schemes",
+            r"type its records, and with a `dec:` token",
+        ),
+        "0.22",
+        153,
+        "content_type has four schemes; a packet-preserving stage types its records "
+        "net:ip or net:ethernet, closed and spec-defined, so a consumer recognises "
+        "a packet without knowing the producer's decoder name",
+    ),
     # 0.21 (#80, #106). The adjacency body field is the third load-bearing enum,
     # and the wholesale form of the reordering stage's duty. Two counts and two
     # sentences stating the per-seam block as the only form.
@@ -1029,6 +1053,20 @@ ENUMERATIONS = {
             "whether or not it has a decoder",
         ),
     ),
+    # 0.22 (#153). The content_type schemes, listed at three sites, and one of
+    # them -- the prim: paragraph's "mime: and dec: carry everything else" --
+    # implicit enough that a fourth scheme would have left it quietly wrong.
+    "content_type schemes": (
+        ("mime:", "prim:", "net:", "dec:"),
+        (
+            # Typing a decoded record -- where the set is introduced
+            "string with four schemes",
+            # the option registry row
+            "| `0x0091` | content_type",
+            # Enums -- the prim: vocabulary
+            "carry everything else",
+        ),
+    ),
     # 0.21 (#80). The load-bearing enums, counted in two places since 0.15 and
     # stale in both when the third arrived -- "Two enums are load-bearing" and
     # "the two load-bearing enums" each said two through a release that added
@@ -1065,6 +1103,14 @@ def check_enumerations() -> list[str]:
     for label, (members, locators) in sorted(ENUMERATIONS.items()):
         for locator in locators:
             found = [u for u in units if locator in u]
+            # A table row is a unit of its own AND part of its table's
+            # paragraph, so a locator inside a row always matches twice. The
+            # row -- the match the other contains -- is the site; 0.22's
+            # registry row was the first one anchored.
+            if len(found) == 2:
+                inner = min(found, key=len)
+                if all(inner in u for u in found):
+                    found = [inner]
             if len(found) != 1:
                 out.append(
                     f"enumeration '{label}': locator {locator!r} matches "

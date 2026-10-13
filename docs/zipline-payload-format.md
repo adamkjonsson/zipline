@@ -976,13 +976,18 @@ attach: a `content_type` on the record. Absent, the payload is opaque and a
 consumer falls back to the decoder `name`; the bytes always stay the source of
 truth — the label never replaces them.
 
-`content_type` is a `<scheme>:<value>` string with three schemes:
+`content_type` is a `<scheme>:<value>` string with four schemes, `mime:`,
+`prim:`, `net:` and `dec:`:
 
 - `mime:<media-type>` — an IANA media type: `mime:image/png`,
   `mime:application/json`, `mime:text/plain;charset=utf-8`.
 - `prim:<primitive>` — a fixed-width integer or raw byte string from a small,
   closed spec-defined vocabulary (`prim:u64`, `prim:i32`, `prim:bytes`;
   full list in [Enums](#enums)), for values media types describe poorly.
+- `net:<link-type>` — one whole **packet** or frame, from a small, closed
+  spec-defined vocabulary (`net:ip`, `net:ethernet`; full list in
+  [Enums](#enums)), for the unit a packet-preserving stage emits, which no
+  media type names.
 - `dec:<token>` — a type **private to the record's decoder**, meaning whatever
   that decoder documents. Its namespace is the decoder's `name` — the same
   `decoder_id` → Decoder `name` resolution that already gives a decoded record its
@@ -1057,9 +1062,12 @@ was the point of giving reassembly a decoder at all.
 
 The contrast that makes the rule legible is a **packet-preserving** stage, where
 one record is one inner packet — a real unit with real boundaries. That stage does
-type its records, and with a `dec:` token, because "one inner packet" is precisely
-what distinguishes a packet stream from a byte stream and `prim:bytes` would say
-only "opaque".
+type its records, and with a `net:` token, because "one inner packet" is precisely
+what distinguishes a packet stream from a byte stream. `prim:bytes` would say only
+"opaque", and a `dec:` token would say it in a namespace that only that decoder's
+documentation defines. `net:ip` is what lets a generic
+[sessionization stage](#conformance) recognise the packets of any tunnel decoder
+without being told each decoder's token.
 
 ### Coverage honesty: Undecoded blocks
 
@@ -1151,7 +1159,7 @@ stages this document has already shown, and are described rather than transcribe
 - **`outer.zpf`** holds four 80-byte ciphertext datagrams at `[0,80)` … `[240,320)`
   — a transport stream with no `isn`, so byte 0 is the first captured byte.
 - **`packets.zpf`** decrypts them, one record per inner packet, typed
-  `dec:ip-packet`. Each record spans the **whole** datagram, nonce and tag
+  `net:ip`. Each record spans the **whole** datagram, nonce and tag
   included, because those fed the computation — so tunnel coverage closes with no
   `skipped` blocks at all (see
   [correspondence, not proximity](#undecoded-0x21)). The third datagram will not
@@ -2384,7 +2392,7 @@ registry, consulted only by a consumer that actually interprets the id:
 | `0x0073` | ts_first         | i64        | Record                   | optional packet time of the *first* contributing packet        |
 | `0x0080` | spans            | span-list  | Record                   | source ranges these bytes **correspond to** — the input the unit was computed from, not necessarily a copy of it (see below) |
 | `0x0090` | decoder_id       | u16        | Record, Undecoded        | which **decoder** produced or declined this record or region — not necessarily the stage that wrote this file (a pass-through, filter or reordering stage inherits it). The decoder's [`output_layer`](#decoder-descriptor-0x03) then gives the layer, which may be transport |
-| `0x0091` | content_type     | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what the payload *is*: `mime:`/`prim:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
+| `0x0091` | content_type     | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what the payload *is*: `mime:`/`prim:`/`net:`/`dec:` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x0092` | role             | string     | Record (**decoded layer only** — MUST NOT appear at the transport layer; advisory) | what this record **is**, in a vocabulary scoped to its decoder's `name`; opaque to the format, and independent of `content_type` (see [Typing a decoded record](#typing-a-decoded-record)) |
 | `0x00A0` | reason           | string     | Undecoded                | why the region is undecoded; open vocabulary in two recoverability classes — bytes exist (`undecodable`/`skipped`/`dropped`) or hole (`gap`/`truncated`) — see [Undecoded](#undecoded-0x21) |
 | `0x00A1` | reason_class     | string     | Undecoded                | `hole` or `bytes`; **MUST** accompany a `reason` outside the canonical five, and MUST agree with the class if it accompanies one of them |
@@ -2524,7 +2532,7 @@ uninterpreted byte string). `u`/`i` selects unsigned / signed two's-complement.
 A fixed-width `prim:` payload is stored **little-endian** — the container's
 byte order — and the emitting decoder normalizes it on write (a big-endian wire
 value is byte-swapped by the decoder, never by the reader). No other `prim:`
-token is legal — `mime:` and `dec:` carry everything else.
+token is legal — `mime:`, `net:` and `dec:` carry everything else.
 
 | Width   | Unsigned   | Signed     |
 |---------|------------|------------|
@@ -2566,6 +2574,25 @@ field no reader can act on, and opening the vocabulary would break the
 width-binding rule that is the only thing making `prim:` checkable at all. The
 vocabulary stays closed
 ([#105](https://github.com/adamkjonsson/zipline/issues/105)).
+
+`content_type` `net:` vocabulary (Record option, string): the legal `net:`
+tokens are **exactly** these. Each names the unit a capture of that
+[`link_type`](#source-descriptor-0x02) stores per packet, and has that link
+type's meaning, so the format defines no packet grammar of its own:
+
+| Token          | Payload is exactly one…                                              | Link type               |
+|----------------|----------------------------------------------------------------------|-------------------------|
+| `net:ip`       | IP packet, header first; its version nibble says IPv4 or IPv6        | `LINKTYPE_RAW` (101)    |
+| `net:ethernet` | Ethernet frame, from the destination address; no preamble or SFD     | `LINKTYPE_ETHERNET` (1) |
+
+There is no `net:ipv4` or `net:ipv6`, because the version nibble already says
+which. A `net:` token not in this table is treated the way an unknown scheme is
+(opaque, falling back to the decoder `name`), so a later version can add a link
+type without breaking a reader that does not know it. Unlike a fixed-width
+`prim:` token, a `net:` token binds no length. Whether a payload is an IP packet
+is a question of protocol parsing, which the format does not do, so the label is
+trusted as a `mime:` label is
+([#153](https://github.com/adamkjonsson/zipline/issues/153)).
 
 ### Identifiers & ordering
 
