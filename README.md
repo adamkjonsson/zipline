@@ -144,6 +144,12 @@ rounds as they happened, not plans:
   shapes that owed a block per seam), a ruling on the one hole that rule cannot
   place, and Package D declined after two releases of deferral, with the
   reversal argued.
+- [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md) — the downstream
+  release. It makes three rulings for a converter that `0.21` made possible:
+  acks unwrap the way offsets do, a sequence-anchored transport output may
+  coalesce across an input seam, and a closed `net:` scheme names one network
+  packet. It ends with what execution changed, including a bound the plan had
+  stated in only one direction.
 
 ## License
 

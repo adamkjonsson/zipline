@@ -471,7 +471,9 @@ which was an argument somewhere in `0.13`–`0.15`:
 - **Correspondence, not identity.** An inner packet spans the *whole* outer
   datagram — nonce and tag included, because those fed the computation — so tunnel
   coverage closes with **no `skipped` blocks at all**. The earlier estimate was one
-  per packet for framing; that clarification is what made case D affordable.
+  per packet for framing; that clarification is what made case D affordable. The
+  packets are typed `net:ip` since `0.22`, and are real IPv4 headers on their TCP
+  payloads so that the label is true.
 - **Fan-out.** One input stream (`packets.zpf` session 5, pid 0) feeds **two**
   output sessions in `inner.zpf`. Neither covers `[0,150)` alone and both Session
   Ends declare the same extent 150 for the shared input — the rule
@@ -481,10 +483,12 @@ which was an argument somewhere in `0.13`–`0.15`:
   hole-inclusive. Its 40-byte hole shows up as `seq_start 1081` where 1041 would be
   contiguous — no Discontinuity, no `content_type`. **Nothing else in the suite
   shows the F1 cell against a real gap.**
-- **Origination, and the crossing left undone.** `packets.zpf` withholds an inner
-  packet and declares the break. `inner.zpf` reads that break and *cannot* express
-  one, so it does the other legal thing — no record crosses packets offset 100 —
-  and the loss survives as a TCP sequence gap instead. `http.zpf` then meets a
+- **Origination, and the break carried as a hole.** `packets.zpf` withholds an
+  inner packet and declares the break. `inner.zpf` cannot carry a Discontinuity,
+  and does not need one: the lost packet was flow A's, so the loss survives as a
+  TCP sequence gap. Since `0.22` a sequence-anchored transport output may cross
+  an input break where its sequence numbers say the bytes join;
+  `sessionized-across-units` shows that case. `http.zpf` then meets a
   `hole`-class region between two adjacent output units and originates its own
   block. Delete that one block and `http.zpf` **is** `isolate-unmarked-break`.
 

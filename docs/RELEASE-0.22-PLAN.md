@@ -440,14 +440,67 @@ from before any edit.
 
 - [ ] §Causal ordering compares unwrapped positions; the two serial claims are
       retired; `sequenced-past-2gib-pure-ack` exists; #151 closed with the text.
+      *(All but the closing. Four spellings are retired, not two.)*
 - [ ] §Discontinuity has the `seq_start` carve-out (one MAY, with its entry); the
       worked example no longer says the crossing must be left undone;
-      `sessionized-across-units` exists; #152 closed.
+      `sessionized-across-units` exists; #152 closed. *(All but the closing.)*
 - [ ] `net:` is a fourth scheme with `net:ip` and `net:ethernet` in §Enums;
       `tunnel` carries `net:ip`; `decap-ethernet` exists; #153 closed.
-- [ ] `python3 vectors/check.py` green at 0.22: **65 vectors, 35 options,
+      *(All but the closing.)*
+- [x] `python3 vectors/check.py` green at 0.22: **65 vectors, 35 options,
       37 rules**; `reject-unknown-minor` at `0/23`.
-- [ ] Counts `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`, or the difference
-      accounted for by entries.
-- [ ] `ruff check` and `ruff format` clean.
+- [x] Counts `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`, or the difference
+      accounted for by entries. *(Exactly these. One addition and no removals.)*
+- [x] `ruff check` and `ruff format` clean.
 - [ ] `CHANGELOG.md` `[0.22]` dated; three implementations told; `v0.22` tagged.
+      *(The entry is written; the date waits for the merge.)*
+
+---
+
+## What execution changed
+
+*Written 2026-10-13, at the end of Phase 4's pre-merge half.*
+
+**The plan stated #151's bound in one direction only, and the issue comment
+repeated it.** Scope decision 1 said a misread ack step "only removes edges".
+That holds for a **forward** step of 2³¹ or more, which reads as a retreat and
+underestimates. A **backward** step that wide reads as a jump and invents edges.
+It needs acks stored in the order `o`, `o+1.5`, `o+3`, `o+0.5` GiB, which means
+retransmissions delayed past gigabytes of peer data and stored ahead of
+originals. The case is contrived, but the plan's sentence was false and a port
+would have quoted it. The text states both directions, and the backward case has
+an exit (omit that retransmission's `ack`) that again only removes edges, so the
+release still adds no keyword. Working through the issue's wording, *an ack never
+retreats*, showed it to be false in stored order, and a running maximum, the
+natural first draft, would have invented edges in the ordinary retransmission
+case. Phase 1 found this before writing the rule, not after.
+
+**`tunnel`'s packets were not packets.** The plan said to retype three records,
+but their payloads were filler whose first nibble was 5, so `net:ip` would have
+been a false label in the vector that defines it. They are now real IPv4 headers
+on their TCP payloads, with the sizes kept, so no quoted offset moved and the
+retype rippled through two digests. A label that a reader may trust has to be
+true in the fixture that teaches it.
+
+**The grep found two more scheme lists than the plan expected**, the registry row
+and the `prim:` paragraph's *`mime:` and `dec:` carry everything else*. The second
+is an enumeration nobody would have recognised as one. They became the release's
+`ENUMERATIONS` set. Anchoring the registry row exposed a limit in the guard: a
+locator inside a table row matches both the row and its table, so no row could be
+a site. `check_enumerations` now takes the row when one match contains the other.
+
+**A second hand-kept copy of the version had drifted.** The File Header table
+said *`18` for this document* through three releases, one table away from the
+worked-example bytes that `0.21`'s sweep caught. The stamp fixed it, and
+`check.py` now compares the row with `MINOR`. It was seen to fail on a stale
+value before it was trusted.
+
+**The sweep found one more stale paragraph the guards could not see:** the
+tunnel fixture's README said `inner.zpf` *cannot* express the break and leaves
+the crossing undone. It now says the break is carried as a hole and points to
+`sessionized-across-units`. The rationale companion needed nothing.
+
+**The numbers landed where the plan put them**: 65 vectors, 35 options, 37
+rules, and one keyword added. Closing #151–#153 with their final text (#151's
+including the corrected bound), telling the three implementations, the date and
+the tag all wait for the merge.

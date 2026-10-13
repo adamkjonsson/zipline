@@ -9,8 +9,9 @@
 > of them found; `0.13` was the first since `0.9` to *add* capability rather
 > than only correct, `0.15` the first to change what already-written files mean,
 > `0.17` the first driven by an implementation decoding at field granularity,
-> `0.19` the first to *remove* rules rather than add them, and `0.21` the first
-> since `0.15` to change a block body. More are expected.
+> `0.19` the first to *remove* rules rather than add them, `0.21` the first
+> since `0.15` to change a block body, and `0.22` the first to add a
+> `content_type` scheme. More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —

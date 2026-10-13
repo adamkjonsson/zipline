@@ -1452,8 +1452,22 @@ def check_worked_example() -> list[str]:
             f"worked example: {len(spec_lines)} byte lines in the specification, "
             f"{len(hex_lines)} in raw-minimal.hex"
         )
+    # 0.22's stamp found the second hand-kept copy: the File Header table's
+    # version_minor row said "`18` for this document" through 0.19, 0.20 and
+    # 0.21, one table away from the example above and as invisible to a stamp.
+    row = re.search(r"^\| `version_minor` \| u16\s*\| `(\d+)` for this document", text, re.M)
+    if not row:
+        out.append("File Header table: the version_minor row was not found")
+    elif int(row.group(1)) != MINOR:
+        out.append(
+            f"File Header table: version_minor row says {row.group(1)} for this "
+            f"document, the tree stamps {MINOR}"
+        )
     if not out:
-        print(f"  worked example: {len(spec_lines)} byte lines, identical to raw-minimal.hex")
+        print(
+            f"  worked example: {len(spec_lines)} byte lines, identical to raw-minimal.hex; "
+            f"File Header row says {MINOR}"
+        )
     return out
 
 
