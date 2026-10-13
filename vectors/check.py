@@ -381,6 +381,20 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "the reader's treatment is the advisory one a transport-layer label "
         "gets -- a Changed line, advisory strength",
     ),
+    # 0.22 (#152). The carry duty's two recourses -- a Discontinuity, or a
+    # units participant -- are both barred at the transport layer, so read
+    # literally a reassembler over a packet stream could never coalesce two
+    # packets. Its sequence numbers already carry any break as a hole, which is
+    # the reason the document gives for barring the block there.
+    (
+        r"\*\*MAY\*\* emit\s*a record whose `spans` cross input units, or an input Discontinuity",
+        {"MAY": 1},
+        "the duty exists so a break seen at one stage is not lost at the next, and "
+        "at a sequence-anchored transport output it cannot be: a missing range is "
+        "a range no record covers. Without the permission the duty's letter "
+        "forbade what its purpose allowed -- a Clarified line, since a file that "
+        "declined every crossing stays conformant",
+    ),
 )
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
@@ -573,6 +587,16 @@ RULES = {
         "acker's records by signed delta from the previous ack; a peer that only "
         "acks keeps its one ack at the origin, below every record end past 2 GiB",
         "sequenced-past-2gib-pure-ack",
+    ),
+    # 0.22 (#152). The permission the carry duty's letter withheld. No checker
+    # can see a wrong coalesce -- the sequence numbers are the producer's
+    # assertion -- so the vector shows the shape and fails a reader that
+    # refuses it.
+    "transport-crosses-by-seq": (
+        "a transport-layer output whose records carry seq_start MAY emit a record "
+        "whose spans cross input units or an input Discontinuity; its offsets "
+        "carry any break as a hole",
+        "sessionized-across-units",
     ),
     # 0.21 (#80, #106). The adjacency body field. Like output_layer it is not
     # an option, so the registry parse cannot see it; its two values and the
@@ -893,6 +917,22 @@ RETIRED_CLAIMS = {
         "unwrapped -- the end along the peer's records, the ack along the acker's "
         "-- and compared as plain integers; serial arithmetic compares only "
         "consecutive values of one field",
+    ),
+    # 0.22 (#152). The worked example said a reassembler that could not express
+    # its input's break declined the crossing, and showed it doing so. A
+    # sequence-anchored one can express it, as a hole, so the bullet showed a
+    # restriction that was never needed.
+    "transport-declines-the-crossing": (
+        (
+            r"The crossing is left undone",
+            r"it declines the crossing, which is what this is",
+        ),
+        "0.22",
+        152,
+        "a transport-layer output whose records carry seq_start carries a break "
+        "as a hole in its sequence numbers, and MAY emit a record crossing its "
+        "input's seams; leaving a crossing undone is what a stage owes only "
+        "where it cannot express the break",
     ),
     # 0.21 (#80, #106). The adjacency body field is the third load-bearing enum,
     # and the wholesale form of the reordering stage's duty. Two counts and two

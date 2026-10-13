@@ -1741,6 +1741,54 @@
       ]
     },
     {
+      "name": "sessionized-across-units",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 684,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0043",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0080",
+        "0x0090",
+        "0x00C1"
+      ],
+      "summary": "A sessionization stage over a packet stream -- tunnel's inner hop, with nothing lost. The input, packets.zpf, is a unit sequence as kober's WireGuard output is: three inner packets at [0,60), [60,100) and [100,150), participant declared units, so every seam is a declared break. The first and third are flow A's and carry 40 and 30 bytes of TCP payload at seq 1001 and 1041, which join; the second is flow B's. Session 10's one record coalesces flow A into 70 bytes with TWO spans, one per input packet, crossing two declared breaks. Through 0.21 that record had no conformant form: the carry duty asked for a Discontinuity or a units output, and a transport-layer stream may have neither. Since 0.22 a transport output whose records carry seq_start MAY cross, because a break there is a range of sequence numbers no record covers and cannot be lost. Nothing in this file shows the input's adjacency, and nothing could catch a wrong coalesce: the sequence numbers are the producer's assertion.",
+      "spec_section": "Discontinuity (0x22) -- what a consumer owes the block",
+      "expect": "Accept. Session 10 has one placeable record at [0,70), extent 70; session 11 one at [0,20), extent 20. The input stream (source 1, session 5, pid 0) is covered once over [0,150) by the union of the two sessions' spans, and both Session Ends declare its whole extent, 150, as fan-out requires. Session 10's record cites two input units and crosses two declared breaks; that is conformant for a transport-layer output whose records carry seq_start, and the seam predicate does not apply, since it tests decoded layers only. A reader that reports a no-splice violation, or rejects or isolates the session, has applied the decoded layer's carry duty to a stream whose offsets already carry every break.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 10,
+          "pid": 0,
+          "extent": 70
+        },
+        {
+          "session_id": 11,
+          "pid": 0,
+          "extent": 20
+        }
+      ]
+    },
+    {
       "name": "unit-sequence-reversed",
       "tier": "accept",
       "violations": 0,

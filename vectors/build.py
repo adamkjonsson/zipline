@@ -4426,6 +4426,160 @@ vector(
     extents=[(7, 0, 3 * GIB + 8), (7, 1, 0)],
 )
 
+# 0.22 (#152). The carry duty's two recourses are both barred at the transport
+# layer, so a reassembler over a unit sequence could never coalesce two
+# packets. Its sequence numbers carry any break as a hole, so now it may.
+vector(
+    "sessionized-across-units",
+    "accept",
+    "A sessionization stage over a packet stream -- tunnel's inner hop, with "
+    "nothing lost. The input, packets.zpf, is a unit sequence as kober's "
+    "WireGuard output is: three inner packets at [0,60), [60,100) and "
+    "[100,150), participant declared units, so every seam is a declared break. "
+    "The first and third are flow A's and carry 40 and 30 bytes of TCP payload "
+    "at seq 1001 and 1041, which join; the second is flow B's. Session 10's one "
+    "record coalesces flow A into 70 bytes with TWO spans, one per input "
+    "packet, crossing two declared breaks. Through 0.21 that record had no "
+    "conformant form: the carry duty asked for a Discontinuity or a units "
+    "output, and a transport-layer stream may have neither. Since 0.22 a "
+    "transport output whose records carry seq_start MAY cross, because a break "
+    "there is a range of sequence numbers no record covers and cannot be lost. "
+    "Nothing in this file shows the input's adjacency, and nothing could catch "
+    "a wrong coalesce: the sequence numbers are the producer's assertion.",
+    "Discontinuity (0x22) -- what a consumer owes the block",
+    [
+        file_header(options=[o_produced_by("zpf-sessionize 1.0"), o_produced_at(1719700100)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest("sha256:5e1a")]),
+        decoder(
+            1,
+            [
+                o_dec_name("tcp-reassembly"),
+                o_dec_version("1.1"),
+                o_params_digest("sha256:2f60"),
+            ],
+            output_layer=1,
+        ),
+        session(10, [o_proto("tcp")]),
+        participant(10, 0, [o_endpoint("10.8.0.2:44300"), o_isn(1000)]),
+        # One record, two input packets: [0,60) and [100,150), flow B's between.
+        record(
+            10,
+            0,
+            1,
+            1000,
+            b"A" * 40 + b"B" * 30,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 5, 0, 0, 60), (1, 5, 0, 100, 150)]),
+                o_seq_start(1001),
+            ],
+        ),
+        session_end(10, [o_input_extents([(1, 5, 0, 150)])]),
+        session(11, [o_proto("tcp")]),
+        participant(11, 0, [o_endpoint("10.8.0.2:44301"), o_isn(5000)]),
+        record(
+            11,
+            0,
+            1,
+            1100,
+            b"C" * 20,
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 60, 100)]), o_seq_start(5001)],
+        ),
+        session_end(11, [o_input_extents([(1, 5, 0, 150)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-sessionize 1.0",
+            "produced_at": 1719700100,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "packets.zpf",
+            "digest": "sha256:5e1a",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "transport",
+            "name": "tcp-reassembly",
+            "version": "1.1",
+            "params_digest": "sha256:2f60",
+        },
+        {"type": "session", "session_id": 10, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 10,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.8.0.2:44300"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 10,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"A" * 40 + b"B" * 30),
+            "decoder_id": 1,
+            "spans": [
+                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 60},
+                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 100, "off_end": 150},
+            ],
+            "seq_start": 1001,
+        },
+        {
+            "type": "session_end",
+            "session_id": 10,
+            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+        },
+        {"type": "session", "session_id": 11, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 11,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.8.0.2:44301"],
+            "isn": 5000,
+        },
+        {
+            "type": "record",
+            "session_id": 11,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(b"C" * 20),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 5, "pid": 0, "off_start": 60, "off_end": 100}],
+            "seq_start": 5001,
+        },
+        {
+            "type": "session_end",
+            "session_id": 11,
+            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. Session 10 has one placeable record at [0,70), extent 70; "
+    "session 11 one at [0,20), extent 20. The input stream (source 1, session "
+    "5, pid 0) is covered once over [0,150) by the union of the two sessions' "
+    "spans, and both Session Ends declare its whole extent, 150, as fan-out "
+    "requires. Session 10's record cites two input units and crosses two "
+    "declared breaks; that is conformant for a transport-layer output whose "
+    "records carry seq_start, and the seam predicate does not apply, since it "
+    "tests decoded layers only. A reader that reports a no-splice violation, "
+    "or rejects or isolates the session, has applied the decoded layer's "
+    "carry duty to a stream whose offsets already carry every break.",
+    violations=0,
+    extents=[(10, 0, 70), (11, 0, 20)],
+)
+
 # 0.21 (#80, #106). The adjacency body field, in its four shapes: the two the
 # milestone comment asked for, and the two every load-bearing enum owes.
 DNS_HEADER = b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00"

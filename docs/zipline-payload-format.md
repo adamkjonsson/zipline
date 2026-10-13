@@ -1206,11 +1206,14 @@ Four things to read off it:
   no record covers — the lost inner packet, expressed exactly as in a capture.
   There is **no** Discontinuity, and there could not be: a transport stream is
   forbidden one because its offsets already say this.
-- **The crossing is left undone.** `packets.zpf` declared a break at its offset
-  100, and no record here spans across it — the second record *starts* there. A
-  stage that cannot express its input's break in its own output does not satisfy
-  the [no-splice duty](#discontinuity-0x22) by staying silent; it declines the
-  crossing, which is what this is.
+- **The break is carried as a hole.** `packets.zpf` declared a break at its
+  offset 100, and flow A's second record starts there, because the packet lost
+  upstream was one of flow A's: its sequence numbers jump, and the 40-byte hole
+  above is that break, carried. Had the lost packet belonged to flow B, flow A's
+  two segments would join in A's own sequence space, and the reassembler could
+  have emitted them as one record whose `spans` cite both input packets. A
+  sequence-anchored transport output carries a break through its offsets, which
+  is all the [no-splice duty](#discontinuity-0x22) asks of it.
 - **Fan-out, and what each session may claim.** Neither session covers `[0,150)`
   alone; the union does, which is why the coverage guarantee is stated per *input
   participant stream*. Both Session Ends declare the same extent **150** — under
@@ -2182,9 +2185,24 @@ Discontinuity of its own in the corresponding position of its output.
 [`units`](#participant-descriptor-0x11) as contiguous, and a decode stage reading
 one carries the break at every seam as it would a declared one: a unit whose
 `spans` cross two input units either sits in an output participant declared
-`units` itself, or has a Discontinuity emitted where they meet. No third case is
-defined — a stage that knows two units join has the same recourse as one that
-knows it for a declared break, which is to say none but the declaration.
+`units` itself, or has a Discontinuity emitted where they meet. At the decoded
+layer no third case is defined — a stage that knows two units join has the same
+recourse as one that knows it for a declared break, which is to say none but the
+declaration.
+
+**A transport-layer output whose records carry `seq_start` meets both duties
+through its offsets.** It has neither recourse, since a transport-layer stream
+carries no Discontinuity (below) and is never declared `units`. It needs neither,
+because a break in such a stream is a range of sequence numbers that no record
+covers, and that cannot be lost. Such a stage — a
+[sessionization stage](#conformance) reassembling a packet stream — **MAY** emit
+a record whose `spans` cross input units, or an input Discontinuity. Its
+sequence numbers then assert that those bytes join, and it answers for that
+assertion as any reassembler does. Crossing a declared break is ordinary under
+fan-out. The input unit missing between two of a flow's packets may have
+belonged to another flow, and the packets either side then join in their own
+sequence space. A transport output without sequence numbers has no hole to carry
+a break in, and owes both duties as stated.
 
 The no-splice sentence is what carries the property down a chain, and it is worth
 stating explicitly because it is easy to think the MUST NOT before it covers the
@@ -2736,7 +2754,9 @@ the number went stale with the content.
   like any decode stage's, and everything else about it is a transport stream —
   `isn`-anchored, hole-inclusive offsets, `seq_start` on records, no
   `content_type` and no `role`, and no [Discontinuity](#discontinuity-0x22), since
-  a hole is expressible without one. It is the same operation as the head-of-pipeline
+  a hole is expressible without one — and, for the same reason, a record may
+  cross its input's seams (see
+  [what a consumer owes](#discontinuity-0x22)). It is the same operation as the head-of-pipeline
   reassembler with a different input kind, and giving it a Decoder is what gives its
   overlap policy, buffer depth and timeout somewhere to be recorded.
 - A **decoded** record carries a `decoder_id` whose Decoder declares
