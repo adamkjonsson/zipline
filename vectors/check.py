@@ -564,6 +564,16 @@ RULES = {
         "the next on the same key, reason capture-gap, carries the conversation on",
         "session-split-capture-gap",
     ),
+    # 0.22 (#151). The same premise on the ack axis: an ack and a peer record's
+    # end are not within 2**31 of each other in general, so both unwrap into
+    # the peer's offset space before step 2 compares them. check.py draws no
+    # edges, so the vector is for implementations.
+    "acks-unwrap": (
+        "an ack is a position in the peer's offset space, unwrapped along the "
+        "acker's records by signed delta from the previous ack; a peer that only "
+        "acks keeps its one ack at the origin, below every record end past 2 GiB",
+        "sequenced-past-2gib-pure-ack",
+    ),
     # 0.21 (#80, #106). The adjacency body field. Like output_layer it is not
     # an option, so the registry parse cannot see it; its two values and the
     # two treatments an enum owes are covered only by these entries.
@@ -865,6 +875,24 @@ RETIRED_CLAIMS = {
         "offsets unwrap along stored order: a record's offset is its predecessor's "
         "plus the signed serial delta of their seq_starts, the origin being the "
         "first record's predecessor, so the floor is decidable at any stream length",
+    ),
+    # 0.22 (#151). The guarantee justified comparing an ack with a record end
+    # serially on the grounds that the two are always within an in-flight
+    # window of each other. They are not: a peer that only acks leaves one ack
+    # in the file for the whole session, and the record ends run past it.
+    "ack-compares-directly": (
+        (
+            r"vastly more than any in-flight window",
+            r"so it compares directly against the peer record's computed end",
+            r"whose end \(seq_start \+ payload_len, mod 2\^32\) <= a",
+            r"All seq comparisons below are serial-number",
+        ),
+        "0.22",
+        151,
+        "an ack and a record end are positions in the peer's offset space, both "
+        "unwrapped -- the end along the peer's records, the ack along the acker's "
+        "-- and compared as plain integers; serial arithmetic compares only "
+        "consecutive values of one field",
     ),
     # 0.21 (#80, #106). The adjacency body field is the third load-bearing enum,
     # and the wholesale form of the reordering stage's duty. Two counts and two

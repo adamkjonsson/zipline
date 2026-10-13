@@ -326,6 +326,21 @@ changed.
 | `isolate-unknown-adjacency` | *(isolate)* An `adjacency` value this version does not define — the load-bearing twin of `isolate-unknown-output-layer`: the value decides whether any two of the participant's records may be spliced, so a reader cannot say what a single pair asserts. MUST NOT guess, and MUST NOT fall back to `contiguous`. |
 | `advisory-transport-adjacency` | *(accept, **advisory**)* `units` on a **transport-layer** participant, where offsets come from sequence numbers and the field says nothing. A writer MUST NOT set it there; a reader ignores it, reports it, and accepts — the treatment a transport-layer label gets, and for the same reason. Not the isolate shape of `isolate-discontinuity-in-raw`: that block contradicts the offsets, this field is inert. Extent 16. |
 
+### Added in `0.22`
+
+The first vector in the suite about **acks**. `0.21` unwrapped offsets so a stream
+could be placed past 2 GiB. The causal edge rule still compared an `ack` with peer
+record ends by serial arithmetic, which is defined only within 2³¹, and an ack
+stored once stays put while the record ends run on past it. Since `0.22` both are
+**positions in the peer's offset space**: the end is the unwrapped offset plus
+`payload_len`, and the ack is unwrapped along the acker's own records, by signed
+delta from the previous ack (#151). `check.py` draws no causal edges, so this
+vector tests implementations only.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `sequenced-past-2gib-pure-ack` | *(accept)* `stream-past-2gib`'s client after a recorded handshake, in a **SEQUENCED** session whose server sends nothing after its SYN-ACK. That ack, `1001`, is position 0 of the client's stream, and every data record ends above it, so the stored order is causal. Compared serially, the record at 2 GiB ends 2³¹ + 8 past `1001`, which reads as *before* it, so a reader draws `client@2GiB → SYN-ACK` and refuses the order. The ordinary large upload, with a peer that only acks. Extents `3221225480` and 0. |
+
 ## Multi-file fixtures
 
 Four directories are **fixtures** rather than vectors: several files that only

@@ -102,7 +102,14 @@ sentences `0.21` wrote for `seq_start`, applied to a second field.
   because of it, since fewer edges means fewer constraints. One sentence states
   this and points at *Caveats*' existing advice to store pure ACKs as zero-length
   records, which is how a writer that cares keeps the edges. **No new
-  MUST/SHOULD (decided).** The issue's own shape needs none of this: the
+  MUST/SHOULD (decided).** *(Corrected in Phase 1: the claim holds for
+  **forward** steps only. A **backward** step of 2³¹ or more would read as a
+  jump and invent edges. That needs a segment retransmitted after 2 GiB of its
+  peer's data and stored ahead of an original, as in acks `o`, `o+1.5`, `o+3`,
+  `o+0.5` GiB. The text states both directions. The writer's exit for the
+  backward case is to omit that retransmission's `ack`, which only removes
+  edges, so it still adds no keyword. The comment on #151 claimed the forward
+  half as the whole, and is corrected when #151 is closed.)* The issue's own shape needs none of this: the
   server's SYN-ACK record anchors its ack at position 0, every later client
   record ends above it, and no edge is drawn.
 

@@ -4257,6 +4257,175 @@ vector(
     extents=[(7, 0, 8), (8, 0, 8)],
 )
 
+# 0.22 (#151). #146's twin on the ack axis. The causal edge rule compared an ack
+# with peer record ends by serial arithmetic, which is defined only within 2**31
+# -- and an ack stored once on a peer that never speaks again stays put while
+# the record ends run on past it. check.py computes no edges, so this vector
+# tests implementations only.
+vector(
+    "sequenced-past-2gib-pure-ack",
+    "accept",
+    "stream-past-2gib's client, after a recorded handshake, in a SEQUENCED "
+    "session whose server sends nothing after its SYN-ACK. The server's pure "
+    "ACKs are not records, so its one ack in the file is the SYN-ACK's 1001 "
+    "for the whole session. That ack is a POSITION in the client's stream -- "
+    "0, the origin -- and every client data record ends above it, at 8, "
+    "2**30 + 8, 2**31 + 8 and 3 * 2**30 + 8, so no edge runs from any of them "
+    "to the SYN-ACK and the stored order is causal. Through 0.21 step 2 "
+    "compared the raw values serially, and the record at 2 GiB ends 2**31 + 8 "
+    "past 1001, which serial arithmetic reads as BEFORE it: the edge "
+    "client@2GiB -> SYN-ACK, a record that must precede the handshake. The "
+    "ordinary large upload, with a peer that only acks, failed the sequenced "
+    "check from that record on. Since 0.22 ends and acks are unwrapped into "
+    "the peer's offset space and compared as plain integers.",
+    "Causal ordering from TCP seq/ack -- acks unwrap into the peer's space",
+    [
+        file_header(),
+        source(1, 0, [o_uri("upload.pcap")]),
+        session(7, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
+        # The server's only record: its ack stays at position 0 of the client's
+        # stream for the rest of the session.
+        record(7, 1, 1, 1100, b"", flags=0x0008, options=[o_seq_start(5001), o_ack(1001)]),
+        record(7, 0, 1, 2000, b"AAAABBBB", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]),
+        record(
+            7,
+            0,
+            1,
+            3000,
+            b"CCCCDDDD",
+            flags=0x0001,
+            options=[o_seq_start(1001 + GIB), o_ack(5001)],
+        ),
+        # Ends 2**31 + 8 past the SYN-ACK's ack: serially BELOW it.
+        record(
+            7,
+            0,
+            1,
+            4000,
+            b"EEEEFFFF",
+            flags=0x0001,
+            options=[o_seq_start(1001 + 2 * GIB), o_ack(5001)],
+        ),
+        record(
+            7,
+            0,
+            1,
+            5000,
+            b"GGGGHHHH",
+            flags=0x0001,
+            options=[o_seq_start(1001 + 3 * GIB), o_ack(5001)],
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "upload.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+            "tcp_role": "responder",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1100,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAABBBB"),
+            "seq_start": 1001,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCCDDDD"),
+            "seq_start": 1001 + GIB,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 4000,
+            "flags": ["psh"],
+            "payload": b64(b"EEEEFFFF"),
+            "seq_start": 1001 + 2 * GIB,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 5000,
+            "flags": ["psh"],
+            "payload": b64(b"GGGGHHHH"),
+            "seq_start": 1001 + 3 * GIB,
+            "ack": 5001,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order: the session is "
+    "SEQUENCED and the order is causal. The SYN-ACK's ack 1001 is position 0 "
+    "of the client's stream; the client SYN ends at 0 and precedes it, as "
+    "stored; the four data records end at 8, 2**30 + 8, 2**31 + 8 and "
+    "3 * 2**30 + 8, all above 0, so none precedes it. Each data record's ack "
+    "5001 is position 0 of the server's stream, where the SYN-ACK ends, so "
+    "the SYN-ACK precedes all four, as stored. A reader or writer that "
+    "compares raw values serially draws client@2GiB -> SYN-ACK and "
+    "client@3GiB -> SYN-ACK, and reports the stored order as a causal "
+    "violation; that reading was the document's own until 0.22 and is wrong "
+    "now. Rejecting, isolating, or refusing to write the file is NOT "
+    "conformant. Extents are those of stream-past-2gib for the client, and "
+    "0 for the server, whose one record is zero-length at its origin.",
+    violations=0,
+    extents=[(7, 0, 3 * GIB + 8), (7, 1, 0)],
+)
+
 # 0.21 (#80, #106). The adjacency body field, in its four shapes: the two the
 # milestone comment asked for, and the two every load-bearing enum owes.
 DNS_HEADER = b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00"

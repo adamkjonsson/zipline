@@ -1701,6 +1701,46 @@
       ]
     },
     {
+      "name": "sequenced-past-2gib-pure-ack",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 544,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0052",
+        "0x0060",
+        "0x0061",
+        "0x0063",
+        "0x0070",
+        "0x0072"
+      ],
+      "summary": "stream-past-2gib's client, after a recorded handshake, in a SEQUENCED session whose server sends nothing after its SYN-ACK. The server's pure ACKs are not records, so its one ack in the file is the SYN-ACK's 1001 for the whole session. That ack is a POSITION in the client's stream -- 0, the origin -- and every client data record ends above it, at 8, 2**30 + 8, 2**31 + 8 and 3 * 2**30 + 8, so no edge runs from any of them to the SYN-ACK and the stored order is causal. Through 0.21 step 2 compared the raw values serially, and the record at 2 GiB ends 2**31 + 8 past 1001, which serial arithmetic reads as BEFORE it: the edge client@2GiB -> SYN-ACK, a record that must precede the handshake. The ordinary large upload, with a peer that only acks, failed the sequenced check from that record on. Since 0.22 ends and acks are unwrapped into the peer's offset space and compared as plain integers.",
+      "spec_section": "Causal ordering from TCP seq/ack -- acks unwrap into the peer's space",
+      "expect": "Accept, and consume the records in STORED order: the session is SEQUENCED and the order is causal. The SYN-ACK's ack 1001 is position 0 of the client's stream; the client SYN ends at 0 and precedes it, as stored; the four data records end at 8, 2**30 + 8, 2**31 + 8 and 3 * 2**30 + 8, all above 0, so none precedes it. Each data record's ack 5001 is position 0 of the server's stream, where the SYN-ACK ends, so the SYN-ACK precedes all four, as stored. A reader or writer that compares raw values serially draws client@2GiB -> SYN-ACK and client@3GiB -> SYN-ACK, and reports the stored order as a causal violation; that reading was the document's own until 0.22 and is wrong now. Rejecting, isolating, or refusing to write the file is NOT conformant. Extents are those of stream-past-2gib for the client, and 0 for the server, whose one record is zero-length at its origin.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 7,
+          "pid": 0,
+          "extent": 3221225480
+        },
+        {
+          "session_id": 7,
+          "pid": 1,
+          "extent": 0
+        }
+      ]
+    },
+    {
       "name": "unit-sequence-reversed",
       "tier": "accept",
       "violations": 0,

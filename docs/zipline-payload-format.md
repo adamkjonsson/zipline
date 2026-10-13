@@ -338,15 +338,34 @@ the wire** — exactly the values in the packets. This is the key to ordering tw
 captures *by construction* (they are the same bytes on the wire), so no shared
 base or agreed origin is needed, and a mid-stream capture that never saw the SYN
 works the same as one that did. An `ack` is natively an absolute number in the
-peer's sequence space, so it compares directly against the peer record's
-computed end (`seq_start + payload_len`).
+peer's sequence space: it names a **position in the peer's stream**, and is
+compared with the peer records' ends.
 
-Because absolute TCP sequence numbers are 32-bit and **wrap**, all comparisons of
-`seq_start`/`ack` — and of the derived record end — use **serial-number
-arithmetic** ([RFC 1982](https://www.rfc-editor.org/rfc/rfc1982)):
-`a < b` iff `((a - b) mod 2³²)` has its high bit set. This is well-defined for
-any two values within 2³¹ of each other — vastly more than any in-flight window —
-so it never misorders real traffic.
+Because absolute TCP sequence numbers are 32-bit and **wrap**, two of them are
+compared with **serial-number arithmetic**
+([RFC 1982](https://www.rfc-editor.org/rfc/rfc1982)): `a < b` iff
+`((a - b) mod 2³²)` has its high bit set, and `a − b` taken that way is their
+**signed serial delta**. That is well-defined only for values within 2³¹ of each
+other. Two *consecutive* values of one field are within that range. An ack and a
+record end can be arbitrarily far apart in the stream, so they are not, and
+neither is compared raw. Both are first **unwrapped** into the peer's offset
+space, where positions compare as plain integers at any stream length:
+
+- A record's **end** is its offset plus its `payload_len`. Offsets unwrap along
+  stored order, as
+  [Referencing](#referencing-the-source-by-stream-offset) defines.
+- An `ack`'s **position** unwraps the same way, along the *acker's* records in
+  stored order. Each ack's position is the previous ack's position plus the
+  signed serial delta of the two values. The first ack's position is its signed
+  delta from the peer's **origin**: `isn + 1`, or the peer's first captured
+  byte. Records that carry no `ack` are skipped.
+
+The step is taken from the **previous** ack, never from the largest so far.
+Stored order is `seq_start` order, not the order the segments were sent, so a
+participant's acks can retreat in it: a segment retransmitted after newer data
+was acknowledged carries a later ack than the record stored after it. A maximum
+would credit a record's sender with bytes it had not yet received when it built
+the record.
 
 ### Fields used
 
@@ -365,8 +384,10 @@ Per **Record** (TCP):
 | `ack`        | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 
 A record's **end** — one past its last byte, the value an `ack` is compared
-against — is not stored: it is always `seq_start + payload_len` (mod 2³²). A
-zero-length pure-ACK record's end is simply its `seq_start`.
+against — is not stored: it is the record's offset plus `payload_len`, which is
+`seq_start + payload_len` on the wire, unwrapped (see
+[The guarantee](#the-guarantee)). A zero-length pure-ACK record's end is simply
+its own offset. An unplaceable record has no end and draws no edge.
 
 ### Merge algorithm
 
@@ -376,13 +397,13 @@ OUTPUT: one interleaved, causally-consistent sequence
 
 1. Take each participant's records in file order — the writer MUST have
    stored them in seq_start order (see Identifiers & ordering), so no
-   sorting is ever needed. All seq comparisons below are serial-number
-   (RFC 1982) comparisons, since the sequence space wraps.
+   sorting is ever needed. Record ends and ack positions are unwrapped
+   (see The guarantee), so every comparison below is a plain one.
 
 2. Build edges between participants from acks:
-     for each record R from participant P with ack value a:
+     for each record R from participant P with ack position a:
          add edge  Q_record -> R   for every record Q_record from the
-         *peer* whose end (seq_start + payload_len, mod 2^32) <= a
+         *peer* whose end (offset + payload_len) <= a
      (R's sender had already received those peer bytes, so they precede R.)
 
 3. Topologically sort the resulting DAG.
@@ -465,6 +486,16 @@ never changing the algorithm.
 - Pure ACK segments (no payload) carry ordering information but no bytes; store
   them as zero-length records (or fold their `ack` into the next data record)
   so their happens-before edges aren't lost.
+- Unwrapping an ack needs each step within 2³¹, the bound the offset walk has.
+  A **forward** step wider than that can occur when a peer was silent across
+  2 GiB of data and none of its pure ACKs were stored, or when the first ack
+  lies 2 GiB past the peer's origin. It reads as a retreat, so the position is
+  underestimated, and by the first bullet that only removes edges. Storing pure
+  ACKs, as the bullet above advises, is how a writer keeps them. A **backward**
+  step that wide needs a segment retransmitted after 2 GiB of its peer's data
+  and stored ahead of an original. It would read as a jump and invent edges, so
+  a writer that meets one omits that retransmission's `ack`, which again only
+  removes edges.
 - SACK, retransmission, duplication and overlap are resolved by the
   *reassembler* before records are emitted; the format records the reassembled
   result and its favor-old overlap policy, not the raw segments. Whether the
@@ -741,7 +772,9 @@ to be in serial order, which keeps each within 2³¹ of its predecessor — exac
 the range in which the delta is defined. A stream carrying more than 2 GiB in one
 direction, or whose sequence numbers pass through 2³², is placed by this walk
 like any other; for a stream under 2 GiB the walk yields `(seq_start − origin)
-mod 2³²` at every record, so nothing under that size reads differently.
+mod 2³²` at every record, so nothing under that size reads differently. An
+`ack` is unwrapped into the peer's space the same way, along the acker's
+records ([The guarantee](#the-guarantee)).
 
 **A hole of 2³¹ bytes or more between two consecutive records is not
 representable within one stream**, and this is a bound, not an omission. The
