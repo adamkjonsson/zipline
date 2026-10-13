@@ -262,7 +262,8 @@ computed end* (:341); step 2's `mod 2^32) <= a`; *with three schemes* (:946);
 
 **3. `ENUMERATIONS`.** Phase 0 checks whether any site lists the `content_type`
 schemes as a set. Today only §Typing does, so the guard needs no new set unless
-the grep finds a second site. The `prim:` table has no guard of its own, so the
+the grep finds a second site. *(It found two more: the registry row and the
+`prim:` paragraph. Phase 3 adds the set. See Phase 0's findings.)* The `prim:` table has no guard of its own, so the
 `net:` table gets none either.
 
 **4. No external gate.** `0.21`'s gate on Phase 2 was waived the day it was set.
@@ -284,6 +285,84 @@ tag.
    *ack* across §Causal ordering, and every `content_type` scheme list across the
    five scanned files. Record the results here before any edit.
 4. Post scope decisions 1–3 to #151, #152, #153 and python-zipline-wire#35.
+
+**What the stamp found (step 1, 2026-10-13).** Two places the stamp touched by
+hand that the guards do not reach. The File Header table's `version_minor` row
+([:1275](zipline-payload-format.md)) still said *`18` for this document*, through
+`0.19`, `0.20` and `0.21`. That is the same drift `0.21`'s sweep found in the
+worked example's bytes, one table away, and `check_worked_example` cannot see a
+table row. It now says `22`. Phase 4 decides whether `check.py` should compare
+that row to `MINOR`. It is one regex, and this is the second time a hand-kept
+copy of the version has drifted. `reject-unknown-minor` reads `0/23` from its own
+bytes, against `raw-minimal`'s `0/22`.
+
+**What the grep found (step 3, 2026-10-13, against `aacfcdf`).** Sites are in
+the six files `RETIRED_CLAIMS` scans or the README links from. Line numbers are
+from before any edit.
+
+*For Phase 1 (#151):*
+
+- spec `:340–342`: *An `ack` is natively an absolute number in the peer's
+  sequence space, so it compares directly against the peer record's computed end
+  (`seq_start + payload_len`)*. **Retires.** The first half stays true; the
+  *compares directly* half is the claim.
+- spec `:344–349`: *all comparisons of `seq_start`/`ack` — and of the derived
+  record end — use serial-number arithmetic … well-defined for any two values
+  within 2³¹ of each other — vastly more than any in-flight window — so it never
+  misorders real traffic*. **Retires** from *vastly more*. Serial arithmetic
+  stays the comparison between *consecutive* values. Positions are compared
+  plainly.
+- spec `:367–369` (*A record's end … is always `seq_start + payload_len` (mod
+  2³²)*) is rewritten: the end is the unwrapped offset plus `payload_len`.
+- spec `:378–386`, merge steps 1–2: *All seq comparisons below are serial-number
+  (RFC 1982) comparisons* and `(seq_start + payload_len, mod 2^32) <= a`. Both are
+  rewritten. The pseudocode spelling gets a `RETIRED_CLAIMS` pattern.
+- spec `:434`: *every peer record it acks (end ≤ `ack`)*. This stays: it reads
+  correctly once *end* and *ack* name positions.
+- spec `:436` (*bounded by the in-flight window*), `:451` and `:454` (*Transport
+  neutrality*, *serial-number rule/space*), and `:2543` (*serial-number order*,
+  the ordering rule): all stay. Each is about consecutive values or memory, not
+  about comparing an ack with an end.
+- spec `:461–467`, *Caveats*' lower-bound bullet and pure-ACK bullet: stay, and
+  are the two bullets the bound sentence cites.
+- `build.py:4155` and `manifest.json:1652` (`stream-wraps-seq`'s *under
+  serial-number order*): stay. They are about `seq_start`.
+- **No suite site says anything about acks**, and none says *compares
+  directly*. The new vector is the suite's first statement on the ack axis.
+
+*For Phase 2 (#152):*
+
+- spec `:1176–1180`, the worked example's *The crossing is left undone … it
+  declines the crossing, which is what this is*. **Retires.** The fixture stays.
+- spec `:2147–2154`, *No third case is defined … none but the declaration*. This
+  is rewritten to apply *at the decoded layer*. The spelling is not retired,
+  because the sentence survives with a qualifier.
+- spec `:2156–2162`, *it has to leave the crossing undone*. This stays. It
+  describes a stage that cannot express the break, and that sentence is still
+  true.
+- `CHANGELOG.md:1520` (`0.17`'s *It declines the crossing instead*) is history
+  and stays. The changelog is not scanned.
+
+*For Phase 3 (#153):*
+
+- spec `:946`, *with three schemes*. **Retires** and becomes *four*.
+- spec `:1025–1029`, the packet-preserving paragraph: *and with a `dec:` token,
+  because "one inner packet" is precisely what distinguishes …*. **Retires.**
+- spec `:1121`, the worked example's `packets.zpf` bullet, *typed
+  `dec:ip-packet`*. This is rewritten.
+- spec `:2336`, the `content_type` registry row, *`mime:`/`prim:`/`dec:`*. **A
+  second list of the schemes**, which §Mechanics item 3 asked about. It becomes
+  `mime:`/`prim:`/`net:`/`dec:`. Two sites list the set, so the scheme set
+  qualifies for an `ENUMERATIONS` entry (*content_type schemes*, anchored at
+  `:946` and `:2336`), and Phase 3 adds one.
+- spec `:2476`, *No other `prim:` token is legal — `mime:` and `dec:` carry
+  everything else*. A third list, and an implicit one: it becomes *`mime:`,
+  `net:` and `dec:`*.
+- `build.py:5625–5757`: `tunnel`'s three `packets` records, its summary, and
+  three `.jsonl` faces, all `dec:ip-packet`. `vectors/README.md` and the
+  rationale companion do not mention the token. The companion's `:268` (*a
+  `content_type` scheme is the cheaper place*) is about a different, declined
+  marker, and stays.
 
 ## Phase 1 — #151, the ack axis (taggable alone)
 
