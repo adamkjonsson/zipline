@@ -66,6 +66,23 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.22] — unreleased
+
+**The downstream release.** Three issues filed from `python-zipline-wire`, each a
+downstream stage that `0.21` made possible and the text then failed: acks unwrap
+the way offsets do, so a sequenced stream past 2 GiB with a pure-ACK peer checks;
+a sequence-anchored transport output may coalesce across an input seam; and a
+`net:` content-type scheme names one network packet. No body field and no option.
+Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
+
+### Changed
+
+### Clarified
+
+### Added
+
+---
+
 ## [0.21] — 2026-09-18
 
 **The design release.** One rule the offset space was missing — offsets unwrap
