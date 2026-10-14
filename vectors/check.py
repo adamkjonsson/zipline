@@ -44,6 +44,7 @@ What it does verify:
 Usage:  python3 check.py
 """
 
+import base64
 import json
 import os
 import re
@@ -1864,8 +1865,30 @@ def check_tunnel() -> list[str]:
     )
     # outer -> packets: the whole capture stream, framing included.
     out += covers("tunnel/packets", fixture_lines(d, "packets"), 1, 0, 320)
-    # packets -> inner: the union across BOTH output sessions, not either alone.
-    out += covers("tunnel/inner", fixture_lines(d, "inner"), 5, 0, 150)
+    # packets -> inner: the union across BOTH output sessions, not either alone,
+    # over packets.zpf's own extent -- the concatenation of its payloads plus
+    # declared widths, derived here rather than written down. Until 0.22 this
+    # said 150, and kept saying it when #154 grew the packets to 210 bytes:
+    # coverage of [0,150) still held, and nothing compared it with the input.
+    packets = fixture_lines(d, "packets")
+    packets_extent = sum(
+        len(base64.b64decode(o["payload"]))
+        for o in packets
+        if o.get("type") == "record" and (o["session_id"], o["sender_pid"]) == (5, 0)
+    ) + sum(
+        o.get("width", 0)
+        for o in packets
+        if o.get("type") == "discontinuity" and (o["session_id"], o["pid"]) == (5, 0)
+    )
+    inner = fixture_lines(d, "inner")
+    out += covers("tunnel/inner", inner, 5, 0, packets_extent)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if (e["session_id"], e["pid"]) == (5, 0) and e["extent"] != packets_extent:
+                out.append(
+                    f"tunnel: inner session {o['session_id']} declares packets' extent "
+                    f"{e['extent']}, but its records concatenate to {packets_extent}"
+                )
     # inner -> http: flow A only; session 11 is not an input to that hop.
     http = fixture_lines(d, "http")
     out += covers("tunnel/http", http, 10, 0, 110)
@@ -1889,7 +1912,8 @@ def check_tunnel() -> list[str]:
     if not out:
         print(
             f"  tunnel: 4 files, digests match, coverage complete "
-            f"(outer [0,320) -> packets [0,150) fan-out -> inner flow A [0,{derived}))"
+            f"(outer [0,320) -> packets [0,{packets_extent}) fan-out -> "
+            f"inner flow A [0,{derived}))"
         )
     return out
 

@@ -686,18 +686,47 @@ the most.
 6. Post on #154–#157 that the fixes are on the branch, and tell `python-zipline`
    on python-zipline#76 that `tunnel` is now rebuildable.
 
+**What packeteer found (Phase 5, 2026-10-14).** I wrote every `net:` payload in the
+suite to a pcap of its link type: three `net:ip` records from `tunnel/packets` at
+type 101, and two `net:ethernet` records from `decap-ethernet` at type 1. A scan
+of every `.jsonl` confirmed those five are all of them. `packeteer parse` read
+them back as intended:
+
+| Record | Read as |
+|---|---|
+| `tunnel` 1 | IPv4 10.8.0.2 → 10.8.0.9, TCP 44300 → 80, seq 1001, ack 7001, flags 24 (PSH\|ACK), 40 bytes |
+| `tunnel` 2 | TCP 44301 → 53, seq 5001, ack 9001, flags 24, 20 bytes |
+| `tunnel` 3 | TCP 44300 → 80, seq 1081, ack 7001, flags 24, 30 bytes |
+| `decap-ethernet` 1–2 | Ethernet II aa:bb:cc:00:00:01 → :02, IPv4, UDP 40000 → 5000, 18 and 8 bytes |
+
+`packeteer build` from the parsed specs reproduced both pcaps **byte for byte**.
+packeteer writes out a checksum only when it differs from the one it computes,
+which a control with one corrupted TCP checksum confirmed, so the byte-for-byte
+round trip is the checksum check. packeteer also noted that the second frame
+(50 bytes) is unpadded. That is shorter than the 60-byte minimum on a wire, but
+it is normal for a frame a VM hands to a VXLAN endpoint before any NIC pads it,
+and it is what `net:ethernet` describes.
+
+**Two more stale sites the plan's grep missed.** The `tunnel` fixture summary's
+*(4) ORIGINATION, AND THE CROSSING LEFT UNDONE … packets offset 100*, which is in
+capitals, so Phase 2's retired spelling did not match it. And the guard that
+should have caught #154 itself: `check_tunnel` hard-coded `packets.zpf`'s extent
+as 150 and kept passing when the packets grew to 210. It now derives the extent
+from the records and compares both Session Ends' `input_extents` with it, and was
+seen to fail on the stale fixture first.
+
 ### Definition of done, review round
 
-- [ ] #154: every `net:ip` and `net:ethernet` payload in the suite parses as the
+- [x] #154: every `net:ip` and `net:ethernet` payload in the suite parses as the
       packet its header says, checked by packeteer rather than by eye; `inner.zpf`
       can be rebuilt from `packets.zpf`; the worked example's offsets agree with
       the fixture; `check_tunnel` green.
-- [ ] #155: the reason is replaced, with no keyword; the changelog and this
+- [x] #155: the reason is replaced, with no keyword; the changelog and this
       plan are corrected.
-- [ ] #156: the row says no FCS.
-- [ ] #157: both sentences, plus `sequenced-ack-below-origin`
+- [x] #156: the row says no FCS.
+- [x] #157: both sentences, plus `sequenced-ack-below-origin`
       (**66 vectors, 38 rules**).
-- [ ] Keyword counts unchanged from Phase 4 (MAY 55, MUST 124, MUST NOT 44,
+- [x] Keyword counts unchanged from Phase 4 (MAY 55, MUST 124, MUST NOT 44,
       SHOULD 28). None of the four needs one.
 - [ ] #154–#157 closed with their text after the merge, alongside #151–#153.
 

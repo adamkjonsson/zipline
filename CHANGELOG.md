@@ -111,14 +111,27 @@ Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
   - **Vectors and retired spellings.** `sequenced-past-2gib-pure-ack` is the
     suite's first vector about acks, and `sequenced-ack-below-origin` tests the
     signed reading. Four retired spellings reproduce against `v0.21`.
-- **`tunnel`'s decrypt stage types its packets `net:ip`, and they are real IPv4
-  packets** ([#153](https://github.com/adamkjonsson/zipline/issues/153)). The
-  three records said `dec:ip-packet`, and their payloads were filler whose
-  first nibble was 5. They are now a 20-byte IPv4 header (protocol 6, true
-  length and checksum) on each TCP payload, with the TCP header left out. Sizes
-  and every offset the worked example quotes are unchanged. `packets.zpf`'s
-  bytes changed, and so did the digests citing it in `inner.zpf` and
-  `http.zpf`.
+- **`tunnel`'s packets are real IPv4 + TCP, typed `net:ip`, and its offsets
+  move** ([#153](https://github.com/adamkjonsson/zipline/issues/153),
+  [#154](https://github.com/adamkjonsson/zipline/issues/154)). The three
+  `packets.zpf` records said `dec:ip-packet`, over filler bytes. Each is now a
+  whole IPv4 packet carrying one TCP segment, with PSH|ACK and true checksums.
+  It carries the ports and sequence numbers `inner.zpf` builds its two flows
+  from, so a sessionizer can rebuild that file from this one.
+  - **Offsets.** The packets grow by their TCP headers, from `[0,60) [60,100)
+    [100,150)` to `[0,80) [80,140) [140,210)`. `inner.zpf`'s spans and its
+    `input_extents` (150 → 210) follow, in the worked example as in the
+    fixture.
+  - **`inner.zpf`'s records gain `ack` and `psh`,** because the segments now
+    say both.
+  - **What does not move.** `outer.zpf`, `inner.zpf`'s own offsets and
+    `http.zpf`'s spans are unchanged. The digests ripple through.
+  - **Checked independently.** Every `net:` payload in the suite was parsed
+    with packeteer, and each one round-trips byte for byte, checksums
+    included.
+  - **`check_tunnel` derives `packets.zpf`'s extent** from its records instead
+    of writing down 150. The old number kept passing after the packets grew,
+    and the derived one was seen to fail on the stale fixture.
 
 ### Clarified
 
@@ -166,7 +179,8 @@ Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
   - **Text and guards.** The schemes are listed at three sites (§Typing, the
     registry row, the `prim:` paragraph), which are now an `ENUMERATIONS`
     set. `decap-ethernet` carries the second value: a VXLAN decapsulation
-    stage emitting real Ethernet II frames. Two retired spellings reproduce
+    stage emitting Ethernet II frames whose IPv4 and UDP headers are real,
+    checksums included (#154). It is the suite's one non-TCP packet. Two retired spellings reproduce
     against `v0.21`.
 - **`check.py` compares the File Header table's `version_minor` row with the
   stamp.** It said *`18` for this document* through `0.19`, `0.20` and `0.21`.

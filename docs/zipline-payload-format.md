@@ -1163,16 +1163,19 @@ The complete four-file artifact is `vectors/tunnel/`. Two hops are ordinary deco
 stages this document has already shown, and are described rather than transcribed:
 
 - **`outer.zpf`** holds four 80-byte ciphertext datagrams at `[0,80)` … `[240,320)`
-  — a transport stream with no `isn`, so byte 0 is the first captured byte.
+  — a transport stream with no `isn`, so byte 0 is the first captured byte. The
+  sizes are nominal: ciphertext is opaque, and nothing here depends on
+  WireGuard's framing.
 - **`packets.zpf`** decrypts them, one record per inner packet, typed
-  `net:ip`. Each record spans the **whole** datagram, nonce and tag
+  `net:ip`. Each is a whole IPv4 packet carrying one TCP segment, so the ports
+  and sequence numbers `inner.zpf` is built from are in its bytes. Each record spans the **whole** datagram, nonce and tag
   included, because those fed the computation — so tunnel coverage closes with no
   `skipped` blocks at all (see
   [correspondence, not proximity](#undecoded-0x21)). The third datagram will not
   decrypt: it is Undecoded `decrypt-failed`, bytes-class, and because an inner
   packet is therefore missing from this output, the records either side **do not
   join** and the file declares a [Discontinuity](#discontinuity-0x22). Its own
-  offset space is the payload concatenation `[0,60) [60,100) [100,150)`, the
+  offset space is the payload concatenation `[0,80) [80,140) [140,210)`, the
   widthless block contributing 0.
 
 The two hops worth transcribing follow.
@@ -1191,22 +1194,25 @@ hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 {"type":"session","session_id":10,"proto":"tcp","key":"10.8.0.2:44300 -> 10.8.0.9:80"}
 {"type":"participant","session_id":10,"pid":0,"adjacency":"contiguous","endpoint":["10.8.0.2:44300"],"isn":1000}
-{"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1000,"payload":"…40 B…",
- "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":0,"off_end":60}],
- "seq_start":1001}
-{"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1300,"payload":"…30 B…",
- "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":100,"off_end":150}],
- "seq_start":1081}
+{"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1000,"flags":["psh"],
+ "payload":"…40 B…","decoder_id":1,
+ "spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":0,"off_end":80}],
+ "seq_start":1001,"ack":7001}
+{"type":"record","session_id":10,"sender_pid":0,"source_id":1,"ts":1300,"flags":["psh"],
+ "payload":"…30 B…","decoder_id":1,
+ "spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":140,"off_end":210}],
+ "seq_start":1081,"ack":7001}
 {"type":"session_end","session_id":10,
- "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
+ "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":210}]}
 
 {"type":"session","session_id":11,"proto":"tcp","key":"10.8.0.2:44301 -> 10.8.0.9:53"}
 {"type":"participant","session_id":11,"pid":0,"adjacency":"contiguous","endpoint":["10.8.0.2:44301"],"isn":5000}
-{"type":"record","session_id":11,"sender_pid":0,"source_id":1,"ts":1100,"payload":"…20 B…",
- "decoder_id":1,"spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":60,"off_end":100}],
- "seq_start":5001}
+{"type":"record","session_id":11,"sender_pid":0,"source_id":1,"ts":1100,"flags":["psh"],
+ "payload":"…20 B…","decoder_id":1,
+ "spans":[{"source_id":1,"session_id":5,"pid":0,"off_start":80,"off_end":140}],
+ "seq_start":5001,"ack":9001}
 {"type":"session_end","session_id":11,
- "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":150}]}
+ "input_extents":[{"source_id":1,"session_id":5,"pid":0,"extent":210}]}
 ```
 
 Four things to read off it:
@@ -1221,16 +1227,16 @@ Four things to read off it:
   There is **no** Discontinuity, and there could not be: a transport stream is
   forbidden one because its offsets already say this.
 - **The break is carried as a hole.** `packets.zpf` declared a break at its
-  offset 100, and flow A's second record starts there, because the packet lost
+  offset 140, and flow A's second record starts there, because the packet lost
   upstream was one of flow A's: its sequence numbers jump, and the 40-byte hole
   above is that break, carried. Had the lost packet belonged to flow B, flow A's
   two segments would join in A's own sequence space, and the reassembler could
   have emitted them as one record whose `spans` cite both input packets. A
   sequence-anchored transport output carries a break through its offsets, which
   is all the [no-splice duty](#discontinuity-0x22) asks of it.
-- **Fan-out, and what each session may claim.** Neither session covers `[0,150)`
+- **Fan-out, and what each session may claim.** Neither session covers `[0,210)`
   alone; the union does, which is why the coverage guarantee is stated per *input
-  participant stream*. Both Session Ends declare the same extent **150** — under
+  participant stream*. Both Session Ends declare the same extent **210** — under
   fan-out a consuming session declares the whole input stream, not its share.
 
 **`http.zpf` — where the loss becomes visible again.** Decoding flow A only;

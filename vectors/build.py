@@ -4518,8 +4518,8 @@ vector(
     "accept",
     "A sessionization stage over a packet stream -- tunnel's inner hop, with "
     "nothing lost. The input, packets.zpf, is a unit sequence as kober's "
-    "WireGuard output is: three inner packets at [0,60), [60,100) and "
-    "[100,150), participant declared units, so every seam is a declared break. "
+    "WireGuard output is: three inner packets at [0,80), [80,140) and "
+    "[140,210), participant declared units, so every seam is a declared break. "
     "The first and third are flow A's and carry 40 and 30 bytes of TCP payload "
     "at seq 1001 and 1041, which join; the second is flow B's. Session 10's one "
     "record coalesces flow A into 70 bytes with TWO spans, one per input "
@@ -4545,7 +4545,7 @@ vector(
         ),
         session(10, [o_proto("tcp")]),
         participant(10, 0, [o_endpoint("10.8.0.2:44300"), o_isn(1000)]),
-        # One record, two input packets: [0,60) and [100,150), flow B's between.
+        # One record, two input packets: [0,80) and [140,210), flow B's between.
         record(
             10,
             0,
@@ -4554,11 +4554,11 @@ vector(
             b"A" * 40 + b"B" * 30,
             options=[
                 o_decoder_id(1),
-                o_spans([(1, 5, 0, 0, 60), (1, 5, 0, 100, 150)]),
+                o_spans([(1, 5, 0, 0, 80), (1, 5, 0, 140, 210)]),
                 o_seq_start(1001),
             ],
         ),
-        session_end(10, [o_input_extents([(1, 5, 0, 150)])]),
+        session_end(10, [o_input_extents([(1, 5, 0, 210)])]),
         session(11, [o_proto("tcp")]),
         participant(11, 0, [o_endpoint("10.8.0.2:44301"), o_isn(5000)]),
         record(
@@ -4567,9 +4567,9 @@ vector(
             1,
             1100,
             b"C" * 20,
-            options=[o_decoder_id(1), o_spans([(1, 5, 0, 60, 100)]), o_seq_start(5001)],
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 80, 140)]), o_seq_start(5001)],
         ),
-        session_end(11, [o_input_extents([(1, 5, 0, 150)])]),
+        session_end(11, [o_input_extents([(1, 5, 0, 210)])]),
         end_block(),
     ],
     jsonl=[
@@ -4613,15 +4613,15 @@ vector(
             "payload": b64(b"A" * 40 + b"B" * 30),
             "decoder_id": 1,
             "spans": [
-                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 60},
-                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 100, "off_end": 150},
+                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 80},
+                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 140, "off_end": 210},
             ],
             "seq_start": 1001,
         },
         {
             "type": "session_end",
             "session_id": 10,
-            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
         },
         {"type": "session", "session_id": 11, "proto": "tcp"},
         {
@@ -4640,20 +4640,20 @@ vector(
             "ts": 1100,
             "payload": b64(b"C" * 20),
             "decoder_id": 1,
-            "spans": [{"source_id": 1, "session_id": 5, "pid": 0, "off_start": 60, "off_end": 100}],
+            "spans": [{"source_id": 1, "session_id": 5, "pid": 0, "off_start": 80, "off_end": 140}],
             "seq_start": 5001,
         },
         {
             "type": "session_end",
             "session_id": 11,
-            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
         },
         {"type": "end"},
     ],
     expect="Accept. Session 10 has one placeable record at [0,70), extent 70; "
     "session 11 one at [0,20), extent 20. The input stream (source 1, session "
-    "5, pid 0) is covered once over [0,150) by the union of the two sessions' "
-    "spans, and both Session Ends declare its whole extent, 150, as fan-out "
+    "5, pid 0) is covered once over [0,210) by the union of the two sessions' "
+    "spans, and both Session Ends declare its whole extent, 210, as fan-out "
     "requires. Session 10's record cites two input units and crosses two "
     "declared breaks; that is conformant for a transport-layer output whose "
     "records carry seq_start, and the seam predicate does not apply, since it "
@@ -4666,25 +4666,65 @@ vector(
 
 
 IPV4_SRC, IPV4_DST = bytes([10, 8, 0, 2]), bytes([10, 8, 0, 9])
+TCP, UDP = 6, 17
+TCP_PSH_ACK = 0x18
 
 
-def ipv4(payload: bytes, src: bytes = IPV4_SRC, dst: bytes = IPV4_DST) -> bytes:
-    """Prefix `payload` with a 20-byte IPv4 header: protocol 6, true length and checksum.
+def inet_checksum(data: bytes) -> int:
+    """Return the RFC 1071 ones'-complement checksum of `data`."""
+    if len(data) % 2:
+        data += b"\x00"
+    total = sum(struct.unpack(f">{len(data) // 2}H", data))
+    while total > 0xFFFF:
+        total = (total & 0xFFFF) + (total >> 16)
+    return ~total & 0xFFFF
+
+
+def tcp(
+    sport: int, dport: int, seq: int, ack: int, payload: bytes, src: bytes, dst: bytes
+) -> bytes:
+    """Build a 20-byte TCP header, flags PSH|ACK, true checksum, on `payload`."""
+    hdr = bytearray(
+        struct.pack(">HHIIBBHHH", sport, dport, seq, ack, 5 << 4, TCP_PSH_ACK, 65535, 0, 0)
+    )
+    pseudo = src + dst + struct.pack(">BBH", 0, TCP, len(hdr) + len(payload))
+    struct.pack_into(">H", hdr, 16, inet_checksum(pseudo + bytes(hdr) + payload))
+    return bytes(hdr) + payload
+
+
+def udp(sport: int, dport: int, payload: bytes, src: bytes, dst: bytes) -> bytes:
+    """Build an 8-byte UDP header, true length and checksum, on `payload`."""
+    hdr = bytearray(struct.pack(">HHHH", sport, dport, 8 + len(payload), 0))
+    pseudo = src + dst + struct.pack(">BBH", 0, UDP, len(hdr) + len(payload))
+    struct.pack_into(">H", hdr, 6, inet_checksum(pseudo + bytes(hdr) + payload) or 0xFFFF)
+    return bytes(hdr) + payload
+
+
+def ipv4(proto: int, segment: bytes, src: bytes = IPV4_SRC, dst: bytes = IPV4_DST) -> bytes:
+    """Prefix `segment` with a 20-byte IPv4 header: true length and checksum.
 
     Since 0.22 a packet-preserving stage types its records net:ip, which means
-    LINKTYPE_RAW: the payload IS an IP packet and its first nibble says which
-    version. Filler bytes would make the label false, so the header is real. The
-    TCP header is elided -- the payload follows the IP header directly -- to keep
-    the sizes, and so every offset the worked example quotes.
+    LINKTYPE_RAW: the payload IS an IP packet, and every header in it is real
+    -- the IP header, and the TCP or UDP header after it, ports, sequence
+    numbers and checksums included -- so the label is true and a sessionizer
+    can rebuild the next hop from the packets alone (#154). Checked with an
+    independent parser (packeteer) when written; nothing here depends on it.
     """
     hdr = bytearray(
-        struct.pack(">BBHHHBBH4s4s", 0x45, 0, 20 + len(payload), 0, 0x4000, 64, 6, 0, src, dst)
+        struct.pack(">BBHHHBBH4s4s", 0x45, 0, 20 + len(segment), 0, 0x4000, 64, proto, 0, src, dst)
     )
-    words = sum(struct.unpack(">10H", bytes(hdr)))
-    while words > 0xFFFF:
-        words = (words & 0xFFFF) + (words >> 16)
-    struct.pack_into(">H", hdr, 10, ~words & 0xFFFF)
-    return bytes(hdr) + payload
+    struct.pack_into(">H", hdr, 10, inet_checksum(bytes(hdr)))
+    return bytes(hdr) + segment
+
+
+def tcp_packet(sport: int, dport: int, seq: int, ack: int, payload: bytes) -> bytes:
+    """Build an IPv4 packet carrying one TCP segment, 10.8.0.2 -> 10.8.0.9."""
+    return ipv4(TCP, tcp(sport, dport, seq, ack, payload, IPV4_SRC, IPV4_DST))
+
+
+def udp_packet(sport: int, dport: int, payload: bytes) -> bytes:
+    """Build an IPv4 packet carrying one UDP datagram, 10.8.0.2 -> 10.8.0.9."""
+    return ipv4(UDP, udp(sport, dport, payload, IPV4_SRC, IPV4_DST))
 
 
 ETH_DST, ETH_SRC = bytes.fromhex("aabbcc000002"), bytes.fromhex("aabbcc000001")
@@ -4695,7 +4735,10 @@ def ethernet(packet: bytes) -> bytes:
     return ETH_DST + ETH_SRC + b"\x08\x00" + packet
 
 
-FRAME_1, FRAME_2 = ethernet(ipv4(b"d" * 26)), ethernet(ipv4(b"e" * 16))  # 60 and 50 bytes
+# 14 + 20 + 8 + 18 = 60 and 14 + 20 + 8 + 8 = 50: the sizes the vector had when its
+# packets were filler, so no offset of it moved when they became real (#154).
+FRAME_1 = ethernet(udp_packet(40000, 5000, b"d" * 18))
+FRAME_2 = ethernet(udp_packet(40000, 5000, b"e" * 8))
 
 # 0.22 (#153). net:'s second value. tunnel carries net:ip; this is the stage
 # whose output is link-layer frames, which is why the scheme has more than one
@@ -4707,8 +4750,9 @@ vector(
     "A VXLAN decapsulation stage: its input is two 8-byte VXLAN headers each "
     "followed by an inner Ethernet frame, and its output is one record per "
     "frame typed net:ethernet -- LINKTYPE_ETHERNET's unit, from the destination "
-    "address, no preamble, no FCS. The frames are real Ethernet II headers on "
-    "real IPv4 headers; a reader that knows the token can hand each record to "
+    "address, no preamble, no FCS. Every header in each frame is real -- "
+    "Ethernet II, IPv4, UDP, lengths and checksums true -- so a reader that "
+    "knows the token can hand each record to "
     "anything that reads a pcap of link type 1. Each record spans its whole "
     "datagram, VXLAN header included, because the header (its VNI) fed the "
     "decapsulation -- the correspondence rule tunnel's decrypt stage follows. "
@@ -6078,8 +6122,15 @@ WG1, WG2, WG3, WG4 = (bytes([c]) * 80 for c in b"WXYZ")  # 4 ciphertext datagram
 TCP_A1, TCP_A2, TCP_B1 = b"a" * 40, b"b" * 30, b"c" * 20  # inner TCP payloads
 
 
-# Inner packets, once decrypted: each one's TCP payload behind an IPv4 header.
-IP_A1, IP_B1, IP_A2 = ipv4(TCP_A1), ipv4(TCP_B1), ipv4(TCP_A2)
+# Inner packets, once decrypted: real IPv4 + TCP, PSH|ACK, carrying exactly the
+# ports and sequence numbers inner.zpf builds its two flows from, so that hop can
+# be rebuilt from these packets alone (#154). Flow A's peer ISN is 7000 and flow
+# B's 9000; neither peer sends anything, so each flow's ack stays at its origin.
+ACK_A, ACK_B = 7001, 9001
+IP_A1 = tcp_packet(44300, 80, 1001, ACK_A, TCP_A1)  # 80 bytes
+IP_B1 = tcp_packet(44301, 53, 5001, ACK_B, TCP_B1)  # 60 bytes
+# 1041 (40 bytes) is the packet the decrypt stage lost.
+IP_A2 = tcp_packet(44300, 80, 1081, ACK_A, TCP_A2)  # 70 bytes
 
 
 def build_tunnel() -> None:
@@ -6095,13 +6146,15 @@ def build_tunnel() -> None:
         "closes with no skipped Undecoded blocks at all. (2) FAN-OUT: one input "
         "stream (packets.zpf session 5, pid 0) feeds TWO output sessions in "
         "inner.zpf; neither covers the extent alone and both Session Ends "
-        "declare the same 150 for the shared input. (3) A zpf-SOURCED TRANSPORT "
+        "declare the same 210 for the shared input. (3) A zpf-SOURCED TRANSPORT "
         "STREAM: inner.zpf declares output_layer = transport, carries isn and "
         "seq_start, and expresses its 40-byte hole in the SEQUENCE NUMBERS -- no "
-        "Discontinuity, no content_type. (4) ORIGINATION, AND THE CROSSING LEFT "
-        "UNDONE: packets.zpf withholds an inner packet and declares the break; "
-        "inner.zpf reads that break and CANNOT express one, so no record crosses "
-        "packets offset 100 and the loss survives as a TCP gap instead; http.zpf "
+        "Discontinuity, no content_type. (4) ORIGINATION, AND THE BREAK CARRIED "
+        "AS A HOLE: packets.zpf withholds an inner packet and declares the "
+        "break at its offset 140; the lost packet was flow A's, so inner.zpf "
+        "carries the break as a TCP sequence gap, which a transport stream needs "
+        "no block for (and since 0.22 its packets are real IPv4 + TCP, so "
+        "inner.zpf can be rebuilt from them); http.zpf "
         "then meets a hole-class region between two adjacent output units and "
         "originates its own block.",
         "Layers; Conformance; Discontinuity; Worked example: a decrypted tunnel",
@@ -6242,9 +6295,10 @@ def build_tunnel() -> None:
         "because a packet IS a unit -- unlike a reassembly window, which is a "
         "slice -- and since 0.22 the format names that unit itself, so a generic "
         "sessionizer need not know this decoder's token. Each payload is a real "
-        "20-byte IPv4 header and its TCP payload; the TCP header is elided to "
-        "keep the sizes. Its own offset space is the payload concatenation: "
-        "[0,60) [60,100) [100,150), the Discontinuity contributing 0.",
+        "IPv4 packet carrying a real TCP segment, PSH|ACK, with the ports and "
+        "sequence numbers inner.zpf's two flows are built from, and true "
+        "checksums. Its own offset space is the payload concatenation: [0,80) "
+        "[80,140) [140,210), the Discontinuity contributing 0.",
         packets_blocks,
         [
             {
@@ -6356,7 +6410,8 @@ def build_tunnel() -> None:
             1,
             1000,
             TCP_A1,
-            options=[o_decoder_id(1), o_spans([(1, 5, 0, 0, 60)]), o_seq_start(1001)],
+            flags=0x0001,
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 0, 80)]), o_seq_start(1001), o_ack(ACK_A)],
         ),
         # seq 1081, not 1041: the 40 bytes the lost packet carried occupy
         # [40,80) and no record covers them. The hole is in the NUMBERS -- this
@@ -6367,9 +6422,15 @@ def build_tunnel() -> None:
             1,
             1300,
             TCP_A2,
-            options=[o_decoder_id(1), o_spans([(1, 5, 0, 100, 150)]), o_seq_start(1081)],
+            flags=0x0001,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 5, 0, 140, 210)]),
+                o_seq_start(1081),
+                o_ack(ACK_A),
+            ],
         ),
-        session_end(10, [o_input_extents([(1, 5, 0, 150)])]),
+        session_end(10, [o_input_extents([(1, 5, 0, 210)])]),
         # Flow B: a second inner connection out of the SAME input stream.
         session(11, [o_proto("tcp"), o_flow_key("10.8.0.2:44301 -> 10.8.0.9:53")]),
         participant(11, 0, [o_endpoint("10.8.0.2:44301"), o_isn(5000)]),
@@ -6379,11 +6440,17 @@ def build_tunnel() -> None:
             1,
             1100,
             TCP_B1,
-            options=[o_decoder_id(1), o_spans([(1, 5, 0, 60, 100)]), o_seq_start(5001)],
+            flags=0x0001,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 5, 0, 80, 140)]),
+                o_seq_start(5001),
+                o_ack(ACK_B),
+            ],
         ),
-        # The same extent 150 as session 10 declares: under fan-out every
+        # The same extent 210 as session 10 declares: under fan-out every
         # consuming session declares the WHOLE input stream, not its share.
-        session_end(11, [o_input_extents([(1, 5, 0, 150)])]),
+        session_end(11, [o_input_extents([(1, 5, 0, 210)])]),
         end_block(),
     ]
     inner = member(
@@ -6393,10 +6460,13 @@ def build_tunnel() -> None:
         "zpf-SOURCED TRANSPORT stream: its Decoder declares output_layer = "
         "transport, so isn-anchored hole-inclusive offsets apply even though a "
         "decode stage produced it. It FANS OUT -- one input stream into sessions "
-        "10 and 11, neither covering [0,150) alone. Flow A's lost packet is a "
+        "10 and 11, neither covering [0,210) alone. Flow A's lost packet is a "
         "40-byte hole at [40,80), visible as seq 1081 where 1041 would be "
         "contiguous. No Discontinuity: a transport stream may not carry one, and "
-        "no record crosses the break its input declared at packets offset 100.",
+        "the break its input declared at packets offset 140 is carried as that "
+        "hole. Every field here -- ports, seq_start, ack, psh -- is read from the "
+        "TCP headers of packets.zpf, so a sessionizer can rebuild this file from "
+        "that one.",
         inner_blocks,
         [
             {
@@ -6441,12 +6511,14 @@ def build_tunnel() -> None:
                 "sender_pid": 0,
                 "source_id": 1,
                 "ts": 1000,
+                "flags": ["psh"],
                 "payload": b64(TCP_A1),
                 "decoder_id": 1,
                 "spans": [
-                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 60}
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 80}
                 ],
                 "seq_start": 1001,
+                "ack": 7001,
             },
             {
                 "type": "record",
@@ -6454,17 +6526,19 @@ def build_tunnel() -> None:
                 "sender_pid": 0,
                 "source_id": 1,
                 "ts": 1300,
+                "flags": ["psh"],
                 "payload": b64(TCP_A2),
                 "decoder_id": 1,
                 "spans": [
-                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 100, "off_end": 150}
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 140, "off_end": 210}
                 ],
                 "seq_start": 1081,
+                "ack": 7001,
             },
             {
                 "type": "session_end",
                 "session_id": 10,
-                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
             },
             {
                 "type": "session",
@@ -6486,17 +6560,19 @@ def build_tunnel() -> None:
                 "sender_pid": 0,
                 "source_id": 1,
                 "ts": 1100,
+                "flags": ["psh"],
                 "payload": b64(TCP_B1),
                 "decoder_id": 1,
                 "spans": [
-                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 60, "off_end": 100}
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 80, "off_end": 140}
                 ],
                 "seq_start": 5001,
+                "ack": 9001,
             },
             {
                 "type": "session_end",
                 "session_id": 11,
-                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
             },
             {"type": "end"},
         ],

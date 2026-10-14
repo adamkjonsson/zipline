@@ -358,8 +358,8 @@ is true. This vector carries the other value.
 |--------|-----------------|
 | `sequenced-past-2gib-pure-ack` | *(accept)* `stream-past-2gib`'s client after a recorded handshake, in a **SEQUENCED** session whose server sends nothing after its SYN-ACK. That ack, `1001`, is position 0 of the client's stream, and every data record ends above it, so the stored order is causal. Compared serially, the record at 2 GiB ends 2³¹ + 8 past `1001`, which reads as *before* it, so a reader draws `client@2GiB → SYN-ACK` and refuses the order. The ordinary large upload, with a peer that only acks. Extents `3221225480` and 0. |
 | `sequenced-ack-below-origin` | *(accept)* A mid-stream **SEQUENCED** session with no `isn` on either side. The server's response is stored first and acks `993`, eight bytes below the client's first captured byte, so its position is **−8**. That is signed, acknowledges no captured byte, and no edge reaches it. A reader that keeps ack positions in an offset's unsigned type wraps it to near 2⁶⁴, draws `request → response`, and refuses a correct order (#157). Extents 8 and 12. |
-| `sessionized-across-units` | *(accept)* `tunnel`'s inner hop with nothing lost, over a `units` input as `kober`'s WireGuard output is: flow A's packets at `[0,60)` and `[100,150)` join in A's sequence space, so session 10 emits **one** 70-byte record with **two** spans, crossing two declared breaks; flow B's packet between them is session 11's. Coverage of the input closes over `[0,150)` across both sessions. A reader that reports a no-splice violation has applied the decoded layer's duty to a stream whose offsets carry every break. Nothing can catch a *wrong* coalesce here: the sequence numbers are the producer's assertion. Extents 70 and 20. |
-| `decap-ethernet` | *(accept)* A VXLAN decapsulation stage emitting one record per inner **Ethernet frame**, typed `net:ethernet`: a real Ethernet II header on a real IPv4 header, as a `LINKTYPE_ETHERNET` capture stores it. Each record spans its whole datagram, VXLAN header included, since the VNI fed the decapsulation. The participant is `units`, and the endpoint list runs from the VNI to the inner MAC. A reader that does not know `net:` treats the label as opaque, as it would any unknown scheme. Checking the label against the payload is not conformant, because `net:` binds no length. Extent 110. |
+| `sessionized-across-units` | *(accept)* `tunnel`'s inner hop with nothing lost, over a `units` input as `kober`'s WireGuard output is: flow A's packets at `[0,80)` and `[140,210)` join in A's sequence space, so session 10 emits **one** 70-byte record with **two** spans, crossing two declared breaks; flow B's packet between them is session 11's. Coverage of the input closes over `[0,210)` across both sessions. A reader that reports a no-splice violation has applied the decoded layer's duty to a stream whose offsets carry every break. Nothing can catch a *wrong* coalesce here: the sequence numbers are the producer's assertion. Extents 70 and 20. |
+| `decap-ethernet` | *(accept)* A VXLAN decapsulation stage emitting one record per inner **Ethernet frame**, typed `net:ethernet`: Ethernet II, IPv4 and UDP headers all real, checksums included, as a `LINKTYPE_ETHERNET` capture stores it. The suite's one non-TCP packet. Each record spans its whole datagram, VXLAN header included, since the VNI fed the decapsulation. The participant is `units`, and the endpoint list runs from the VNI to the inner MAC. A reader that does not know `net:` treats the label as opaque, as it would any unknown scheme. Checking the label against the payload is not conformant, because `net:` binds no length. Extent 110. |
 
 ## Multi-file fixtures
 
@@ -474,11 +474,13 @@ which was an argument somewhere in `0.13`–`0.15`:
   datagram — nonce and tag included, because those fed the computation — so tunnel
   coverage closes with **no `skipped` blocks at all**. The earlier estimate was one
   per packet for framing; that clarification is what made case D affordable. The
-  packets are typed `net:ip` since `0.22`, and are real IPv4 headers on their TCP
-  payloads so that the label is true.
+  packets are typed `net:ip` since `0.22`, and are real IPv4 packets carrying
+  real TCP segments (ports, sequence and ack numbers, PSH|ACK, checksums), so the
+  label is true and `inner.zpf` can be rebuilt from `packets.zpf` alone (#154).
+  `outer.zpf`'s datagram sizes are nominal; ciphertext carries no label.
 - **Fan-out.** One input stream (`packets.zpf` session 5, pid 0) feeds **two**
-  output sessions in `inner.zpf`. Neither covers `[0,150)` alone and both Session
-  Ends declare the same extent 150 for the shared input — the rule
+  output sessions in `inner.zpf`. Neither covers `[0,210)` alone and both Session
+  Ends declare the same extent 210 for the shared input — the rule
   `isolate-extents-disagree` polices, here in its legitimate form.
 - **A `zpf`-sourced transport stream.** `inner.zpf`'s Decoder declares
   `output_layer = transport`, so a *decode stage's* output is `isn`-anchored and
