@@ -7,6 +7,11 @@ the #146 shim, the other two while planning python-zipline-wire#35, the
 `packets.zpf → inner.zpf` hop of the decrypted-tunnel example. This is a working
 roadmap, not normative text.*
 
+*Extended 2026-10-14 with four more, #154–#157, which `python-zipline` filed while
+reviewing the candidate (`plan_0_22` at `08bc9d7`). See
+[Review round](#review-round-154157). They correct the candidate before the tag
+and do not change the three rulings.*
+
 *The release is **`0.22`**, not `0.22.0`, per the changelog's Conventions.*
 
 ---
@@ -504,3 +509,190 @@ the crossing undone. It now says the break is carried as a hole and points to
 rules, and one keyword added. Closing #151–#153 with their final text (#151's
 including the corrected bound), telling the three implementations, the date and
 the tag all wait for the merge.
+
+---
+
+## Review round: #154–#157
+
+*Written 2026-10-14. `python-zipline` read the branch at `08bc9d7` and filed four
+issues against it, all on the `0.22` milestone. Two correct things this release
+claimed (#154, #155), and two make its text precise (#156, #157). None reopens a
+scope decision. All four are fixed on the branch before the merge, as Phase 5.*
+
+| | Issue | What it is | Where it lands |
+|---|---|---|---|
+| **4** | #154 | `tunnel`'s and `decap-ethernet`'s packets declare TCP but carry no TCP header, so `net:ip` is false and `inner.zpf` cannot be rebuilt from `packets.zpf` | `tunnel` (bytes, offsets, faces), the worked example, the vectors README, `check_tunnel`; `decap-ethernet`; `sessionized-across-units` |
+| **5** | #155 | the reason given for *previous ack, not a running maximum* is wrong | §*The guarantee*, one paragraph; the changelog bullet; this plan |
+| **6** | #156 | `net:ethernet` does not say whether the frame carries an FCS | the `net:` table row and its sentence |
+| **7** | #157 | ack positions are signed, and an unplaceable record still gets edges as `R` | §*The guarantee*, one sentence; §*Fields used*, one sentence |
+
+### 4. #154: real TCP headers, and the worked example becomes executable
+
+*Decided 2026-10-14: real headers, carrying PSH|ACK.*
+
+The issue is right, and it catches the release breaking its own rule. Phase 3
+replaced filler with "real IPv4 packets" and the execution notes said *a label
+that a reader may trust has to be true in the fixture that teaches it*. But the
+header says protocol 6 and no TCP header follows, so any packet parser reads the
+first 20 payload bytes as a malformed segment. The stronger point is the second
+one: the flows `inner.zpf` builds (ports 44300→80 and 44301→53, `seq_start` 1001,
+1081 and 5001) cannot be derived from `packets.zpf`. A generic sessionizer, which
+#153's `net:ip` exists to serve, cannot rebuild the next hop from this one.
+
+**`tunnel`: each inner packet gets a 20-byte TCP header** carrying `inner.zpf`'s
+ports and sequence numbers, with flags **PSH|ACK** and a plausible ack number.
+The TCP payloads are unchanged (40, 20 and 30 bytes), so the packets grow by 20
+each:
+
+| | Packet | Before | After |
+|---|---|---|---|
+| flow A, seq 1001 | `IP_A1` | `[0,60)` | `[0,80)` |
+| flow B, seq 5001 | `IP_B1` | `[60,100)` | `[80,140)` |
+| flow A, seq 1081 | `IP_A2` | `[100,150)` | `[140,210)` |
+
+`packets.zpf`'s extent goes from 150 to 210, so `inner.zpf`'s spans and
+`input_extents` move with it. **What does not move:** `outer.zpf`, `inner.zpf`'s
+own offsets (they count TCP payload) and `http.zpf`'s spans. The digests ripple
+as before.
+
+**`inner.zpf` gains what a faithful sessionizer would carry**: each record gets
+`ack` and `flags: ["psh"]`, because the segments now say both (decided). This
+adds two keys to each record line of the worked example's `inner.zpf` JSONL. The
+ack numbers are chosen once and named in the vector (flow A's peer and flow B's
+peer each get an ISN).
+
+**Not in scope: making `outer.zpf` consistent with WireGuard framing.** Its
+80-byte datagrams are smaller than an 80-byte plaintext plus WireGuard's 32 bytes
+of overhead. They are ciphertext and carry no label, so nothing claims they are
+real, and growing them would move `outer.zpf`'s offsets and every span citing
+them for no reader's benefit. The vectors README says the outer sizes are
+nominal.
+
+**`decap-ethernet`: real UDP headers, with frame sizes kept (approved).**
+Each inner IPv4 packet becomes protocol 17 with an 8-byte UDP header (ports,
+length and checksum true), and the payload filler shrinks from 26 and 16 to 18
+and 8 bytes. Frames stay 60 and 50 bytes, so the vector's offsets, extent and
+README numbers do not move. UDP rather than TCP also gives the suite one packet
+that is not TCP.
+
+**`sessionized-across-units` (approved): realigned to the new `tunnel`
+offsets.** Its summary calls it *`tunnel`'s inner hop with nothing lost* and cites
+`[0,60)`, `[60,100)`, `[100,150)`. Those become `[0,80)`, `[80,140)`,
+`[140,210)` with extent 210, so the two vectors can still be read together. Its
+70-byte record and session 11's 20-byte record do not change.
+
+**Sites, from a grep against `08bc9d7`:**
+
+- the spec's worked example: the packet bullet's `[0,60) [60,100) [100,150)`
+  ([:1170](zipline-payload-format.md)), three `spans` and two `input_extents` in
+  the `inner.zpf` JSONL (:1185–1204), and the fan-out bullet's `[0,150)` and
+  **150** (:1226–1228);
+- `build.py`: `ipv4()` gains a real TCP header (a `tcp()` helper beside it), and
+  the `tunnel` packets, inner and summary sites (around :6014–6420);
+- `check.py`: `check_tunnel`'s `covers(…, 150)` and its message (:1860, :1884);
+- `vectors/README.md`: the tunnel section's `[0,150)` and *extent 150*
+  (:478–479), the decap row, and the `sessionized-across-units` row.
+
+### 5. #155: a running maximum is equivalent for ordering; the reason is replaced
+
+The issue is right, and Phase 1's reasoning was wrong. Suppose a running maximum
+gives record `R_k` the position of an earlier record `R_j`. Every edge `Q → R_k`
+this adds is implied by `Q → R_j` together with `R_j → R_k`, the participant's
+own chain, which the merge never reorders. So no order changes, and the
+stored-order check gives the same verdict. What a maximum gets wrong is a
+per-record fact, *this sender had not received those bytes*, and nothing in the
+format observes it.
+
+**The rule stays the same: step from the previous ack**, because that is the
+natural unwrap and it stays well-defined when acks retreat. **The justification
+is replaced** with the issue's own sentence: where only ordering matters, a
+running maximum of ack *positions* gives the same result. That is a sentence of
+equivalence, not a permission, so it carries no keyword. Without it, the text
+reads as if `python-zipline`'s `_StoredOrder`, which keeps a maximum, were
+non-conformant.
+
+**The backward-step case in *Caveats* is not affected.** That case is an
+*overestimated* position, read past every earlier record's true position, so its
+edges are not implied by anything. Phase 1's *What execution changed* paragraph
+was right about the bound and wrong about the maximum.
+
+**Corrections elsewhere:** the changelog bullet *Previous ack, never a running
+maximum*; scope decision 1's first bullet and *What execution changed* in this
+plan, each annotated rather than rewritten; and the #151 closing comment, which
+already has to correct the bound and now corrects this as well.
+
+### 6. #156: `net:ethernet` carries no FCS
+
+Taken as proposed. The row becomes *Ethernet frame, from the destination address
+to the end of the payload; no preamble, SFD or FCS*. `LINKTYPE_ETHERNET` admits
+both forms, so deferring to it settled nothing. The table's lead sentence says
+each token *has that link type's meaning*, and gains *except where the row says
+more*, so that the row overriding the link type is visible rather than a
+contradiction. `decap-ethernet` already has no FCS, so the vector does not change.
+
+### 7. #157: ack positions are signed, and an unplaceable record is still an `R`
+
+Both points are taken as proposed. Each one is the text losing a qualifier the
+decision had.
+
+- **§*The guarantee*:** an ack position is a **signed** integer. One below 0
+  acknowledges no captured peer byte, so no edge reaches it. This happens when a
+  mid-stream capture's first ack lies below the peer's first captured byte.
+- **§*Fields used*:** *An unplaceable record has no end and draws no edge*
+  becomes *An unplaceable record has no end, so no edge runs from it; an `ack` it
+  carries still places it after the peer bytes that ack covers.* That is scope
+  decision 1's second bullet, which the Phase 1 text shortened.
+
+**One vector (approved): `sequenced-ack-below-origin`.** A mid-stream
+`SEQUENCED` session with no `isn` on either side. The acker's first record stores
+an ack 8 below the peer's first captured byte, and is stored **before** every
+peer record. Read as signed, its position is −8 and no edge reaches it, so the
+order is causal. Read as unsigned, the position wraps to near 2⁶⁴ and draws an
+edge from every peer record, so the stored order is refused. That is the bug the
+issue names, and like `sequenced-past-2gib-pure-ack` it tests implementations
+only. `RULES`: `ack-position-signed`. Without this vector the release would add
+a sentence whose wrong reading nothing catches, and this release has already
+corrected two of its own sentences.
+
+### Phase 5 — the review fixes
+
+One commit per issue, in this order. #157 and #155 are text-only and the
+smallest. #156 is one row. #154 is last because it moves offsets and regenerates
+the most.
+
+1. **#157**: two sentences, and `sequenced-ack-below-origin`.
+2. **#155**: the replaced paragraph and the changelog bullet; annotate this plan.
+3. **#156**: the row and the table's lead sentence.
+4. **#154**: `tcp()` and `udp()` helpers; `tunnel` rebuilt (packets, then inner's
+   faces by hand, then `check_tunnel`); the worked example's sites;
+   `decap-ethernet`; `sessionized-across-units`; README rows. Every `net:ip`
+   and `net:ethernet` payload is then written to a pcap of the matching link
+   type (101 or 1) and parsed with **packeteer** (`../packeteer`), which checks
+   version, protocol, ports, sequence and ack numbers, flags and both
+   checksums. packeteer is the check, not a dependency. `build.py` keeps its
+   own stdlib `tcp()`/`udp()` helpers, because `CLAUDE.md` forbids
+   regeneration depending on anything installed. Using an independent parser
+   is the point: the claim was made once without a check, and checking it with
+   a parser written by the same hand that made the mistake would not count. The
+   parse output is recorded in this plan.
+5. Changelog: #154 rewrites the *real IPv4 packets* bullet; #156 and #157 are a
+   line each under the bullets they refine; and #155 changes the bullet on the
+   running maximum.
+6. Post on #154–#157 that the fixes are on the branch, and tell `python-zipline`
+   on python-zipline#76 that `tunnel` is now rebuildable.
+
+### Definition of done, review round
+
+- [ ] #154: every `net:ip` and `net:ethernet` payload in the suite parses as the
+      packet its header says, checked by packeteer rather than by eye; `inner.zpf`
+      can be rebuilt from `packets.zpf`; the worked example's offsets agree with
+      the fixture; `check_tunnel` green.
+- [ ] #155: the reason is replaced, with no keyword; the changelog and this
+      plan are corrected.
+- [ ] #156: the row says no FCS.
+- [ ] #157: both sentences, plus `sequenced-ack-below-origin`
+      (**66 vectors, 38 rules**).
+- [ ] Keyword counts unchanged from Phase 4 (MAY 55, MUST 124, MUST NOT 44,
+      SHOULD 28). None of the four needs one.
+- [ ] #154–#157 closed with their text after the merge, alongside #151–#153.
+
