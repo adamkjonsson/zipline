@@ -159,6 +159,10 @@ Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
   - **Readers.** An unknown `net:` token is opaque, as an unknown scheme is,
     so a later link type is safe to skip. It binds no length and adds no
     keyword.
+  - **No FCS.** `net:ethernet` runs from the destination address to the end of
+    the payload, with no preamble, SFD or frame check sequence. That is stated
+    in the row, because `LINKTYPE_ETHERNET` admits both forms
+    ([#156](https://github.com/adamkjonsson/zipline/issues/156)).
   - **Text and guards.** The schemes are listed at three sites (§Typing, the
     registry row, the `prim:` paragraph), which are now an `ENUMERATIONS`
     set. `decap-ethernet` carries the second value: a VXLAN decapsulation

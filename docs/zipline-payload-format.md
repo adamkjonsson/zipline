@@ -2584,15 +2584,19 @@ vocabulary stays closed
 `content_type` `net:` vocabulary (Record option, string): the legal `net:`
 tokens are **exactly** these. Each names the unit a capture of that
 [`link_type`](#source-descriptor-0x02) stores per packet, and has that link
-type's meaning, so the format defines no packet grammar of its own:
+type's meaning except where the row says more, so the format defines no packet
+grammar of its own:
 
-| Token          | Payload is exactly one…                                              | Link type               |
-|----------------|----------------------------------------------------------------------|-------------------------|
-| `net:ip`       | IP packet, header first; its version nibble says IPv4 or IPv6        | `LINKTYPE_RAW` (101)    |
-| `net:ethernet` | Ethernet frame, from the destination address; no preamble or SFD     | `LINKTYPE_ETHERNET` (1) |
+| Token          | Payload is exactly one…                                                                         | Link type               |
+|----------------|-------------------------------------------------------------------------------------------------|-------------------------|
+| `net:ip`       | IP packet, header first; its version nibble says IPv4 or IPv6                                   | `LINKTYPE_RAW` (101)    |
+| `net:ethernet` | Ethernet frame, from the destination address to the end of the payload; no preamble, SFD or FCS | `LINKTYPE_ETHERNET` (1) |
 
 There is no `net:ipv4` or `net:ipv6`, because the version nibble already says
-which. A `net:` token not in this table is treated the way an unknown scheme is
+which. `net:ethernet` says more than its link type: captures of
+`LINKTYPE_ETHERNET` exist both with and without the 4-byte frame check sequence.
+A `net:ethernet` payload never carries one, which is what a decapsulation stage
+(VXLAN, GENEVE, a TAP device) has in hand. A `net:` token not in this table is treated the way an unknown scheme is
 (opaque, falling back to the decoder `name`), so a later version can add a link
 type without breaking a reader that does not know it. Unlike a fixed-width
 `prim:` token, a `net:` token binds no length. Whether a payload is an IP packet
