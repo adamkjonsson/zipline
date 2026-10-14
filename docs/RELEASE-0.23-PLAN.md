@@ -231,6 +231,48 @@ These were checked by script against the generated `.jsonl`, and they agree
 with the issue's table. No spec text, keyword or byte elsewhere changes. The
 sequenced vector's summary names its twin. `RULES`: `merge-orders-by-end`.
 
+## Phase 4 — #162, merged orders in the manifest
+
+*Added 2026-10-14, after `python-zipline` reviewed Phase 3 at `d2949c6`.
+Decided: the key is **required** wherever the shape occurs, not hand-picked.*
+
+**The gap.** `merge-pure-ack-and-fin`'s answer was in `expect` prose only, so a
+harness could catch the one wrong reading that stalls, and nothing else. A
+plausible wrong order passed, and so did stored order returned unmerged. That is
+the shape of #140, which `0.20` answered with the `extents` key, and this is the
+same answer.
+
+**The key.** `merged`: a list of `{"session_id", "order"}`, the order being the
+session's records by 1-based stored position. **Required** on every single-file
+accept vector with an unsequenced session in which two or more participants send
+records. The issue named three vectors; the shape occurs in six, and requiring
+it keeps the `extents` rule that a number nobody had to state is a number nobody
+checked. `build.py` refuses a vector of that shape without the key, and `check.py`
+checks the manifest's copy. Both check shape only: exactly the owed sessions are
+named, and each order is a permutation that keeps every participant's own order.
+Both were seen to fail (a missing key, a non-permutation, an order that reorders
+one participant) before they were trusted.
+
+**The values**, computed with a reference merge outside the suite (the spec's
+merge: unwrapped ends and acks, the `0.23` end rule, per-participant chains,
+`(timestamp, participant_id)`), and each compared with its vector's prose:
+
+| Vector | Session | Merged order |
+|---|---|---|
+| `merge-pure-ack-and-fin` | 7 | 4 1 5 2 6 3 |
+| `merge-timestamp-tie` | 8 | 2 1: the tie goes to pid 0 |
+| `hintless-merge-backwards-ts` | 8 | 2 1 3: pid 0's own two kept in order |
+| `handshake-at-origin` | 7 | 1 2 3 4: edges and timestamps agree |
+| `unplaceable-no-seq-start` | 9 | 1 2 3: no ack edges |
+| `decoded-basic` | 7 | 2 1: hint-less, by timestamp |
+
+**One lint decision.** `merged` took `vector()` to eleven arguments, one over
+`ruff`'s limit. Per `CLAUDE.md` this is a commented `per-file-ignores` entry for
+`build.py`, not a `noqa`. Each keyword-only argument is an assertion the author
+is made to confront, and bundling them to satisfy a count would hide that.
+
+No specification text changes. The counts stay at 68 vectors and 40 rules.
+
 ## Risks
 
 | Risk | Likelihood | Mitigation |
@@ -250,6 +292,8 @@ sequenced vector's summary names its twin. `RULES`: `merge-orders-by-end`.
 - [x] `sequenced-pure-ack-and-fin` exists, and each wrong reading fails on its
       own record. Its unsequenced twin `merge-pure-ack-and-fin` (#161) catches
       the readings a sequenced file cannot.
+- [x] Every single-file accept vector that owes a merge declares `merged`
+      (six); `build.py` and `check.py` both enforce its shape (#162).
 - [x] `python3 vectors/check.py` green at 0.23: **68 vectors, 35 options,
       40 rules** (67 and 39 before #161's twin); `reject-unknown-minor` at `0/24`.
 - [x] Counts unchanged: `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`.

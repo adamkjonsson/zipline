@@ -107,6 +107,18 @@ keyword or option is added. Scope and reasoning in
     given no end (a dropped edge reorders it) and a merge that stalls
     ([#161](https://github.com/adamkjonsson/zipline/issues/161)). The retired
     sentence reproduces against `v0.22`. **68 vectors, 35 options, 40 rules.**
+- **The manifest states merged orders** ([#162](https://github.com/adamkjonsson/zipline/issues/162)).
+  Every single-file accept vector with an unsequenced session in which two or
+  more participants send records now declares `merged`: that session's order,
+  as 1-based stored positions. Six vectors owe it. It does for the merge what
+  `0.20`'s `extents` did for the offset space. A harness can now catch a
+  plausible wrong order, or stored order returned unmerged, and not only a
+  merge that stalls. `build.py` requires the key wherever the shape occurs, and
+  `check.py` checks its shape (exactly the owed sessions, each order a
+  permutation that keeps every participant's own order). The values are the
+  author's, as with `extents`. Each was computed with a reference merge
+  outside the suite and agrees with its vector's prose. Suite only: no
+  specification text changes.
 
 ---
 

@@ -123,6 +123,23 @@ nothing else does. A wrong number is caught by the first implementation that
 disagrees, which is the loop the suite lacked. Multi-file fixtures declare none;
 their extents are verified against their inputs by the bespoke checks.
 
+**Every single-file `accept` entry with a session a reader must merge declares
+`merged`**, since `0.23` (#162). That is a session not marked `sequenced` in
+which two or more participants send records. The key is a list of
+`{"session_id", "order"}`, where the order is the session's records by 1-based
+position in stored order, as the [merge](../docs/zipline-payload-format.md#merge-algorithm)
+emits them. It is the same assertion as `extents`, about a different computation.
+`merge-pure-ack-and-fin` carried its lesson in the merged order alone, and a
+harness could see only the one wrong reading that stalls. A plausible wrong order
+passed, and so did stored order returned unmerged. Six vectors owe the key:
+`merge-pure-ack-and-fin`, `merge-timestamp-tie`, `hintless-merge-backwards-ts`,
+`handshake-at-origin`, `unplaceable-no-seq-start` and `decoded-basic`.
+A sequenced session owes none, because its answer is stored order. As with
+`extents`, the values are the author's and are never computed here, since the
+merge is semantics. `check.py` checks their shape: exactly the owed sessions are
+named, and each order is a permutation of the session's records that keeps each
+participant's own order.
+
 **Every capability the format defines is exercised by some vector**, and since
 `0.14` that is enforced too. `check.py` parses the option-id registry and the
 block-type table out of the specification and requires each entry to appear in

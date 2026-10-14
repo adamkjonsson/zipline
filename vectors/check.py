@@ -2115,6 +2115,51 @@ def check_extents(v: dict) -> list[str]:
     return out
 
 
+def check_merged(v: dict) -> list[str]:
+    """Check a vector's declared merged orders are shaped right, and present where owed.
+
+    `merged` is to the merge what `extents` is to the offset space (#162): a
+    merged order was a vector's whole lesson and lived only in prose, so a
+    harness could see a merge that stalled and nothing else -- a plausible
+    wrong order, or stored order returned unmerged, passed. Every single-file
+    accept entry with an UNSEQUENCED session in which two or more participants
+    send records declares that session's order, as 1-based positions among the
+    session's records in stored order. The values are the author's; this
+    checks only that each order is a permutation of the session's records that
+    keeps every participant's own order, and that exactly the owed sessions
+    are named. Computing the merge here would make check.py a second normative
+    authority.
+    """
+    name, tier = v["name"], v["tier"]
+    if "files" in v or tier != "accept":
+        return [f"{name}: declares merged off the single-file accept tier"] if "merged" in v else []
+    jl = fixture_lines(os.path.join(HERE, name), name)
+    sequenced = {o["session_id"] for o in jl if o.get("type") == "session" and o.get("sequenced")}
+    senders: dict[int, list[int]] = {}
+    for o in jl:
+        if o.get("type") == "record" and o["session_id"] not in sequenced:
+            senders.setdefault(o["session_id"], []).append(o["sender_pid"])
+    owed = {sid: pids for sid, pids in senders.items() if len(set(pids)) > 1}
+    given = {m["session_id"]: m["order"] for m in v.get("merged", [])}
+    if sorted(given) != sorted(owed):
+        return [f"{name}: merged names sessions {sorted(given)}, owes {sorted(owed)}"]
+    out = []
+    for sid, order in given.items():
+        pids = owed[sid]
+        if sorted(order) != list(range(1, len(pids) + 1)):
+            out.append(
+                f"{name}: session {sid} merged order {order} is not a permutation of its records"
+            )
+            continue
+        for pid in sorted(set(pids)):
+            mine = [i for i in order if pids[i - 1] == pid]
+            if mine != sorted(mine):
+                out.append(
+                    f"{name}: session {sid} merged order reorders participant {pid}'s records"
+                )
+    return out
+
+
 def check_jsonl(label: str, path: str, block_count: int) -> list[str]:
     """Check a projection parses and has one line per block."""
     jl = [x for x in read_text(path).splitlines() if x.strip()]
@@ -2207,6 +2252,7 @@ def main() -> int:
     for v in manifest["vectors"]:
         failures += check_violations(v)
         failures += check_extents(v)
+        failures += check_merged(v)
         failures += check_vector(v)
 
     failures += check_chain()
@@ -2230,6 +2276,11 @@ def main() -> int:
     print(
         f"  extents: {n_ext} accept vectors declare {streams} stream extents -- "
         f"shape checked, values are the author's"
+    )
+    n_mer = sum(1 for v in manifest["vectors"] if "merged" in v)
+    print(
+        f"  merged: {n_mer} accept vectors declare the merged order of every session "
+        f"a reader must merge -- shape checked, values are the author's"
     )
     print(f"\nall {len(manifest['vectors'])} vectors consistent")
     return 0

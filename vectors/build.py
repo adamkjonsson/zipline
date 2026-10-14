@@ -756,6 +756,7 @@ def vector(
     violations: int,
     advisory: bool = False,
     extents: list[tuple[int, int, int]] | None = None,
+    merged: list[tuple[int, list[int]]] | None = None,
 ) -> None:
     """Register a vector.
 
@@ -789,6 +790,14 @@ def vector(
     is: each number is the author's reading of the specification, and a wrong
     one is caught by the first implementation that disagrees, which is the loop
     the suite lacked. Nothing here computes it.
+
+    `merged` is the same assertion for the merge (#162): on the accept tier,
+    every UNSEQUENCED session in which two or more participants send records has
+    a merged order a reader computes, and the vector states it as `(session_id,
+    order)`, the order being the session's records by 1-based stored position.
+    Required wherever that shape occurs, for the reason `extents` is. Checked
+    here for shape only -- a permutation of the session's records that keeps
+    each participant's own order -- and never computed: the merge is semantics.
     """
     if advisory and tier != "accept":
         raise ValueError(f"{name}: advisory is meaningless off the accept tier")
@@ -806,6 +815,7 @@ def vector(
             "violations": violations,
             "advisory": advisory,
             "extents": check_extents(name, tier, blocks, extents),
+            "merged": check_merged(name, tier, blocks, merged),
         }
     )
 
@@ -830,6 +840,53 @@ def check_extents(
             f"participants {sorted(declared)}"
         )
     return [{"session_id": sess, "pid": pid, "extent": ext} for sess, pid, ext in extents]
+
+
+def merge_sessions(blocks: list[Blk]) -> dict[int, list[int]]:
+    """Map each unsequenced session with two or more senders to its records' senders."""
+    sequenced = {
+        b.fields["session_id"]
+        for b in blocks
+        if b.btype == 0x10 and any(o.name == "flags" and o.value & 0x0001 for o in b.options)
+    }
+    senders: dict[int, list[int]] = {}
+    for b in blocks:
+        if b.btype == 0x20 and b.fields["session_id"] not in sequenced:
+            senders.setdefault(b.fields["session_id"], []).append(b.fields["sender_pid"])
+    return {sid: pids for sid, pids in senders.items() if len(set(pids)) > 1}
+
+
+def check_merged(
+    name: str, tier: str, blocks: list[Blk], merged: list[tuple[int, list[int]]] | None
+) -> list[dict] | None:
+    """Require `merged` wherever an accept vector has a session a reader must merge."""
+    need = merge_sessions(blocks) if tier == "accept" else {}
+    if not need:
+        if merged is not None:
+            raise ValueError(f"{name}: merged is declared, but no session here needs a merge")
+        return None
+    if merged is None:
+        raise TypeError(
+            f"{name}: sessions {sorted(need)} are unsequenced with several senders; "
+            f"declare their merged order"
+        )
+    if sorted(sid for sid, _ in merged) != sorted(need):
+        raise ValueError(
+            f"{name}: merged names {sorted(s for s, _ in merged)}, needs {sorted(need)}"
+        )
+    for sid, order in merged:
+        pids = need[sid]
+        if sorted(order) != list(range(1, len(pids) + 1)):
+            raise ValueError(
+                f"{name}: session {sid} order {order} is not a permutation of its records"
+            )
+        for pid in set(pids):
+            mine = [i for i in order if pids[i - 1] == pid]
+            if mine != sorted(mine):
+                raise ValueError(
+                    f"{name}: session {sid} order reorders participant {pid}'s records"
+                )
+    return [{"session_id": sid, "order": order} for sid, order in merged]
 
 
 # --- baseline -------------------------------------------------------------
@@ -998,6 +1055,7 @@ vector(
     ],
     violations=0,
     extents=[(7, 0, 3), (7, 1, 4)],
+    merged=[(7, [2, 1])],
 )
 
 vector(
@@ -2902,6 +2960,7 @@ vector(
     ],
     violations=0,
     extents=[(8, 0, 4), (8, 1, 2)],
+    merged=[(8, [2, 1, 3])],
 )
 
 vector(
@@ -3037,6 +3096,7 @@ vector(
     ],
     violations=0,
     extents=[(8, 0, 10), (8, 1, 8)],
+    merged=[(8, [2, 1])],
 )
 
 
@@ -3130,6 +3190,7 @@ vector(
     "would place the second record somewhere and report more than 6.",
     violations=0,
     extents=[(9, 0, 6), (9, 1, 5)],
+    merged=[(9, [1, 2, 3])],
 )
 
 # --- negative: the reject tier --------------------------------------------
@@ -3780,6 +3841,7 @@ vector(
     "needs no sort: step 1 takes each participant's records in file order.",
     violations=0,
     extents=[(7, 0, 18), (7, 1, 19)],
+    merged=[(7, [1, 2, 3, 4])],
 )
 
 
@@ -4802,6 +4864,7 @@ vector(
     "conformant. Extents are 8 for the client and 0 for the server.",
     violations=0,
     extents=[(7, 0, 8), (7, 1, 0)],
+    merged=[(7, [4, 1, 5, 2, 6, 3])],
 )
 
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
@@ -7496,6 +7559,7 @@ def main() -> int:
                 "expect": v["expect"] or ("Accept. The .jsonl file is the expected projection."),
                 "has_jsonl": v["jsonl"] is not None,
                 **({"extents": v["extents"]} if v["extents"] is not None else {}),
+                **({"merged": v["merged"]} if v["merged"] is not None else {}),
             }
         )
 
