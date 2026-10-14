@@ -43,7 +43,7 @@ def read_text(path: str) -> str:
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 21
+MAJOR, MINOR = 0, 22
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -4257,6 +4257,616 @@ vector(
     extents=[(7, 0, 8), (8, 0, 8)],
 )
 
+# 0.22 (#151). #146's twin on the ack axis. The causal edge rule compared an ack
+# with peer record ends by serial arithmetic, which is defined only within 2**31
+# -- and an ack stored once on a peer that never speaks again stays put while
+# the record ends run on past it. check.py computes no edges, so this vector
+# tests implementations only.
+vector(
+    "sequenced-past-2gib-pure-ack",
+    "accept",
+    "stream-past-2gib's client, after a recorded handshake, in a SEQUENCED "
+    "session whose server sends nothing after its SYN-ACK. The server's pure "
+    "ACKs are not records, so its one ack in the file is the SYN-ACK's 1001 "
+    "for the whole session. That ack is a POSITION in the client's stream -- "
+    "0, the origin -- and every client data record ends above it, at 8, "
+    "2**30 + 8, 2**31 + 8 and 3 * 2**30 + 8, so no edge runs from any of them "
+    "to the SYN-ACK and the stored order is causal. Through 0.21 step 2 "
+    "compared the raw values serially, and the record at 2 GiB ends 2**31 + 8 "
+    "past 1001, which serial arithmetic reads as BEFORE it: the edge "
+    "client@2GiB -> SYN-ACK, a record that must precede the handshake. The "
+    "ordinary large upload, with a peer that only acks, failed the sequenced "
+    "check from that record on. Since 0.22 ends and acks are unwrapped into "
+    "the peer's offset space and compared as plain integers.",
+    "Causal ordering from TCP seq/ack -- acks unwrap into the peer's space",
+    [
+        file_header(),
+        source(1, 0, [o_uri("upload.pcap")]),
+        session(7, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
+        # The server's only record: its ack stays at position 0 of the client's
+        # stream for the rest of the session.
+        record(7, 1, 1, 1100, b"", flags=0x0008, options=[o_seq_start(5001), o_ack(1001)]),
+        record(7, 0, 1, 2000, b"AAAABBBB", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]),
+        record(
+            7,
+            0,
+            1,
+            3000,
+            b"CCCCDDDD",
+            flags=0x0001,
+            options=[o_seq_start(1001 + GIB), o_ack(5001)],
+        ),
+        # Ends 2**31 + 8 past the SYN-ACK's ack: serially BELOW it.
+        record(
+            7,
+            0,
+            1,
+            4000,
+            b"EEEEFFFF",
+            flags=0x0001,
+            options=[o_seq_start(1001 + 2 * GIB), o_ack(5001)],
+        ),
+        record(
+            7,
+            0,
+            1,
+            5000,
+            b"GGGGHHHH",
+            flags=0x0001,
+            options=[o_seq_start(1001 + 3 * GIB), o_ack(5001)],
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "upload.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+            "tcp_role": "responder",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1100,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 2000,
+            "flags": ["psh"],
+            "payload": b64(b"AAAABBBB"),
+            "seq_start": 1001,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 3000,
+            "flags": ["psh"],
+            "payload": b64(b"CCCCDDDD"),
+            "seq_start": 1001 + GIB,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 4000,
+            "flags": ["psh"],
+            "payload": b64(b"EEEEFFFF"),
+            "seq_start": 1001 + 2 * GIB,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 5000,
+            "flags": ["psh"],
+            "payload": b64(b"GGGGHHHH"),
+            "seq_start": 1001 + 3 * GIB,
+            "ack": 5001,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order: the session is "
+    "SEQUENCED and the order is causal. The SYN-ACK's ack 1001 is position 0 "
+    "of the client's stream; the client SYN ends at 0 and precedes it, as "
+    "stored; the four data records end at 8, 2**30 + 8, 2**31 + 8 and "
+    "3 * 2**30 + 8, all above 0, so none precedes it. Each data record's ack "
+    "5001 is position 0 of the server's stream, where the SYN-ACK ends, so "
+    "the SYN-ACK precedes all four, as stored. A reader or writer that "
+    "compares raw values serially draws client@2GiB -> SYN-ACK and "
+    "client@3GiB -> SYN-ACK, and reports the stored order as a causal "
+    "violation; that reading was the document's own until 0.22 and is wrong "
+    "now. Rejecting, isolating, or refusing to write the file is NOT "
+    "conformant. Extents are those of stream-past-2gib for the client, and "
+    "0 for the server, whose one record is zero-length at its origin.",
+    violations=0,
+    extents=[(7, 0, 3 * GIB + 8), (7, 1, 0)],
+)
+
+# 0.22 (#157). An ack position is signed. A mid-stream capture's first ack can
+# lie below the peer's first captured byte; stored in the type of an offset,
+# its position wraps to near 2**64 and draws an edge from every peer record.
+vector(
+    "sequenced-ack-below-origin",
+    "accept",
+    "A mid-stream capture, SEQUENCED, with no isn on either side, so each "
+    "participant's origin is its first captured byte: 1001 for the client, "
+    "5001 for the server. The server's response is stored FIRST and carries "
+    "ack 993 -- it acknowledges eight client bytes sent before the capture "
+    "began. That ack's position in the client's stream is 993 - 1001 = -8: a "
+    "signed integer, below 0, acknowledging no captured client byte, so no "
+    "edge reaches the response. The client's request, stored after it, acks "
+    "5013, the end of the response's twelve bytes, so the response precedes "
+    "the request, as stored. A reader that keeps ack positions in an "
+    "unsigned type -- the type of an offset -- wraps -8 to just under 2**64 "
+    "(or 2**32, taking the serial delta unsigned), finds the request's end "
+    "below it, draws request -> response, and refuses a correct order.",
+    "Causal ordering from TCP seq/ack -- ack positions are signed",
+    [
+        file_header(),
+        source(1, 0, [o_uri("midstream.pcap")]),
+        session(7, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+        # Acks eight client bytes the capture never saw: position -8.
+        record(7, 1, 1, 1000, b"HTTP/1.1 200", options=[o_seq_start(5001), o_ack(993)]),
+        record(7, 0, 1, 1100, b"GET /two", options=[o_seq_start(1001), o_ack(5013)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "midstream.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"HTTP/1.1 200"),
+            "seq_start": 5001,
+            "ack": 993,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(b"GET /two"),
+            "seq_start": 1001,
+            "ack": 5013,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order: the session is "
+    "SEQUENCED and the order is causal. The response's ack 993 is position -8 "
+    "of the client's stream, below the request's end at 8, so no edge runs "
+    "from the request to it. The request's ack 5013 is position 12 of the "
+    "server's stream, where the response ends, so the response precedes the "
+    "request, as stored. A reader that stores ack positions unsigned reads "
+    "-8 as a huge position, draws request -> response, and reports the "
+    "stored order as a causal violation. Rejecting, isolating, or refusing to "
+    "write the file is NOT conformant. Extents are 8 and 12: with no isn, "
+    "each stream starts at its first captured byte.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 12)],
+)
+
+# 0.22 (#152). The carry duty's two recourses are both barred at the transport
+# layer, so a reassembler over a unit sequence could never coalesce two
+# packets. Its sequence numbers carry any break as a hole, so now it may.
+vector(
+    "sessionized-across-units",
+    "accept",
+    "A sessionization stage over a packet stream -- tunnel's inner hop, with "
+    "nothing lost. The input, packets.zpf, is a unit sequence as kober's "
+    "WireGuard output is: three inner packets at [0,80), [80,140) and "
+    "[140,210), participant declared units, so every seam is a declared break. "
+    "The first and third are flow A's and carry 40 and 30 bytes of TCP payload "
+    "at seq 1001 and 1041, which join; the second is flow B's. Session 10's one "
+    "record coalesces flow A into 70 bytes with TWO spans, one per input "
+    "packet, crossing two declared breaks. Through 0.21 that record had no "
+    "conformant form: the carry duty asked for a Discontinuity or a units "
+    "output, and a transport-layer stream may have neither. Since 0.22 a "
+    "transport output whose records carry seq_start MAY cross, because a break "
+    "there is a range of sequence numbers no record covers and cannot be lost. "
+    "Nothing in this file shows the input's adjacency, and nothing could catch "
+    "a wrong coalesce: the sequence numbers are the producer's assertion.",
+    "Discontinuity (0x22) -- what a consumer owes the block",
+    [
+        file_header(options=[o_produced_by("zpf-sessionize 1.0"), o_produced_at(1719700100)]),
+        source(1, 1, [o_uri("packets.zpf"), o_digest("sha256:5e1a")]),
+        decoder(
+            1,
+            [
+                o_dec_name("tcp-reassembly"),
+                o_dec_version("1.1"),
+                o_params_digest("sha256:2f60"),
+            ],
+            output_layer=1,
+        ),
+        session(10, [o_proto("tcp")]),
+        participant(10, 0, [o_endpoint("10.8.0.2:44300"), o_isn(1000)]),
+        # One record, two input packets: [0,80) and [140,210), flow B's between.
+        record(
+            10,
+            0,
+            1,
+            1000,
+            b"A" * 40 + b"B" * 30,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 5, 0, 0, 80), (1, 5, 0, 140, 210)]),
+                o_seq_start(1001),
+            ],
+        ),
+        session_end(10, [o_input_extents([(1, 5, 0, 210)])]),
+        session(11, [o_proto("tcp")]),
+        participant(11, 0, [o_endpoint("10.8.0.2:44301"), o_isn(5000)]),
+        record(
+            11,
+            0,
+            1,
+            1100,
+            b"C" * 20,
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 80, 140)]), o_seq_start(5001)],
+        ),
+        session_end(11, [o_input_extents([(1, 5, 0, 210)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-sessionize 1.0",
+            "produced_at": 1719700100,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "packets.zpf",
+            "digest": "sha256:5e1a",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "transport",
+            "name": "tcp-reassembly",
+            "version": "1.1",
+            "params_digest": "sha256:2f60",
+        },
+        {"type": "session", "session_id": 10, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 10,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.8.0.2:44300"],
+            "isn": 1000,
+        },
+        {
+            "type": "record",
+            "session_id": 10,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"A" * 40 + b"B" * 30),
+            "decoder_id": 1,
+            "spans": [
+                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 80},
+                {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 140, "off_end": 210},
+            ],
+            "seq_start": 1001,
+        },
+        {
+            "type": "session_end",
+            "session_id": 10,
+            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
+        },
+        {"type": "session", "session_id": 11, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 11,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.8.0.2:44301"],
+            "isn": 5000,
+        },
+        {
+            "type": "record",
+            "session_id": 11,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(b"C" * 20),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 5, "pid": 0, "off_start": 80, "off_end": 140}],
+            "seq_start": 5001,
+        },
+        {
+            "type": "session_end",
+            "session_id": 11,
+            "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. Session 10 has one placeable record at [0,70), extent 70; "
+    "session 11 one at [0,20), extent 20. The input stream (source 1, session "
+    "5, pid 0) is covered once over [0,210) by the union of the two sessions' "
+    "spans, and both Session Ends declare its whole extent, 210, as fan-out "
+    "requires. Session 10's record cites two input units and crosses two "
+    "declared breaks; that is conformant for a transport-layer output whose "
+    "records carry seq_start, and the seam predicate does not apply, since it "
+    "tests decoded layers only. A reader that reports a no-splice violation, "
+    "or rejects or isolates the session, has applied the decoded layer's "
+    "carry duty to a stream whose offsets already carry every break.",
+    violations=0,
+    extents=[(10, 0, 70), (11, 0, 20)],
+)
+
+
+IPV4_SRC, IPV4_DST = bytes([10, 8, 0, 2]), bytes([10, 8, 0, 9])
+TCP, UDP = 6, 17
+TCP_PSH_ACK = 0x18
+
+
+def inet_checksum(data: bytes) -> int:
+    """Return the RFC 1071 ones'-complement checksum of `data`."""
+    if len(data) % 2:
+        data += b"\x00"
+    total = sum(struct.unpack(f">{len(data) // 2}H", data))
+    while total > 0xFFFF:
+        total = (total & 0xFFFF) + (total >> 16)
+    return ~total & 0xFFFF
+
+
+def tcp(
+    sport: int, dport: int, seq: int, ack: int, payload: bytes, src: bytes, dst: bytes
+) -> bytes:
+    """Build a 20-byte TCP header, flags PSH|ACK, true checksum, on `payload`."""
+    hdr = bytearray(
+        struct.pack(">HHIIBBHHH", sport, dport, seq, ack, 5 << 4, TCP_PSH_ACK, 65535, 0, 0)
+    )
+    pseudo = src + dst + struct.pack(">BBH", 0, TCP, len(hdr) + len(payload))
+    struct.pack_into(">H", hdr, 16, inet_checksum(pseudo + bytes(hdr) + payload))
+    return bytes(hdr) + payload
+
+
+def udp(sport: int, dport: int, payload: bytes, src: bytes, dst: bytes) -> bytes:
+    """Build an 8-byte UDP header, true length and checksum, on `payload`."""
+    hdr = bytearray(struct.pack(">HHHH", sport, dport, 8 + len(payload), 0))
+    pseudo = src + dst + struct.pack(">BBH", 0, UDP, len(hdr) + len(payload))
+    struct.pack_into(">H", hdr, 6, inet_checksum(pseudo + bytes(hdr) + payload) or 0xFFFF)
+    return bytes(hdr) + payload
+
+
+def ipv4(proto: int, segment: bytes, src: bytes = IPV4_SRC, dst: bytes = IPV4_DST) -> bytes:
+    """Prefix `segment` with a 20-byte IPv4 header: true length and checksum.
+
+    Since 0.22 a packet-preserving stage types its records net:ip, which means
+    LINKTYPE_RAW: the payload IS an IP packet, and every header in it is real
+    -- the IP header, and the TCP or UDP header after it, ports, sequence
+    numbers and checksums included -- so the label is true and a sessionizer
+    can rebuild the next hop from the packets alone (#154). Checked with an
+    independent parser (packeteer) when written; nothing here depends on it.
+    """
+    hdr = bytearray(
+        struct.pack(">BBHHHBBH4s4s", 0x45, 0, 20 + len(segment), 0, 0x4000, 64, proto, 0, src, dst)
+    )
+    struct.pack_into(">H", hdr, 10, inet_checksum(bytes(hdr)))
+    return bytes(hdr) + segment
+
+
+def tcp_packet(sport: int, dport: int, seq: int, ack: int, payload: bytes) -> bytes:
+    """Build an IPv4 packet carrying one TCP segment, 10.8.0.2 -> 10.8.0.9."""
+    return ipv4(TCP, tcp(sport, dport, seq, ack, payload, IPV4_SRC, IPV4_DST))
+
+
+def udp_packet(sport: int, dport: int, payload: bytes) -> bytes:
+    """Build an IPv4 packet carrying one UDP datagram, 10.8.0.2 -> 10.8.0.9."""
+    return ipv4(UDP, udp(sport, dport, payload, IPV4_SRC, IPV4_DST))
+
+
+ETH_DST, ETH_SRC = bytes.fromhex("aabbcc000002"), bytes.fromhex("aabbcc000001")
+
+
+def ethernet(packet: bytes) -> bytes:
+    """Wrap `packet` as IPv4 in an Ethernet II frame: LINKTYPE_ETHERNET's unit."""
+    return ETH_DST + ETH_SRC + b"\x08\x00" + packet
+
+
+# 14 + 20 + 8 + 18 = 60 and 14 + 20 + 8 + 8 = 50: the sizes the vector had when its
+# packets were filler, so no offset of it moved when they became real (#154).
+FRAME_1 = ethernet(udp_packet(40000, 5000, b"d" * 18))
+FRAME_2 = ethernet(udp_packet(40000, 5000, b"e" * 8))
+
+# 0.22 (#153). net:'s second value. tunnel carries net:ip; this is the stage
+# whose output is link-layer frames, which is why the scheme has more than one
+# value at all. The input it cites -- an 8-byte VXLAN header (I flag, VNI 5001)
+# before each frame -- is described, not shipped.
+vector(
+    "decap-ethernet",
+    "accept",
+    "A VXLAN decapsulation stage: its input is two 8-byte VXLAN headers each "
+    "followed by an inner Ethernet frame, and its output is one record per "
+    "frame typed net:ethernet -- LINKTYPE_ETHERNET's unit, from the destination "
+    "address, no preamble, no FCS. Every header in each frame is real -- "
+    "Ethernet II, IPv4, UDP, lengths and checksums true -- so a reader that "
+    "knows the token can hand each record to "
+    "anything that reads a pcap of link type 1. Each record spans its whole "
+    "datagram, VXLAN header included, because the header (its VNI) fed the "
+    "decapsulation -- the correspondence rule tunnel's decrypt stage follows. "
+    "The participant is declared units, since two frames side by side are two "
+    "packets and never one byte run; contiguous with no Discontinuity is also "
+    "conformant, as tunnel shows. The endpoint list runs outer to inner: the "
+    "VNI, then the inner sender's MAC.",
+    "Enums -- the content_type net: vocabulary",
+    [
+        file_header(options=[o_produced_by("zpf-vxlan 0.1"), o_produced_at(1719800000)]),
+        source(1, 1, [o_uri("vxlan.zpf"), o_digest("sha256:91c3")]),
+        decoder(
+            1,
+            [o_dec_name("vxlan-decap"), o_dec_version("0.1"), o_params_digest("sha256:0b7d")],
+        ),
+        session(4, [o_proto("ethernet")]),
+        participant(4, 0, [o_endpoint("vni:5001"), o_endpoint("aa:bb:cc:00:00:01")], adjacency=1),
+        record(
+            4,
+            0,
+            1,
+            1000,
+            FRAME_1,
+            options=[o_decoder_id(1), o_spans([(1, 3, 0, 0, 68)]), o_content_type("net:ethernet")],
+        ),
+        record(
+            4,
+            0,
+            1,
+            1100,
+            FRAME_2,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 3, 0, 68, 126)]),
+                o_content_type("net:ethernet"),
+            ],
+        ),
+        session_end(4, [o_input_extents([(1, 3, 0, 126)])]),
+        end_block(),
+    ],
+    jsonl=[
+        {
+            "type": "file",
+            "format": FORMAT,
+            "tick_hz": 1000000,
+            "produced_by": "zpf-vxlan 0.1",
+            "produced_at": 1719800000,
+        },
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "zpf-input",
+            "uri": "vxlan.zpf",
+            "digest": "sha256:91c3",
+        },
+        {
+            "type": "decoder",
+            "decoder_id": 1,
+            "output_layer": "decoded",
+            "name": "vxlan-decap",
+            "version": "0.1",
+            "params_digest": "sha256:0b7d",
+        },
+        {"type": "session", "session_id": 4, "proto": "ethernet"},
+        {
+            "type": "participant",
+            "session_id": 4,
+            "pid": 0,
+            "adjacency": "units",
+            "endpoint": ["vni:5001", "aa:bb:cc:00:00:01"],
+        },
+        {
+            "type": "record",
+            "session_id": 4,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(FRAME_1),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 3, "pid": 0, "off_start": 0, "off_end": 68}],
+            "content_type": "net:ethernet",
+        },
+        {
+            "type": "record",
+            "session_id": 4,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(FRAME_2),
+            "decoder_id": 1,
+            "spans": [{"source_id": 1, "session_id": 3, "pid": 0, "off_start": 68, "off_end": 126}],
+            "content_type": "net:ethernet",
+        },
+        {
+            "type": "session_end",
+            "session_id": 4,
+            "input_extents": [{"source_id": 1, "session_id": 3, "pid": 0, "extent": 126}],
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. Two records at [0,60) and [60,110) of a unit sequence, extent "
+    "110; the input stream (source 1, session 3, pid 0) is covered once over "
+    "[0,126). Both records' content_type is net:ethernet, a token this version "
+    "defines: the payload is one Ethernet frame as a LINKTYPE_ETHERNET capture "
+    "stores it. A reader that does not know the net: scheme treats the label "
+    "as opaque and falls back to the decoder name, which is conformant -- an "
+    "unknown scheme is opaque -- but a reader implementing this version knows "
+    "the token. Rejecting or isolating is NOT conformant, and neither is "
+    "checking the label against the payload: net: binds no length and the "
+    "format parses no packet.",
+    violations=0,
+    extents=[(4, 0, 110)],
+)
+
 # 0.21 (#80, #106). The adjacency body field, in its four shapes: the two the
 # milestone comment asked for, and the two every load-bearing enum owes.
 DNS_HEADER = b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00"
@@ -5509,8 +6119,18 @@ def build_splice() -> None:
 # failure rather than as a fixture nobody rechecked.
 
 WG1, WG2, WG3, WG4 = (bytes([c]) * 80 for c in b"WXYZ")  # 4 ciphertext datagrams
-IP_A1, IP_B1, IP_A2 = b"P" * 60, b"Q" * 40, b"R" * 50  # inner packets, once decrypted
 TCP_A1, TCP_A2, TCP_B1 = b"a" * 40, b"b" * 30, b"c" * 20  # inner TCP payloads
+
+
+# Inner packets, once decrypted: real IPv4 + TCP, PSH|ACK, carrying exactly the
+# ports and sequence numbers inner.zpf builds its two flows from, so that hop can
+# be rebuilt from these packets alone (#154). Flow A's peer ISN is 7000 and flow
+# B's 9000; neither peer sends anything, so each flow's ack stays at its origin.
+ACK_A, ACK_B = 7001, 9001
+IP_A1 = tcp_packet(44300, 80, 1001, ACK_A, TCP_A1)  # 80 bytes
+IP_B1 = tcp_packet(44301, 53, 5001, ACK_B, TCP_B1)  # 60 bytes
+# 1041 (40 bytes) is the packet the decrypt stage lost.
+IP_A2 = tcp_packet(44300, 80, 1081, ACK_A, TCP_A2)  # 70 bytes
 
 
 def build_tunnel() -> None:
@@ -5526,13 +6146,15 @@ def build_tunnel() -> None:
         "closes with no skipped Undecoded blocks at all. (2) FAN-OUT: one input "
         "stream (packets.zpf session 5, pid 0) feeds TWO output sessions in "
         "inner.zpf; neither covers the extent alone and both Session Ends "
-        "declare the same 150 for the shared input. (3) A zpf-SOURCED TRANSPORT "
+        "declare the same 210 for the shared input. (3) A zpf-SOURCED TRANSPORT "
         "STREAM: inner.zpf declares output_layer = transport, carries isn and "
         "seq_start, and expresses its 40-byte hole in the SEQUENCE NUMBERS -- no "
-        "Discontinuity, no content_type. (4) ORIGINATION, AND THE CROSSING LEFT "
-        "UNDONE: packets.zpf withholds an inner packet and declares the break; "
-        "inner.zpf reads that break and CANNOT express one, so no record crosses "
-        "packets offset 100 and the loss survives as a TCP gap instead; http.zpf "
+        "Discontinuity, no content_type. (4) ORIGINATION, AND THE BREAK CARRIED "
+        "AS A HOLE: packets.zpf withholds an inner packet and declares the "
+        "break at its offset 140; the lost packet was flow A's, so inner.zpf "
+        "carries the break as a TCP sequence gap, which a transport stream needs "
+        "no block for (and since 0.22 its packets are real IPv4 + TCP, so "
+        "inner.zpf can be rebuilt from them); http.zpf "
         "then meets a hole-class region between two adjacent output units and "
         "originates its own block.",
         "Layers; Conformance; Discontinuity; Worked example: a decrypted tunnel",
@@ -5622,7 +6244,7 @@ def build_tunnel() -> None:
             1,
             1000,
             IP_A1,
-            options=[o_decoder_id(1), o_spans([(1, 1, 0, 0, 80)]), o_content_type("dec:ip-packet")],
+            options=[o_decoder_id(1), o_spans([(1, 1, 0, 0, 80)]), o_content_type("net:ip")],
         ),
         record(
             5,
@@ -5633,7 +6255,7 @@ def build_tunnel() -> None:
             options=[
                 o_decoder_id(1),
                 o_spans([(1, 1, 0, 80, 160)]),
-                o_content_type("dec:ip-packet"),
+                o_content_type("net:ip"),
             ],
         ),
         # Datagram 3 will not decrypt. The ciphertext exists, so this is
@@ -5660,7 +6282,7 @@ def build_tunnel() -> None:
             options=[
                 o_decoder_id(1),
                 o_spans([(1, 1, 0, 240, 320)]),
-                o_content_type("dec:ip-packet"),
+                o_content_type("net:ip"),
             ],
         ),
         session_end(5, [o_input_extents([(1, 1, 0, 320)])]),
@@ -5669,10 +6291,14 @@ def build_tunnel() -> None:
     packets = member(
         "tunnel",
         "packets",
-        "The decrypt stage. One record per inner IP packet, typed dec:ip-packet "
+        "The decrypt stage. One record per inner IP packet, typed net:ip "
         "because a packet IS a unit -- unlike a reassembly window, which is a "
-        "slice. Its own offset space is the payload concatenation: [0,60) "
-        "[60,100) [100,150), the Discontinuity contributing 0.",
+        "slice -- and since 0.22 the format names that unit itself, so a generic "
+        "sessionizer need not know this decoder's token. Each payload is a real "
+        "IPv4 packet carrying a real TCP segment, PSH|ACK, with the ports and "
+        "sequence numbers inner.zpf's two flows are built from, and true "
+        "checksums. Its own offset space is the payload concatenation: [0,80) "
+        "[80,140) [140,210), the Discontinuity contributing 0.",
         packets_blocks,
         [
             {
@@ -5716,7 +6342,7 @@ def build_tunnel() -> None:
                 "spans": [
                     {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 0, "off_end": 80}
                 ],
-                "content_type": "dec:ip-packet",
+                "content_type": "net:ip",
             },
             {
                 "type": "record",
@@ -5729,7 +6355,7 @@ def build_tunnel() -> None:
                 "spans": [
                     {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 80, "off_end": 160}
                 ],
-                "content_type": "dec:ip-packet",
+                "content_type": "net:ip",
             },
             {
                 "type": "undecoded",
@@ -5754,7 +6380,7 @@ def build_tunnel() -> None:
                 "spans": [
                     {"source_id": 1, "session_id": 1, "pid": 0, "off_start": 240, "off_end": 320}
                 ],
-                "content_type": "dec:ip-packet",
+                "content_type": "net:ip",
             },
             {
                 "type": "session_end",
@@ -5784,7 +6410,8 @@ def build_tunnel() -> None:
             1,
             1000,
             TCP_A1,
-            options=[o_decoder_id(1), o_spans([(1, 5, 0, 0, 60)]), o_seq_start(1001)],
+            flags=0x0001,
+            options=[o_decoder_id(1), o_spans([(1, 5, 0, 0, 80)]), o_seq_start(1001), o_ack(ACK_A)],
         ),
         # seq 1081, not 1041: the 40 bytes the lost packet carried occupy
         # [40,80) and no record covers them. The hole is in the NUMBERS -- this
@@ -5795,9 +6422,15 @@ def build_tunnel() -> None:
             1,
             1300,
             TCP_A2,
-            options=[o_decoder_id(1), o_spans([(1, 5, 0, 100, 150)]), o_seq_start(1081)],
+            flags=0x0001,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 5, 0, 140, 210)]),
+                o_seq_start(1081),
+                o_ack(ACK_A),
+            ],
         ),
-        session_end(10, [o_input_extents([(1, 5, 0, 150)])]),
+        session_end(10, [o_input_extents([(1, 5, 0, 210)])]),
         # Flow B: a second inner connection out of the SAME input stream.
         session(11, [o_proto("tcp"), o_flow_key("10.8.0.2:44301 -> 10.8.0.9:53")]),
         participant(11, 0, [o_endpoint("10.8.0.2:44301"), o_isn(5000)]),
@@ -5807,11 +6440,17 @@ def build_tunnel() -> None:
             1,
             1100,
             TCP_B1,
-            options=[o_decoder_id(1), o_spans([(1, 5, 0, 60, 100)]), o_seq_start(5001)],
+            flags=0x0001,
+            options=[
+                o_decoder_id(1),
+                o_spans([(1, 5, 0, 80, 140)]),
+                o_seq_start(5001),
+                o_ack(ACK_B),
+            ],
         ),
-        # The same extent 150 as session 10 declares: under fan-out every
+        # The same extent 210 as session 10 declares: under fan-out every
         # consuming session declares the WHOLE input stream, not its share.
-        session_end(11, [o_input_extents([(1, 5, 0, 150)])]),
+        session_end(11, [o_input_extents([(1, 5, 0, 210)])]),
         end_block(),
     ]
     inner = member(
@@ -5821,10 +6460,13 @@ def build_tunnel() -> None:
         "zpf-SOURCED TRANSPORT stream: its Decoder declares output_layer = "
         "transport, so isn-anchored hole-inclusive offsets apply even though a "
         "decode stage produced it. It FANS OUT -- one input stream into sessions "
-        "10 and 11, neither covering [0,150) alone. Flow A's lost packet is a "
+        "10 and 11, neither covering [0,210) alone. Flow A's lost packet is a "
         "40-byte hole at [40,80), visible as seq 1081 where 1041 would be "
         "contiguous. No Discontinuity: a transport stream may not carry one, and "
-        "no record crosses the break its input declared at packets offset 100.",
+        "the break its input declared at packets offset 140 is carried as that "
+        "hole. Every field here -- ports, seq_start, ack, psh -- is read from the "
+        "TCP headers of packets.zpf, so a sessionizer can rebuild this file from "
+        "that one.",
         inner_blocks,
         [
             {
@@ -5869,12 +6511,14 @@ def build_tunnel() -> None:
                 "sender_pid": 0,
                 "source_id": 1,
                 "ts": 1000,
+                "flags": ["psh"],
                 "payload": b64(TCP_A1),
                 "decoder_id": 1,
                 "spans": [
-                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 60}
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 0, "off_end": 80}
                 ],
                 "seq_start": 1001,
+                "ack": 7001,
             },
             {
                 "type": "record",
@@ -5882,17 +6526,19 @@ def build_tunnel() -> None:
                 "sender_pid": 0,
                 "source_id": 1,
                 "ts": 1300,
+                "flags": ["psh"],
                 "payload": b64(TCP_A2),
                 "decoder_id": 1,
                 "spans": [
-                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 100, "off_end": 150}
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 140, "off_end": 210}
                 ],
                 "seq_start": 1081,
+                "ack": 7001,
             },
             {
                 "type": "session_end",
                 "session_id": 10,
-                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
             },
             {
                 "type": "session",
@@ -5914,17 +6560,19 @@ def build_tunnel() -> None:
                 "sender_pid": 0,
                 "source_id": 1,
                 "ts": 1100,
+                "flags": ["psh"],
                 "payload": b64(TCP_B1),
                 "decoder_id": 1,
                 "spans": [
-                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 60, "off_end": 100}
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": 80, "off_end": 140}
                 ],
                 "seq_start": 5001,
+                "ack": 9001,
             },
             {
                 "type": "session_end",
                 "session_id": 11,
-                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 150}],
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
             },
             {"type": "end"},
         ],

@@ -54,7 +54,7 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 0.21 — a design in progress. Not ready for production.**
+**Version 0.22 — a design in progress. Not ready for production.**
 
 `0.x` means what it says: any minor release may change anything, including in
 ways that break existing readers. A reader must reject a `version_minor` it does
@@ -63,7 +63,7 @@ not implement.
 A release was designated `1.0` in July 2026, before any implementation existed.
 That was premature — the first implementation found enough to force a breaking
 revision — so it is retroactively designated `0.9`, and the work since is `0.10`
-through `0.21`. (`0.21` follows `0.9`; the components are integers, not decimals.)
+through `0.22`. (`0.22` follows `0.9`; the components are integers, not decimals.)
 `1.0` is reserved for a specification that has survived implementation. More `0.x` rounds
 are expected.
 
@@ -144,6 +144,12 @@ rounds as they happened, not plans:
   shapes that owed a block per seam), a ruling on the one hole that rule cannot
   place, and Package D declined after two releases of deferral, with the
   reversal argued.
+- [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md) — the downstream
+  release. It makes three rulings for a converter that `0.21` made possible:
+  acks unwrap the way offsets do, a sequence-anchored transport output may
+  coalesce across an input seam, and a closed `net:` scheme names one network
+  packet. It ends with what execution changed, including a bound the plan had
+  stated in only one direction.
 
 ## License
 

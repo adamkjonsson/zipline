@@ -66,6 +66,129 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.22] — 2026-10-14
+
+**The downstream release.** Three issues filed from `python-zipline-wire`, each a
+downstream stage that `0.21` made possible and the text then failed: acks unwrap
+the way offsets do, so a sequenced stream past 2 GiB with a pure-ACK peer checks;
+a sequence-anchored transport output may coalesce across an input seam; and a
+`net:` content-type scheme names one network packet. No body field and no option.
+Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
+
+### Changed
+
+- **Acks unwrap into the peer's offset space, so a sequenced stream past 2 GiB
+  with a pure-ACK peer checks**
+  ([#151](https://github.com/adamkjonsson/zipline/issues/151)). Merge step 2
+  compared an `ack` with peer record ends by serial arithmetic. The
+  justification was that the two are *within 2³¹ of each other — vastly more
+  than any in-flight window*, which is false. The window bounds a segment and
+  the ack sent back for it, not an ack and a record stored later. A server
+  whose only stored record is its SYN-ACK keeps `ack = isn + 1` for the whole
+  session. Every client record ending 2³¹ or more past that then reads as
+  *below* it, and the edge `client@2GiB → SYN-ACK` refused a correct stored
+  order. This is `0.21`'s #146 on the other axis, and `python-zipline-wire`
+  hit it once it removed the #146 workaround.
+  - **The rule now.** A record's end is its unwrapped offset plus
+    `payload_len`. An ack's position is unwrapped along the *acker's* records:
+    the previous ack's position plus the signed serial delta, with the first
+    ack measured from the peer's origin. Step 2 compares plain integers.
+  - **Step from the previous ack.** Stored order is `seq_start` order, and acks
+    can retreat in it. For ordering, a running maximum of positions gives the
+    same result, because any edge it adds is implied through the participant's
+    own earlier record ([#155](https://github.com/adamkjonsson/zipline/issues/155)).
+  - **Nothing changes for existing files.** No byte changes, and no answer
+    where consecutive acks are within 2³¹.
+  - **The bound, with no keyword.** A forward step of 2³¹ or more reads as a
+    retreat and only loses edges. A backward step that wide needs a
+    retransmission delayed past 2 GiB of peer data. It would invent edges, so
+    the writer omits that retransmission's `ack`. *Caveats* states both.
+  - **Positions are signed, and an unplaceable record is still an `R`**
+    ([#157](https://github.com/adamkjonsson/zipline/issues/157)). A mid-stream
+    capture's first ack can lie below the peer's first captured byte. Its
+    position is then negative and no edge reaches it. An unplaceable record has
+    no end, so no edge runs *from* it, but its `ack` still places it.
+  - **Vectors and retired spellings.** `sequenced-past-2gib-pure-ack` is the
+    suite's first vector about acks, and `sequenced-ack-below-origin` tests the
+    signed reading. Four retired spellings reproduce against `v0.21`.
+- **`tunnel`'s packets are real IPv4 + TCP, typed `net:ip`, and its offsets
+  move** ([#153](https://github.com/adamkjonsson/zipline/issues/153),
+  [#154](https://github.com/adamkjonsson/zipline/issues/154)). The three
+  `packets.zpf` records said `dec:ip-packet`, over filler bytes. Each is now a
+  whole IPv4 packet carrying one TCP segment, with PSH|ACK and true checksums.
+  It carries the ports and sequence numbers `inner.zpf` builds its two flows
+  from, so a sessionizer can rebuild that file from this one.
+  - **Offsets.** The packets grow by their TCP headers, from `[0,60) [60,100)
+    [100,150)` to `[0,80) [80,140) [140,210)`. `inner.zpf`'s spans and its
+    `input_extents` (150 → 210) follow, in the worked example as in the
+    fixture.
+  - **`inner.zpf`'s records gain `ack` and `psh`,** because the segments now
+    say both.
+  - **What does not move.** `outer.zpf`, `inner.zpf`'s own offsets and
+    `http.zpf`'s spans are unchanged. The digests ripple through.
+  - **Checked independently.** Every `net:` payload in the suite was parsed
+    with packeteer, and each one round-trips byte for byte, checksums
+    included.
+  - **`check_tunnel` derives `packets.zpf`'s extent** from its records instead
+    of writing down 150. The old number kept passing after the packets grew,
+    and the derived one was seen to fail on the stale fixture.
+
+### Clarified
+
+- **A sequence-anchored transport output may cross its input's seams**
+  ([#152](https://github.com/adamkjonsson/zipline/issues/152)). The duty to
+  carry an input break offered two recourses, a Discontinuity or a `units`
+  output, and the transport layer may use neither. So, read literally, a
+  reassembler over a packet stream could never coalesce two packets. Over
+  `kober`'s WireGuard output, a unit sequence, every TCP segment had to stay
+  its own record.
+  - **The permission.** A transport-layer output whose records carry
+    `seq_start` **MAY** emit a record whose `spans` cross input units or an
+    input Discontinuity. A break there is a range no record covers and cannot
+    be lost, which is the document's own reason for barring the block. The
+    stage answers for its sequence numbers as any reassembler does.
+  - **Scope.** It covers a declared break as well as a `units` seam, because
+    under fan-out the packet lost between two of a flow's segments may be
+    another flow's. A transport output without sequence numbers keeps both
+    duties, and *no third case* now says it holds at the decoded layer.
+  - **Why Clarified.** A file that declined every crossing stays conformant.
+  - **Text and guards.** The worked example's *crossing is left undone* bullet
+    is rewritten, and `tunnel` is unchanged. The MAY has its
+    `NORMATIVE_ADDITIONS` entry (MAY 54 → 55). `sessionized-across-units`
+    has one record with two spans crossing two declared breaks.
+
+### Added
+
+- **`net:`, a fourth `content_type` scheme**
+  ([#153](https://github.com/adamkjonsson/zipline/issues/153)). A
+  packet-preserving stage was told to type its records with a `dec:` token,
+  which is private to its decoder's name. A generic sessionizer could
+  recognise packets only by a convention the format declined to make.
+  - **Two values.** `net:` is closed and spec-defined like `prim:`, with
+    `net:ip` and `net:ethernet`. Each has the meaning of the pcap link type
+    whose per-packet unit it names (`LINKTYPE_RAW`, `LINKTYPE_ETHERNET`), so
+    the format writes no packet grammar of its own. There is no
+    `ipv4`/`ipv6`, because the version nibble says which.
+  - **Readers.** An unknown `net:` token is opaque, as an unknown scheme is,
+    so a later link type is safe to skip. It binds no length and adds no
+    keyword.
+  - **No FCS.** `net:ethernet` runs from the destination address to the end of
+    the payload, with no preamble, SFD or frame check sequence. That is stated
+    in the row, because `LINKTYPE_ETHERNET` admits both forms
+    ([#156](https://github.com/adamkjonsson/zipline/issues/156)).
+  - **Text and guards.** The schemes are listed at three sites (§Typing, the
+    registry row, the `prim:` paragraph), which are now an `ENUMERATIONS`
+    set. `decap-ethernet` carries the second value: a VXLAN decapsulation
+    stage emitting Ethernet II frames whose IPv4 and UDP headers are real,
+    checksums included (#154). It is the suite's one non-TCP packet. Two retired spellings reproduce
+    against `v0.21`.
+- **`check.py` compares the File Header table's `version_minor` row with the
+  stamp.** It said *`18` for this document* through `0.19`, `0.20` and `0.21`.
+  This is the second hand-kept copy of the version found stale, after `0.21`'s
+  worked-example bytes. **66 vectors, 35 options, 38 rules.**
+
+---
+
 ## [0.21] — 2026-09-18
 
 **The design release.** One rule the offset space was missing — offsets unwrap

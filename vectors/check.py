@@ -44,6 +44,7 @@ What it does verify:
 Usage:  python3 check.py
 """
 
+import base64
 import json
 import os
 import re
@@ -68,7 +69,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 21
+MAJOR, MINOR = 0, 22
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -381,6 +382,20 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "the reader's treatment is the advisory one a transport-layer label "
         "gets -- a Changed line, advisory strength",
     ),
+    # 0.22 (#152). The carry duty's two recourses -- a Discontinuity, or a
+    # units participant -- are both barred at the transport layer, so read
+    # literally a reassembler over a packet stream could never coalesce two
+    # packets. Its sequence numbers already carry any break as a hole, which is
+    # the reason the document gives for barring the block there.
+    (
+        r"\*\*MAY\*\* emit\s*a record whose `spans` cross input units, or an input Discontinuity",
+        {"MAY": 1},
+        "the duty exists so a break seen at one stage is not lost at the next, and "
+        "at a sequence-anchored transport output it cannot be: a missing range is "
+        "a range no record covers. Without the permission the duty's letter "
+        "forbade what its purpose allowed -- a Clarified line, since a file that "
+        "declined every crossing stays conformant",
+    ),
 )
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
@@ -563,6 +578,43 @@ RULES = {
         "a hole of 2**31 or more between consecutive records ends the session; "
         "the next on the same key, reason capture-gap, carries the conversation on",
         "session-split-capture-gap",
+    ),
+    # 0.22 (#151). The same premise on the ack axis: an ack and a peer record's
+    # end are not within 2**31 of each other in general, so both unwrap into
+    # the peer's offset space before step 2 compares them. check.py draws no
+    # edges, so the vector is for implementations.
+    "acks-unwrap": (
+        "an ack is a position in the peer's offset space, unwrapped along the "
+        "acker's records by signed delta from the previous ack; a peer that only "
+        "acks keeps its one ack at the origin, below every record end past 2 GiB",
+        "sequenced-past-2gib-pure-ack",
+    ),
+    # 0.22 (#157). The position is signed. A mid-stream first ack can lie
+    # below the peer's first captured byte, and an implementer storing it in
+    # an offset's type draws an edge from every peer record.
+    "ack-position-signed": (
+        "an ack position is a signed integer; one below 0 acknowledges no "
+        "captured peer byte and no edge reaches it",
+        "sequenced-ack-below-origin",
+    ),
+    # 0.22 (#152). The permission the carry duty's letter withheld. No checker
+    # can see a wrong coalesce -- the sequence numbers are the producer's
+    # assertion -- so the vector shows the shape and fails a reader that
+    # refuses it.
+    "transport-crosses-by-seq": (
+        "a transport-layer output whose records carry seq_start MAY emit a record "
+        "whose spans cross input units or an input Discontinuity; its offsets "
+        "carry any break as a hole",
+        "sessionized-across-units",
+    ),
+    # 0.22 (#153). The scheme is a vocabulary, and its values are covered only
+    # by vectors naming them: net:ip rides on tunnel's decrypt stage, and
+    # net:ethernet has this one, a decapsulation stage emitting frames.
+    "net-types-packets": (
+        "a packet-preserving stage types its records with a net: token -- net:ip "
+        "for an IP packet, net:ethernet for an Ethernet frame -- the unit a "
+        "capture of that link type stores per packet",
+        "decap-ethernet",
     ),
     # 0.21 (#80, #106). The adjacency body field. Like output_layer it is not
     # an option, so the registry parse cannot see it; its two values and the
@@ -866,6 +918,55 @@ RETIRED_CLAIMS = {
         "plus the signed serial delta of their seq_starts, the origin being the "
         "first record's predecessor, so the floor is decidable at any stream length",
     ),
+    # 0.22 (#151). The guarantee justified comparing an ack with a record end
+    # serially on the grounds that the two are always within an in-flight
+    # window of each other. They are not: a peer that only acks leaves one ack
+    # in the file for the whole session, and the record ends run past it.
+    "ack-compares-directly": (
+        (
+            r"vastly more than any in-flight window",
+            r"so it compares directly against the peer record's computed end",
+            r"whose end \(seq_start \+ payload_len, mod 2\^32\) <= a",
+            r"All seq comparisons below are serial-number",
+        ),
+        "0.22",
+        151,
+        "an ack and a record end are positions in the peer's offset space, both "
+        "unwrapped -- the end along the peer's records, the ack along the acker's "
+        "-- and compared as plain integers; serial arithmetic compares only "
+        "consecutive values of one field",
+    ),
+    # 0.22 (#152). The worked example said a reassembler that could not express
+    # its input's break declined the crossing, and showed it doing so. A
+    # sequence-anchored one can express it, as a hole, so the bullet showed a
+    # restriction that was never needed.
+    "transport-declines-the-crossing": (
+        (
+            r"The crossing is left undone",
+            r"it declines the crossing, which is what this is",
+        ),
+        "0.22",
+        152,
+        "a transport-layer output whose records carry seq_start carries a break "
+        "as a hole in its sequence numbers, and MAY emit a record crossing its "
+        "input's seams; leaving a crossing undone is what a stage owes only "
+        "where it cannot express the break",
+    ),
+    # 0.22 (#153). The typing section counted three schemes and told a
+    # packet-preserving stage to use the one whose namespace is private -- so
+    # the one type a generic sessionizer most needs to recognise was the one
+    # it could only match by convention.
+    "packets-typed-by-dec-token": (
+        (
+            r"string with three schemes",
+            r"type its records, and with a `dec:` token",
+        ),
+        "0.22",
+        153,
+        "content_type has four schemes; a packet-preserving stage types its records "
+        "net:ip or net:ethernet, closed and spec-defined, so a consumer recognises "
+        "a packet without knowing the producer's decoder name",
+    ),
     # 0.21 (#80, #106). The adjacency body field is the third load-bearing enum,
     # and the wholesale form of the reordering stage's duty. Two counts and two
     # sentences stating the per-seam block as the only form.
@@ -961,6 +1062,20 @@ ENUMERATIONS = {
             "whether or not it has a decoder",
         ),
     ),
+    # 0.22 (#153). The content_type schemes, listed at three sites, and one of
+    # them -- the prim: paragraph's "mime: and dec: carry everything else" --
+    # implicit enough that a fourth scheme would have left it quietly wrong.
+    "content_type schemes": (
+        ("mime:", "prim:", "net:", "dec:"),
+        (
+            # Typing a decoded record -- where the set is introduced
+            "string with four schemes",
+            # the option registry row
+            "| `0x0091` | content_type",
+            # Enums -- the prim: vocabulary
+            "carry everything else",
+        ),
+    ),
     # 0.21 (#80). The load-bearing enums, counted in two places since 0.15 and
     # stale in both when the third arrived -- "Two enums are load-bearing" and
     # "the two load-bearing enums" each said two through a release that added
@@ -997,6 +1112,14 @@ def check_enumerations() -> list[str]:
     for label, (members, locators) in sorted(ENUMERATIONS.items()):
         for locator in locators:
             found = [u for u in units if locator in u]
+            # A table row is a unit of its own AND part of its table's
+            # paragraph, so a locator inside a row always matches twice. The
+            # row -- the match the other contains -- is the site; 0.22's
+            # registry row was the first one anchored.
+            if len(found) == 2:
+                inner = min(found, key=len)
+                if all(inner in u for u in found):
+                    found = [inner]
             if len(found) != 1:
                 out.append(
                     f"enumeration '{label}': locator {locator!r} matches "
@@ -1338,8 +1461,22 @@ def check_worked_example() -> list[str]:
             f"worked example: {len(spec_lines)} byte lines in the specification, "
             f"{len(hex_lines)} in raw-minimal.hex"
         )
+    # 0.22's stamp found the second hand-kept copy: the File Header table's
+    # version_minor row said "`18` for this document" through 0.19, 0.20 and
+    # 0.21, one table away from the example above and as invisible to a stamp.
+    row = re.search(r"^\| `version_minor` \| u16\s*\| `(\d+)` for this document", text, re.M)
+    if not row:
+        out.append("File Header table: the version_minor row was not found")
+    elif int(row.group(1)) != MINOR:
+        out.append(
+            f"File Header table: version_minor row says {row.group(1)} for this "
+            f"document, the tree stamps {MINOR}"
+        )
     if not out:
-        print(f"  worked example: {len(spec_lines)} byte lines, identical to raw-minimal.hex")
+        print(
+            f"  worked example: {len(spec_lines)} byte lines, identical to raw-minimal.hex; "
+            f"File Header row says {MINOR}"
+        )
     return out
 
 
@@ -1728,8 +1865,30 @@ def check_tunnel() -> list[str]:
     )
     # outer -> packets: the whole capture stream, framing included.
     out += covers("tunnel/packets", fixture_lines(d, "packets"), 1, 0, 320)
-    # packets -> inner: the union across BOTH output sessions, not either alone.
-    out += covers("tunnel/inner", fixture_lines(d, "inner"), 5, 0, 150)
+    # packets -> inner: the union across BOTH output sessions, not either alone,
+    # over packets.zpf's own extent -- the concatenation of its payloads plus
+    # declared widths, derived here rather than written down. Until 0.22 this
+    # said 150, and kept saying it when #154 grew the packets to 210 bytes:
+    # coverage of [0,150) still held, and nothing compared it with the input.
+    packets = fixture_lines(d, "packets")
+    packets_extent = sum(
+        len(base64.b64decode(o["payload"]))
+        for o in packets
+        if o.get("type") == "record" and (o["session_id"], o["sender_pid"]) == (5, 0)
+    ) + sum(
+        o.get("width", 0)
+        for o in packets
+        if o.get("type") == "discontinuity" and (o["session_id"], o["pid"]) == (5, 0)
+    )
+    inner = fixture_lines(d, "inner")
+    out += covers("tunnel/inner", inner, 5, 0, packets_extent)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if (e["session_id"], e["pid"]) == (5, 0) and e["extent"] != packets_extent:
+                out.append(
+                    f"tunnel: inner session {o['session_id']} declares packets' extent "
+                    f"{e['extent']}, but its records concatenate to {packets_extent}"
+                )
     # inner -> http: flow A only; session 11 is not an input to that hop.
     http = fixture_lines(d, "http")
     out += covers("tunnel/http", http, 10, 0, 110)
@@ -1753,7 +1912,8 @@ def check_tunnel() -> list[str]:
     if not out:
         print(
             f"  tunnel: 4 files, digests match, coverage complete "
-            f"(outer [0,320) -> packets [0,150) fan-out -> inner flow A [0,{derived}))"
+            f"(outer [0,320) -> packets [0,{packets_extent}) fan-out -> "
+            f"inner flow A [0,{derived}))"
         )
     return out
 
