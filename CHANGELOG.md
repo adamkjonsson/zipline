@@ -101,9 +101,14 @@ Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
     retreat and only loses edges. A backward step that wide needs a
     retransmission delayed past 2 GiB of peer data. It would invent edges, so
     the writer omits that retransmission's `ack`. *Caveats* states both.
-  - **Vector and retired spellings.** `sequenced-past-2gib-pure-ack` is the
-    suite's first vector about acks. Four retired spellings reproduce against
-    `v0.21`.
+  - **Positions are signed, and an unplaceable record is still an `R`**
+    ([#157](https://github.com/adamkjonsson/zipline/issues/157)). A mid-stream
+    capture's first ack can lie below the peer's first captured byte. Its
+    position is then negative and no edge reaches it. An unplaceable record has
+    no end, so no edge runs *from* it, but its `ack` still places it.
+  - **Vectors and retired spellings.** `sequenced-past-2gib-pure-ack` is the
+    suite's first vector about acks, and `sequenced-ack-below-origin` tests the
+    signed reading. Four retired spellings reproduce against `v0.21`.
 - **`tunnel`'s decrypt stage types its packets `net:ip`, and they are real IPv4
   packets** ([#153](https://github.com/adamkjonsson/zipline/issues/153)). The
   three records said `dec:ip-packet`, and their payloads were filler whose
@@ -160,7 +165,7 @@ Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
 - **`check.py` compares the File Header table's `version_minor` row with the
   stamp.** It said *`18` for this document* through `0.19`, `0.20` and `0.21`.
   This is the second hand-kept copy of the version found stale, after `0.21`'s
-  worked-example bytes. **65 vectors, 35 options, 37 rules.**
+  worked-example bytes. **66 vectors, 35 options, 38 rules.**
 
 ---
 

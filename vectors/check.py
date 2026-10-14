@@ -588,6 +588,14 @@ RULES = {
         "acks keeps its one ack at the origin, below every record end past 2 GiB",
         "sequenced-past-2gib-pure-ack",
     ),
+    # 0.22 (#157). The position is signed. A mid-stream first ack can lie
+    # below the peer's first captured byte, and an implementer storing it in
+    # an offset's type draws an edge from every peer record.
+    "ack-position-signed": (
+        "an ack position is a signed integer; one below 0 acknowledges no "
+        "captured peer byte and no edge reaches it",
+        "sequenced-ack-below-origin",
+    ),
     # 0.22 (#152). The permission the carry duty's letter withheld. No checker
     # can see a wrong coalesce -- the sequence numbers are the producer's
     # assertion -- so the vector shows the shape and fails a reader that

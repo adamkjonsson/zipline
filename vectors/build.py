@@ -4426,6 +4426,90 @@ vector(
     extents=[(7, 0, 3 * GIB + 8), (7, 1, 0)],
 )
 
+# 0.22 (#157). An ack position is signed. A mid-stream capture's first ack can
+# lie below the peer's first captured byte; stored in the type of an offset,
+# its position wraps to near 2**64 and draws an edge from every peer record.
+vector(
+    "sequenced-ack-below-origin",
+    "accept",
+    "A mid-stream capture, SEQUENCED, with no isn on either side, so each "
+    "participant's origin is its first captured byte: 1001 for the client, "
+    "5001 for the server. The server's response is stored FIRST and carries "
+    "ack 993 -- it acknowledges eight client bytes sent before the capture "
+    "began. That ack's position in the client's stream is 993 - 1001 = -8: a "
+    "signed integer, below 0, acknowledging no captured client byte, so no "
+    "edge reaches the response. The client's request, stored after it, acks "
+    "5013, the end of the response's twelve bytes, so the response precedes "
+    "the request, as stored. A reader that keeps ack positions in an "
+    "unsigned type -- the type of an offset -- wraps -8 to just under 2**64 "
+    "(or 2**32, taking the serial delta unsigned), finds the request's end "
+    "below it, draws request -> response, and refuses a correct order.",
+    "Causal ordering from TCP seq/ack -- ack positions are signed",
+    [
+        file_header(),
+        source(1, 0, [o_uri("midstream.pcap")]),
+        session(7, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+        # Acks eight client bytes the capture never saw: position -8.
+        record(7, 1, 1, 1000, b"HTTP/1.1 200", options=[o_seq_start(5001), o_ack(993)]),
+        record(7, 0, 1, 1100, b"GET /two", options=[o_seq_start(1001), o_ack(5013)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "midstream.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1000,
+            "payload": b64(b"HTTP/1.1 200"),
+            "seq_start": 5001,
+            "ack": 993,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "payload": b64(b"GET /two"),
+            "seq_start": 1001,
+            "ack": 5013,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order: the session is "
+    "SEQUENCED and the order is causal. The response's ack 993 is position -8 "
+    "of the client's stream, below the request's end at 8, so no edge runs "
+    "from the request to it. The request's ack 5013 is position 12 of the "
+    "server's stream, where the response ends, so the response precedes the "
+    "request, as stored. A reader that stores ack positions unsigned reads "
+    "-8 as a huge position, draws request -> response, and reports the "
+    "stored order as a causal violation. Rejecting, isolating, or refusing to "
+    "write the file is NOT conformant. Extents are 8 and 12: with no isn, "
+    "each stream starts at its first captured byte.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 12)],
+)
+
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
 # layer, so a reassembler over a unit sequence could never coalesce two
 # packets. Its sequence numbers carry any break as a hole, so now it may.

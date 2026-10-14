@@ -1741,6 +1741,44 @@
       ]
     },
     {
+      "name": "sequenced-ack-below-origin",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 304,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0052",
+        "0x0060",
+        "0x0070",
+        "0x0072"
+      ],
+      "summary": "A mid-stream capture, SEQUENCED, with no isn on either side, so each participant's origin is its first captured byte: 1001 for the client, 5001 for the server. The server's response is stored FIRST and carries ack 993 -- it acknowledges eight client bytes sent before the capture began. That ack's position in the client's stream is 993 - 1001 = -8: a signed integer, below 0, acknowledging no captured client byte, so no edge reaches the response. The client's request, stored after it, acks 5013, the end of the response's twelve bytes, so the response precedes the request, as stored. A reader that keeps ack positions in an unsigned type -- the type of an offset -- wraps -8 to just under 2**64 (or 2**32, taking the serial delta unsigned), finds the request's end below it, draws request -> response, and refuses a correct order.",
+      "spec_section": "Causal ordering from TCP seq/ack -- ack positions are signed",
+      "expect": "Accept, and consume the records in STORED order: the session is SEQUENCED and the order is causal. The response's ack 993 is position -8 of the client's stream, below the request's end at 8, so no edge runs from the request to it. The request's ack 5013 is position 12 of the server's stream, where the response ends, so the response precedes the request, as stored. A reader that stores ack positions unsigned reads -8 as a huge position, draws request -> response, and reports the stored order as a causal violation. Rejecting, isolating, or refusing to write the file is NOT conformant. Extents are 8 and 12: with no isn, each stream starts at its first captured byte.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 7,
+          "pid": 0,
+          "extent": 8
+        },
+        {
+          "session_id": 7,
+          "pid": 1,
+          "extent": 12
+        }
+      ]
+    },
+    {
       "name": "sessionized-across-units",
       "tier": "accept",
       "violations": 0,

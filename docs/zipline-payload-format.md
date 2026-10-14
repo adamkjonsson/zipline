@@ -359,7 +359,10 @@ space, where positions compare as plain integers at any stream length:
   stored order. Each ack's position is the previous ack's position plus the
   signed serial delta of the two values. The first ack's position is its signed
   delta from the peer's **origin**: `isn + 1`, or the peer's first captured
-  byte. Records that carry no `ack` are skipped.
+  byte. Records that carry no `ack` are skipped. A position is a **signed**
+  integer. In a mid-stream capture the first ack can lie below the peer's first
+  captured byte, because it acknowledges bytes sent before the capture began.
+  A position below 0 acknowledges no captured peer byte, so no edge reaches it.
 
 The step is taken from the **previous** ack, never from the largest so far.
 Stored order is `seq_start` order, not the order the segments were sent, so a
@@ -388,7 +391,8 @@ A record's **end** — one past its last byte, the value an `ack` is compared
 against — is not stored: it is the record's offset plus `payload_len`, which is
 `seq_start + payload_len` on the wire, unwrapped (see
 [The guarantee](#the-guarantee)). A zero-length pure-ACK record's end is simply
-its own offset. An unplaceable record has no end and draws no edge.
+its own offset. An unplaceable record has no end, so no edge runs **from** it;
+an `ack` it carries still places it after the peer bytes that ack covers.
 
 ### Merge algorithm
 
