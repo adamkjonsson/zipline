@@ -53,7 +53,14 @@ ignore = [
 # would say "Build the uri option" and bury the file's actual content, which is
 # the hand-transcribed vector descriptions further down. Everything with a body
 # worth explaining still carries one, and D101/D102 stay on.
-"vectors/build.py" = ["D103"]
+#
+# PLR0913 (too many arguments): `vector()` registers a vector, and each of its
+# keyword-only arguments -- `violations`, `advisory`, `extents`, `merged` -- is
+# a separate assertion the author is made to confront, required where it
+# applies. 0.23's `merged` took it to eleven. Bundling the assertions into one
+# object to satisfy a count would hide the very thing each argument exists to
+# make visible at the call site.
+"vectors/build.py" = ["D103", "PLR0913"]
 
 [lint.flake8-annotations]
 mypy-init-return = true # don't require return type annotation for __init__

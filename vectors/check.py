@@ -69,7 +69,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 22
+MAJOR, MINOR = 0, 23
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -597,6 +597,26 @@ RULES = {
         "captured peer byte and no edge reaches it",
         "sequenced-ack-below-origin",
     ),
+    # 0.23 (#160). An ack covers sequence numbers, and a pure ACK occupies
+    # none: it has no end and is never an edge's source. Through 0.22 it had
+    # one at its offset, and handshake, data, pure ACK made a cycle. The same
+    # vector carries the zero-length FIN, which ends one past its offset.
+    "pure-ack-has-no-end": (
+        "a record's end is one past the last sequence number it occupies: data "
+        "offset + payload_len, a zero-length SYN its offset, a zero-length FIN "
+        "offset + 1, and a pure ACK none -- no edge runs from it",
+        "sequenced-pure-ack-and-fin",
+    ),
+    # 0.23 (#161). The sequenced vector reaches the end rule only through the
+    # stored-order check, which fails only on an extra edge. Its unsequenced
+    # twin is merged: a dropped edge (a SYN given no end) reorders it under the
+    # skewed clock, and the old rule stalls it.
+    "merge-orders-by-end": (
+        "the merge draws edges only from records with an end and breaks ties by "
+        "(timestamp, participant_id); with the server's clock behind, each wrong "
+        "end reading gives a different merged order, or a stall",
+        "merge-pure-ack-and-fin",
+    ),
     # 0.22 (#152). The permission the carry duty's letter withheld. No checker
     # can see a wrong coalesce -- the sequence numbers are the producer's
     # assertion -- so the vector shows the shape and fails a reader that
@@ -951,6 +971,17 @@ RETIRED_CLAIMS = {
         "as a hole in its sequence numbers, and MAY emit a record crossing its "
         "input's seams; leaving a crossing undone is what a stage owes only "
         "where it cannot express the break",
+    ),
+    # 0.23 (#160). The sentence that stated the bug: it gave a record that
+    # occupies no sequence number an end, so an ack reaching its offset drew an
+    # edge from it -- backwards, to the peer data that ack acknowledged.
+    "pure-ack-end-at-offset": (
+        (r"A zero-length pure-ACK record's end is simply its own offset",),
+        "0.23",
+        160,
+        "a record's end is one past the last sequence number it occupies; a pure "
+        "ACK occupies none, so it has no end and no edge runs from it, though "
+        "its ack still orders it",
     ),
     # 0.22 (#153). The typing section counted three schemes and told a
     # packet-preserving stage to use the one whose namespace is private -- so
@@ -2084,6 +2115,51 @@ def check_extents(v: dict) -> list[str]:
     return out
 
 
+def check_merged(v: dict) -> list[str]:
+    """Check a vector's declared merged orders are shaped right, and present where owed.
+
+    `merged` is to the merge what `extents` is to the offset space (#162): a
+    merged order was a vector's whole lesson and lived only in prose, so a
+    harness could see a merge that stalled and nothing else -- a plausible
+    wrong order, or stored order returned unmerged, passed. Every single-file
+    accept entry with an UNSEQUENCED session in which two or more participants
+    send records declares that session's order, as 1-based positions among the
+    session's records in stored order. The values are the author's; this
+    checks only that each order is a permutation of the session's records that
+    keeps every participant's own order, and that exactly the owed sessions
+    are named. Computing the merge here would make check.py a second normative
+    authority.
+    """
+    name, tier = v["name"], v["tier"]
+    if "files" in v or tier != "accept":
+        return [f"{name}: declares merged off the single-file accept tier"] if "merged" in v else []
+    jl = fixture_lines(os.path.join(HERE, name), name)
+    sequenced = {o["session_id"] for o in jl if o.get("type") == "session" and o.get("sequenced")}
+    senders: dict[int, list[int]] = {}
+    for o in jl:
+        if o.get("type") == "record" and o["session_id"] not in sequenced:
+            senders.setdefault(o["session_id"], []).append(o["sender_pid"])
+    owed = {sid: pids for sid, pids in senders.items() if len(set(pids)) > 1}
+    given = {m["session_id"]: m["order"] for m in v.get("merged", [])}
+    if sorted(given) != sorted(owed):
+        return [f"{name}: merged names sessions {sorted(given)}, owes {sorted(owed)}"]
+    out = []
+    for sid, order in given.items():
+        pids = owed[sid]
+        if sorted(order) != list(range(1, len(pids) + 1)):
+            out.append(
+                f"{name}: session {sid} merged order {order} is not a permutation of its records"
+            )
+            continue
+        for pid in sorted(set(pids)):
+            mine = [i for i in order if pids[i - 1] == pid]
+            if mine != sorted(mine):
+                out.append(
+                    f"{name}: session {sid} merged order reorders participant {pid}'s records"
+                )
+    return out
+
+
 def check_jsonl(label: str, path: str, block_count: int) -> list[str]:
     """Check a projection parses and has one line per block."""
     jl = [x for x in read_text(path).splitlines() if x.strip()]
@@ -2176,6 +2252,7 @@ def main() -> int:
     for v in manifest["vectors"]:
         failures += check_violations(v)
         failures += check_extents(v)
+        failures += check_merged(v)
         failures += check_vector(v)
 
     failures += check_chain()
@@ -2199,6 +2276,11 @@ def main() -> int:
     print(
         f"  extents: {n_ext} accept vectors declare {streams} stream extents -- "
         f"shape checked, values are the author's"
+    )
+    n_mer = sum(1 for v in manifest["vectors"] if "merged" in v)
+    print(
+        f"  merged: {n_mer} accept vectors declare the merged order of every session "
+        f"a reader must merge -- shape checked, values are the author's"
     )
     print(f"\nall {len(manifest['vectors'])} vectors consistent")
     return 0

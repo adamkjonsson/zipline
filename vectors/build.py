@@ -43,7 +43,7 @@ def read_text(path: str) -> str:
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 22
+MAJOR, MINOR = 0, 23
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -756,6 +756,7 @@ def vector(
     violations: int,
     advisory: bool = False,
     extents: list[tuple[int, int, int]] | None = None,
+    merged: list[tuple[int, list[int]]] | None = None,
 ) -> None:
     """Register a vector.
 
@@ -789,6 +790,14 @@ def vector(
     is: each number is the author's reading of the specification, and a wrong
     one is caught by the first implementation that disagrees, which is the loop
     the suite lacked. Nothing here computes it.
+
+    `merged` is the same assertion for the merge (#162): on the accept tier,
+    every UNSEQUENCED session in which two or more participants send records has
+    a merged order a reader computes, and the vector states it as `(session_id,
+    order)`, the order being the session's records by 1-based stored position.
+    Required wherever that shape occurs, for the reason `extents` is. Checked
+    here for shape only -- a permutation of the session's records that keeps
+    each participant's own order -- and never computed: the merge is semantics.
     """
     if advisory and tier != "accept":
         raise ValueError(f"{name}: advisory is meaningless off the accept tier")
@@ -806,6 +815,7 @@ def vector(
             "violations": violations,
             "advisory": advisory,
             "extents": check_extents(name, tier, blocks, extents),
+            "merged": check_merged(name, tier, blocks, merged),
         }
     )
 
@@ -830,6 +840,53 @@ def check_extents(
             f"participants {sorted(declared)}"
         )
     return [{"session_id": sess, "pid": pid, "extent": ext} for sess, pid, ext in extents]
+
+
+def merge_sessions(blocks: list[Blk]) -> dict[int, list[int]]:
+    """Map each unsequenced session with two or more senders to its records' senders."""
+    sequenced = {
+        b.fields["session_id"]
+        for b in blocks
+        if b.btype == 0x10 and any(o.name == "flags" and o.value & 0x0001 for o in b.options)
+    }
+    senders: dict[int, list[int]] = {}
+    for b in blocks:
+        if b.btype == 0x20 and b.fields["session_id"] not in sequenced:
+            senders.setdefault(b.fields["session_id"], []).append(b.fields["sender_pid"])
+    return {sid: pids for sid, pids in senders.items() if len(set(pids)) > 1}
+
+
+def check_merged(
+    name: str, tier: str, blocks: list[Blk], merged: list[tuple[int, list[int]]] | None
+) -> list[dict] | None:
+    """Require `merged` wherever an accept vector has a session a reader must merge."""
+    need = merge_sessions(blocks) if tier == "accept" else {}
+    if not need:
+        if merged is not None:
+            raise ValueError(f"{name}: merged is declared, but no session here needs a merge")
+        return None
+    if merged is None:
+        raise TypeError(
+            f"{name}: sessions {sorted(need)} are unsequenced with several senders; "
+            f"declare their merged order"
+        )
+    if sorted(sid for sid, _ in merged) != sorted(need):
+        raise ValueError(
+            f"{name}: merged names {sorted(s for s, _ in merged)}, needs {sorted(need)}"
+        )
+    for sid, order in merged:
+        pids = need[sid]
+        if sorted(order) != list(range(1, len(pids) + 1)):
+            raise ValueError(
+                f"{name}: session {sid} order {order} is not a permutation of its records"
+            )
+        for pid in set(pids):
+            mine = [i for i in order if pids[i - 1] == pid]
+            if mine != sorted(mine):
+                raise ValueError(
+                    f"{name}: session {sid} order reorders participant {pid}'s records"
+                )
+    return [{"session_id": sid, "order": order} for sid, order in merged]
 
 
 # --- baseline -------------------------------------------------------------
@@ -998,6 +1055,7 @@ vector(
     ],
     violations=0,
     extents=[(7, 0, 3), (7, 1, 4)],
+    merged=[(7, [2, 1])],
 )
 
 vector(
@@ -2902,6 +2960,7 @@ vector(
     ],
     violations=0,
     extents=[(8, 0, 4), (8, 1, 2)],
+    merged=[(8, [2, 1, 3])],
 )
 
 vector(
@@ -3037,6 +3096,7 @@ vector(
     ],
     violations=0,
     extents=[(8, 0, 10), (8, 1, 8)],
+    merged=[(8, [2, 1])],
 )
 
 
@@ -3130,6 +3190,7 @@ vector(
     "would place the second record somewhere and report more than 6.",
     violations=0,
     extents=[(9, 0, 6), (9, 1, 5)],
+    merged=[(9, [1, 2, 3])],
 )
 
 # --- negative: the reject tier --------------------------------------------
@@ -3682,8 +3743,9 @@ vector(
         session(7, [o_proto("tcp")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
         participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
-        # The client's SYN, at the origin. Zero length, so its computed end
-        # equals its seq_start and every causal edge works unchanged.
+        # The client's SYN, at the origin. It occupies isn, one below, so its
+        # end equals its seq_start -- not because it is zero length: since 0.23
+        # a zero-length record with no syn or fin has no end at all.
         record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
         # The responder's SYN-ACK: its own zero-length syn record, acking the
         # client's SYN, whose end is 1001.
@@ -3779,6 +3841,7 @@ vector(
     "needs no sort: step 1 takes each participant's records in file order.",
     violations=0,
     extents=[(7, 0, 18), (7, 1, 19)],
+    merged=[(7, [1, 2, 3, 4])],
 )
 
 
@@ -4508,6 +4571,300 @@ vector(
     "each stream starts at its first captured byte.",
     violations=0,
     extents=[(7, 0, 8), (7, 1, 12)],
+)
+
+# 0.23 (#160). A record's end is one past the last sequence number it
+# occupies. A pure ACK occupies none, so no edge runs from it; through 0.22 it
+# had an end at its offset, and the ordinary handshake, data, pure-ACK trace
+# made a cycle. The close is added for the zero-length FIN, which occupies the
+# number at its offset and so ends one past it.
+vector(
+    "sequenced-pure-ack-and-fin",
+    "accept",
+    "A SEQUENCED session with a recorded handshake, eight bytes of data, the "
+    "server's pure ACK of them, the client's zero-length FIN, and the server's "
+    "pure ACK of the FIN -- pure ACKs stored as zero-length records, as "
+    "Caveats advises. Ends: the SYN 0 (it occupies isn, below the origin), "
+    "the SYN-ACK 0, the data 8, the FIN 9 (it occupies the number at its "
+    "offset 8), and the two pure ACKs NONE, since they occupy no sequence "
+    "number. The edges are SYN -> SYN-ACK and both pure ACKs, SYN-ACK -> data "
+    "and FIN, data -> both pure ACKs, and FIN -> the last pure ACK; the stored "
+    "order respects all of them. Through 0.22 a pure ACK's end was its own "
+    "offset, 0, which the data's ack of 5001 (position 0) covers: the false "
+    "edge pure-ACK -> data against the real data -> pure-ACK, a cycle. The "
+    "sequenced check refused the true order and an unsequenced merge "
+    "stalled. Not caught before because no producer stored pure ACKs and "
+    "every zero-length record in the suite was a SYN, whose edge is real. "
+    "Being SEQUENCED, this file can only catch a reading that ADDS an edge; "
+    "merge-pure-ack-and-fin is its unsequenced twin, for the readings that "
+    "drop one and for a merge that stalls.",
+    "Causal ordering from TCP seq/ack -- a record's end is one past the last sequence "
+    "number it occupies",
+    [
+        file_header(),
+        source(1, 0, [o_uri("close.pcap")]),
+        session(7, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
+        record(7, 1, 1, 1100, b"", flags=0x0008, options=[o_seq_start(5001), o_ack(1001)]),
+        record(
+            7, 0, 1, 1200, b"HELO 1\r\n", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]
+        ),
+        # A pure ACK: no end. Through 0.22 its end was 0, and the data's ack
+        # covering 0 made the edge pure-ACK -> data, a cycle with data -> here.
+        record(7, 1, 1, 1300, b"", options=[o_seq_start(5001), o_ack(1009)]),
+        # A zero-length FIN at offset 8: it occupies 1009, so its end is 9 and the
+        # ack of 1009 just before it (position 8) does NOT cover it.
+        record(7, 0, 1, 1400, b"", flags=0x0002, options=[o_seq_start(1009), o_ack(5001)]),
+        record(7, 1, 1, 1500, b"", options=[o_seq_start(5001), o_ack(1010)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "close.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+            "tcp_role": "responder",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1100,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "flags": ["psh"],
+            "payload": b64(b"HELO 1\r\n"),
+            "seq_start": 1001,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1300,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1009,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1400,
+            "flags": ["fin"],
+            "payload": "",
+            "seq_start": 1009,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1500,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1010,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order: the session is "
+    "SEQUENCED and the order is causal. Client ends: SYN 0, data 8, FIN 9. "
+    "Server ends: SYN-ACK 0, and none for the two pure ACKs. Server ack "
+    "positions 0, 8 and 9; client ack positions 0 (data and FIN). Every edge "
+    "runs forward in stored order. A reader that gives a pure ACK an end at "
+    "its offset draws pure-ACK -> data (0 <= 0) against data -> pure-ACK "
+    "(8 <= 8), a cycle: it refuses the order, or, merging, stalls. A reader "
+    "that ends the zero-length FIN at its offset (8) draws FIN -> the first "
+    "pure ACK (8 <= 8), which is stored before the FIN, and refuses the order: "
+    "that pure ACK acknowledged the data, not the FIN. Rejecting, isolating, "
+    "or refusing to write the file is NOT conformant. Extents are 8 for the "
+    "client -- the FIN occupies a sequence number but no byte -- and 0 for "
+    "the server.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 0)],
+)
+
+# 0.23 (#161). The sequenced vector above is consumed in stored order, so only
+# the stored-order check reaches the end rule, and that check fails only on an
+# EXTRA edge. A reading that drops one passes it, and so does a merge that
+# stalls only when it merges. This twin is unsequenced, with the server's clock
+# 50 ticks behind, so the timestamp tie-break pulls a server record too early
+# wherever an edge is missing: each wrong reading gives a different order.
+vector(
+    "merge-pure-ack-and-fin",
+    "accept",
+    "sequenced-pure-ack-and-fin's six records, NOT sequenced, with the "
+    "server's capture clock 50 ticks behind the client's, and stored server "
+    "first (each participant's own order kept), so stored order is not the "
+    "answer. A reader merges: edges from acks, each participant's records in "
+    "stored order, ties broken by (timestamp, participant_id). Under the 0.23 "
+    "end rule the edges are SYN -> SYN-ACK and both pure ACKs, SYN-ACK -> data "
+    "and FIN, data -> both pure ACKs, FIN -> the last pure ACK, and the merged "
+    "order is client SYN, SYN-ACK, data, pure ACK, FIN, pure ACK -- the causal "
+    "order, though the skew would put every server record first. Each wrong "
+    "reading gives its own answer: a SYN given no end loses SYN -> SYN-ACK and "
+    "the SYN-ACK (ts 950) overtakes the SYN it acknowledges; a pure ACK ended "
+    "at its offset makes the cycle and the merge stalls after the SYN-ACK; a "
+    "FIN ended at its offset puts the FIN before the pure ACK that "
+    "acknowledged only the data.",
+    "Causal ordering from TCP seq/ack -- the merge, over records with and without an end",
+    [
+        file_header(),
+        source(1, 0, [o_uri("skewed.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
+        # Server first, its clock 50 behind. Stored order is not the merged one.
+        record(7, 1, 1, 950, b"", flags=0x0008, options=[o_seq_start(5001), o_ack(1001)]),
+        record(7, 1, 1, 1150, b"", options=[o_seq_start(5001), o_ack(1009)]),
+        record(7, 1, 1, 1350, b"", options=[o_seq_start(5001), o_ack(1010)]),
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
+        record(
+            7, 0, 1, 1200, b"HELO 1\r\n", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]
+        ),
+        record(7, 0, 1, 1400, b"", flags=0x0002, options=[o_seq_start(1009), o_ack(5001)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "skewed.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+            "tcp_role": "responder",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 950,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1150,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1009,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1350,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1010,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "flags": ["psh"],
+            "payload": b64(b"HELO 1\r\n"),
+            "seq_start": 1001,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1400,
+            "flags": ["fin"],
+            "payload": "",
+            "seq_start": 1009,
+            "ack": 5001,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. Merged, the order is: client SYN (ts 1000), server SYN-ACK "
+    "(950), client data (1200), server pure ACK (1150), client FIN (1400), "
+    "server pure ACK (1350) -- in stored terms, records 4, 1, 5, 2, 6, 3. "
+    "Every adjacent inversion of timestamp is an edge doing its work. A "
+    "reader that gives a SYN no end puts the SYN-ACK first; one that gives a "
+    "pure ACK an end at its offset stalls after the SYN-ACK, the data and the "
+    "first pure ACK each waiting on the other; one that ends the zero-length "
+    "FIN at its offset puts the FIN before the first pure ACK. A reader that "
+    "returns stored order has not merged. Rejecting or isolating is NOT "
+    "conformant. Extents are 8 for the client and 0 for the server.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 0)],
+    merged=[(7, [4, 1, 5, 2, 6, 3])],
 )
 
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
@@ -7202,6 +7559,7 @@ def main() -> int:
                 "expect": v["expect"] or ("Accept. The .jsonl file is the expected projection."),
                 "has_jsonl": v["jsonl"] is not None,
                 **({"extents": v["extents"]} if v["extents"] is not None else {}),
+                **({"merged": v["merged"]} if v["merged"] is not None else {}),
             }
         )
 

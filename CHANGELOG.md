@@ -66,6 +66,62 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.23] — 2026-10-14
+
+**The pure-ACK release.** One defect, shipped alone: merge step 2 gave a
+zero-length record an end, so a stored pure ACK drew edges backwards and the
+ordinary handshake, data, pure-ACK trace made a cycle. A record's end is now one
+past the last sequence number it occupies. No byte of any file changes, and no
+keyword or option is added. Scope and reasoning in
+[docs/RELEASE-0.23-PLAN.md](docs/RELEASE-0.23-PLAN.md).
+
+### Changed
+
+- **A record's end is one past the last sequence number it occupies, so a pure
+  ACK is never an edge's source**
+  ([#160](https://github.com/adamkjonsson/zipline/issues/160)). Merge step 2
+  gave every record an end, and said in as many words that *a zero-length
+  pure-ACK record's end is simply its own offset*. An ack reaching that offset
+  then drew an edge from the pure ACK, backwards to the peer data the ack
+  acknowledged. The ordinary trace (handshake, data, stored pure ACK) made a
+  cycle: a correct order failed the sequenced check, and an unsequenced merge
+  stalled. `python-zipline` found it porting to `0.22`, and `0.21` behaves the
+  same.
+  - **The rule now.** An ack acknowledges sequence numbers, so a record's end
+    is one past the last one it occupies. A data record ends at offset +
+    `payload_len`, unchanged even with FIN, because an ack covering the data
+    proves the segment was sent. A zero-length SYN ends at its offset (it
+    occupies `isn`, one below). A zero-length FIN ends at offset + 1. A pure
+    ACK or bare RST has **no end**, so no edge runs from it.
+  - **Edges into a record are unchanged.** A pure ACK's `ack` still orders it,
+    and *Caveats*' advice to store pure ACKs stands, now saying which edges
+    they keep.
+  - **No byte of any file changes, and no keyword.** A file whose zero-length
+    records are all SYNs reads the same, which covers every vector before this
+    one and every file an implementation has written. Nothing had met the bug
+    because no producer stored pure ACKs.
+  - **Two vectors and a retired spelling.** `sequenced-pure-ack-and-fin`
+    extends the issue's trace with a close, and each reading that adds an edge
+    fails on its own record. Its unsequenced twin, `merge-pure-ack-and-fin`,
+    has a skewed server clock. It catches what a sequenced file cannot: a SYN
+    given no end (a dropped edge reorders it) and a merge that stalls
+    ([#161](https://github.com/adamkjonsson/zipline/issues/161)). The retired
+    sentence reproduces against `v0.22`. **68 vectors, 35 options, 40 rules.**
+- **The manifest states merged orders** ([#162](https://github.com/adamkjonsson/zipline/issues/162)).
+  Every single-file accept vector with an unsequenced session in which two or
+  more participants send records now declares `merged`: that session's order,
+  as 1-based stored positions. Six vectors owe it. It does for the merge what
+  `0.20`'s `extents` did for the offset space. A harness can now catch a
+  plausible wrong order, or stored order returned unmerged, and not only a
+  merge that stalls. `build.py` requires the key wherever the shape occurs, and
+  `check.py` checks its shape (exactly the owed sessions, each order a
+  permutation that keeps every participant's own order). The values are the
+  author's, as with `extents`. Each was computed with a reference merge
+  outside the suite and agrees with its vector's prose. Suite only: no
+  specification text changes.
+
+---
+
 ## [0.22] — 2026-10-14
 
 **The downstream release.** Three issues filed from `python-zipline-wire`, each a

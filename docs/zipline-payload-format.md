@@ -1,6 +1,6 @@
-# Zipline Payload Format (v0.22)
+# Zipline Payload Format (v0.23)
 
-> Status: **version 0.22** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.23** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
@@ -16,8 +16,8 @@
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` through `0.22`
-> followed. Note `0.22` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.23`
+> followed. Note `0.23` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -290,7 +290,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.22","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -352,9 +352,10 @@ record end can be arbitrarily far apart in the stream, so they are not, and
 neither is compared raw. Both are first **unwrapped** into the peer's offset
 space, where positions compare as plain integers at any stream length:
 
-- A record's **end** is its offset plus its `payload_len`. Offsets unwrap along
-  stored order, as
-  [Referencing](#referencing-the-source-by-stream-offset) defines.
+- A record's **end** is a position in its own stream: for a data record, its
+  offset plus its `payload_len`. A zero-length record may have one or not
+  ([Fields used](#fields-used) defines which). Offsets unwrap along stored
+  order, as [Referencing](#referencing-the-source-by-stream-offset) defines.
 - An `ack`'s **position** unwraps the same way, along the *acker's* records in
   stored order. Each ack's position is the previous ack's position plus the
   signed serial delta of the two values. The first ack's position is its signed
@@ -388,12 +389,25 @@ Per **Record** (TCP):
 | `seq_start`  | absolute sequence number of the sender's first payload byte    |
 | `ack`        | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 
-A record's **end** — one past its last byte, the value an `ack` is compared
-against — is not stored: it is the record's offset plus `payload_len`, which is
-`seq_start + payload_len` on the wire, unwrapped (see
-[The guarantee](#the-guarantee)). A zero-length pure-ACK record's end is simply
-its own offset. An unplaceable record has no end, so no edge runs **from** it;
-an `ack` it carries still places it after the peer bytes that ack covers.
+A record's **end** is the value an `ack` is compared against. It is not stored.
+An ack acknowledges **sequence numbers**: each byte of data, plus the one number
+that a SYN and a FIN each consume. So a record's end is one past the last
+sequence number it occupies, unwrapped into its stream's offsets (see
+[The guarantee](#the-guarantee)):
+
+| Record | End |
+|---|---|
+| carries data (`payload_len > 0`) | its offset + `payload_len`, which is `seq_start + payload_len` on the wire, whether or not it also carries `fin` |
+| zero-length, `syn` | its offset. The SYN occupies `isn`, one below the origin where a [handshake record](#record-0x20) is stored, so an ack of `isn + 1` covers it |
+| zero-length, `fin` | its offset + 1. The FIN occupies the sequence number at its offset |
+| zero-length, neither (a pure ACK, a bare RST) | **none**. It occupies no sequence number |
+
+A data record carrying `fin` keeps the end of its data, because an ack that
+covers the data proves the segment was sent, whether or not the FIN has been
+acknowledged yet. A record with no end is never the source of an edge: an ack
+reaching its offset says nothing about it. An unplaceable record has no end
+either. Either kind is still ordered by an `ack` it carries, which places it
+after the peer bytes that ack covers.
 
 ### Merge algorithm
 
@@ -409,8 +423,10 @@ OUTPUT: one interleaved, causally-consistent sequence
 2. Build edges between participants from acks:
      for each record R from participant P with ack position a:
          add edge  Q_record -> R   for every record Q_record from the
-         *peer* whose end (offset + payload_len) <= a
-     (R's sender had already received those peer bytes, so they precede R.)
+         *peer* that has an end (see Fields used) and whose end <= a
+     (R's sender had already received what Q_record sent, so Q_record
+     precedes R. A record that occupies no sequence number sent nothing
+     an ack could cover, and has no end.)
 
 3. Topologically sort the resulting DAG.
 
@@ -491,7 +507,9 @@ never changing the algorithm.
   tie-breaker.
 - Pure ACK segments (no payload) carry ordering information but no bytes; store
   them as zero-length records (or fold their `ack` into the next data record)
-  so their happens-before edges aren't lost.
+  so their happens-before edges aren't lost. Those are the edges **into** them:
+  a pure ACK's `ack` orders it after the peer bytes it covers. It occupies no
+  sequence number, so it has no end and no edge runs **from** it.
 - Unwrapping an ack needs each step within 2³¹, the bound the offset walk has.
   A **forward** step wider than that can occur when a peer was silent across
   2 GiB of data and none of its pure ACKs were stored, or when the first ack
@@ -521,7 +539,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.22","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -610,7 +628,7 @@ identity span, naming the input's ids, is what ties it back — and stores the t
 records in causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.22","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -1118,7 +1136,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.22","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1186,7 +1204,7 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.22","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
@@ -1328,7 +1346,7 @@ MUST be the first block in the file. Body:
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `0` for this document                                        |
-| `version_minor` | u16  | `22` for this document                                       |
+| `version_minor` | u16  | `23` for this document                                       |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -1342,7 +1360,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.22` is the twenty-second minor and is **greater** than `0.9`. A writer stamps
+number: `0.23` is the twenty-third minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -1834,8 +1852,10 @@ the resolutions `tick_hz` is meant for.
 
 **Handshake records.** A writer MAY record an observed TCP handshake as a
 zero-length record carrying the `syn` flag: `timestamp` is the SYN packet's
-capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin, so
-its computed end equals it and every causal edge and ordering rule works unchanged
+capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin. The
+SYN occupies `isn`, one below, so the record's end
+([Fields used](#fields-used)) equals its offset, 0, and every causal edge and
+ordering rule works unchanged
 (it precedes the data that starts at the same origin simply by being produced
 first — the tie the [ordering rule](#identifiers--ordering) admits, and the reason
 it says so). Recording the handshake is the writer's choice; where it does, this is the
@@ -3200,7 +3220,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  16 00                    version_minor = 22   (0.22, little-endian)
+000E  17 00                    version_minor = 23   (0.23, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────
