@@ -328,23 +328,24 @@ changed.
 
 ### Added in `0.22`
 
-The first is the suite's first vector about **acks**. `0.21` unwrapped offsets so a stream
+The first two are the suite's first vectors about **acks**. `0.21` unwrapped offsets so a stream
 could be placed past 2 GiB. The causal edge rule still compared an `ack` with peer
 record ends by serial arithmetic, which is defined only within 2³¹, and an ack
 stored once stays put while the record ends run on past it. Since `0.22` both are
 **positions in the peer's offset space**: the end is the unwrapped offset plus
 `payload_len`, and the ack is unwrapped along the acker's own records, by signed
-delta from the previous ack (#151). `check.py` draws no causal edges, so this
-vector tests implementations only.
+delta from the previous ack (#151). A position is signed, because a mid-stream
+first ack can lie below the peer's first captured byte (#157). `check.py` draws
+no causal edges, so these vectors test implementations only.
 
-The second is a reassembler over a **packet stream**. The duty to carry an input
+The third is a reassembler over a **packet stream**. The duty to carry an input
 break has two recourses, a Discontinuity or a `units` output, and a
 transport-layer stream may use neither. Read literally, a sessionizer over a unit
 sequence could therefore never coalesce two packets. Since `0.22` a transport
 output whose records carry `seq_start` **MAY** cross input seams, because its
 sequence numbers carry any break as a hole (#152).
 
-The third is a **packet type**. A packet-preserving stage was told to type its
+The fourth is a **packet type**. A packet-preserving stage was told to type its
 records with a `dec:` token, which is private to its decoder, so a generic
 sessionizer could recognise packets only by a convention the format declined to
 make. Since `0.22` `content_type` has a fourth scheme, `net:`, closed and
