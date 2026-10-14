@@ -66,6 +66,19 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.23] — unreleased
+
+**The pure-ACK release.** One defect, shipped alone: merge step 2 gave a
+zero-length record an end, so a stored pure ACK drew edges backwards and the
+ordinary handshake, data, pure-ACK trace made a cycle. A record's end is now one
+past the last sequence number it occupies. No byte of any file changes, and no
+keyword or option is added. Scope and reasoning in
+[docs/RELEASE-0.23-PLAN.md](docs/RELEASE-0.23-PLAN.md).
+
+### Changed
+
+---
+
 ## [0.22] — 2026-10-14
 
 **The downstream release.** Three issues filed from `python-zipline-wire`, each a
