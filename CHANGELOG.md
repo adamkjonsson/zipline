@@ -66,7 +66,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.23] — unreleased
+## [0.23] — 2026-10-14
 
 **The pure-ACK release.** One defect, shipped alone: merge step 2 gave a
 zero-length record an end, so a stored pure ACK drew edges backwards and the
