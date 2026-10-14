@@ -298,8 +298,8 @@ No specification text changes. The counts stay at 68 vectors and 40 rules.
       40 rules** (67 and 39 before #161's twin); `reject-unknown-minor` at `0/24`.
 - [x] Counts unchanged: `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`.
 - [x] `ruff check` and `ruff format` clean.
-- [ ] `CHANGELOG.md` `[0.23]` dated; `python-zipline` reviewed the branch;
+- [x] `CHANGELOG.md` `[0.23]` dated; `python-zipline` reviewed the branch;
       `v0.23` tagged; #160–#162 closed. *(Dated 2026-10-14. `python-zipline`
       reviewed it three times and filed #161 and #162, which are now part of
-      this release. The tag and closing the issues are Adam's, after the
-      merge.)*
+      this release. Tagged `v0.23` on the merge commit `3808439`, and #160–#162
+      closed, by Adam.)*
