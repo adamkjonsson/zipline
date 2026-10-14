@@ -361,6 +361,22 @@ is true. This vector carries the other value.
 | `sessionized-across-units` | *(accept)* `tunnel`'s inner hop with nothing lost, over a `units` input as `kober`'s WireGuard output is: flow A's packets at `[0,80)` and `[140,210)` join in A's sequence space, so session 10 emits **one** 70-byte record with **two** spans, crossing two declared breaks; flow B's packet between them is session 11's. Coverage of the input closes over `[0,210)` across both sessions. A reader that reports a no-splice violation has applied the decoded layer's duty to a stream whose offsets carry every break. Nothing can catch a *wrong* coalesce here: the sequence numbers are the producer's assertion. Extents 70 and 20. |
 | `decap-ethernet` | *(accept)* A VXLAN decapsulation stage emitting one record per inner **Ethernet frame**, typed `net:ethernet`: Ethernet II, IPv4 and UDP headers all real, checksums included, as a `LINKTYPE_ETHERNET` capture stores it. The suite's one non-TCP packet. Each record spans its whole datagram, VXLAN header included, since the VNI fed the decapsulation. The participant is `units`, and the endpoint list runs from the VNI to the inner MAC. A reader that does not know `net:` treats the label as opaque, as it would any unknown scheme. Checking the label against the payload is not conformant, because `net:` binds no length. Extent 110. |
 
+### Added in `0.23`
+
+An `ack` acknowledges **sequence numbers**: each byte of data, plus the one number
+that a SYN and a FIN each consume. Through `0.22`, merge step 2 gave every record
+an end, including a pure ACK, which occupies none. An ack reaching its offset
+then drew an edge from it, backwards to the peer data that ack acknowledged. The
+ordinary trace (handshake, data, pure ACK) made a cycle. Since `0.23` a record's
+end is one past the last sequence number it occupies. Data is unchanged, a
+zero-length SYN ends at its offset, a zero-length FIN ends one past it, and a
+pure ACK has no end, so no edge runs from it (#160). `check.py` draws no causal
+edges, so this vector tests implementations only.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `sequenced-pure-ack-and-fin` | *(accept)* A **SEQUENCED** session: handshake, eight bytes of data, the server's pure ACK, the client's zero-length FIN, and the server's pure ACK of the FIN. Pure ACKs are stored as zero-length records, as *Caveats* advises. Ends: SYN 0, SYN-ACK 0, data 8, FIN **9**, pure ACKs **none**. Every edge runs forward in stored order. A reader that gives a pure ACK an end at its offset draws `pure ACK → data` against `data → pure ACK`, a cycle, and refuses the order or stalls. One that ends the FIN at its offset draws `FIN → pure ACK` against the stored order. Extents 8 and 0. |
+
 ## Multi-file fixtures
 
 Four directories are **fixtures** rather than vectors: several files that only

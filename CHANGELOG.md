@@ -77,6 +77,34 @@ keyword or option is added. Scope and reasoning in
 
 ### Changed
 
+- **A record's end is one past the last sequence number it occupies, so a pure
+  ACK is never an edge's source**
+  ([#160](https://github.com/adamkjonsson/zipline/issues/160)). Merge step 2
+  gave every record an end, and said in as many words that *a zero-length
+  pure-ACK record's end is simply its own offset*. An ack reaching that offset
+  then drew an edge from the pure ACK, backwards to the peer data the ack
+  acknowledged. The ordinary trace (handshake, data, stored pure ACK) made a
+  cycle: a correct order failed the sequenced check, and an unsequenced merge
+  stalled. `python-zipline` found it porting to `0.22`, and `0.21` behaves the
+  same.
+  - **The rule now.** An ack acknowledges sequence numbers, so a record's end
+    is one past the last one it occupies. A data record ends at offset +
+    `payload_len`, unchanged even with FIN, because an ack covering the data
+    proves the segment was sent. A zero-length SYN ends at its offset (it
+    occupies `isn`, one below). A zero-length FIN ends at offset + 1. A pure
+    ACK or bare RST has **no end**, so no edge runs from it.
+  - **Edges into a record are unchanged.** A pure ACK's `ack` still orders it,
+    and *Caveats*' advice to store pure ACKs stands, now saying which edges
+    they keep.
+  - **No byte of any file changes, and no keyword.** A file whose zero-length
+    records are all SYNs reads the same, which covers every vector before this
+    one and every file an implementation has written. Nothing had met the bug
+    because no producer stored pure ACKs.
+  - **Vector and retired spelling.** `sequenced-pure-ack-and-fin` extends the
+    issue's trace with a close, and each wrong reading fails on its own record.
+    The retired sentence reproduces against `v0.22`. **67 vectors, 35 options,
+    39 rules.**
+
 ---
 
 ## [0.22] — 2026-10-14

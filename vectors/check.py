@@ -597,6 +597,16 @@ RULES = {
         "captured peer byte and no edge reaches it",
         "sequenced-ack-below-origin",
     ),
+    # 0.23 (#160). An ack covers sequence numbers, and a pure ACK occupies
+    # none: it has no end and is never an edge's source. Through 0.22 it had
+    # one at its offset, and handshake, data, pure ACK made a cycle. The same
+    # vector carries the zero-length FIN, which ends one past its offset.
+    "pure-ack-has-no-end": (
+        "a record's end is one past the last sequence number it occupies: data "
+        "offset + payload_len, a zero-length SYN its offset, a zero-length FIN "
+        "offset + 1, and a pure ACK none -- no edge runs from it",
+        "sequenced-pure-ack-and-fin",
+    ),
     # 0.22 (#152). The permission the carry duty's letter withheld. No checker
     # can see a wrong coalesce -- the sequence numbers are the producer's
     # assertion -- so the vector shows the shape and fails a reader that
@@ -951,6 +961,17 @@ RETIRED_CLAIMS = {
         "as a hole in its sequence numbers, and MAY emit a record crossing its "
         "input's seams; leaving a crossing undone is what a stage owes only "
         "where it cannot express the break",
+    ),
+    # 0.23 (#160). The sentence that stated the bug: it gave a record that
+    # occupies no sequence number an end, so an ack reaching its offset drew an
+    # edge from it -- backwards, to the peer data that ack acknowledged.
+    "pure-ack-end-at-offset": (
+        (r"A zero-length pure-ACK record's end is simply its own offset",),
+        "0.23",
+        160,
+        "a record's end is one past the last sequence number it occupies; a pure "
+        "ACK occupies none, so it has no end and no edge runs from it, though "
+        "its ack still orders it",
     ),
     # 0.22 (#153). The typing section counted three schemes and told a
     # packet-preserving stage to use the one whose namespace is private -- so

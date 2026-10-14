@@ -352,9 +352,10 @@ record end can be arbitrarily far apart in the stream, so they are not, and
 neither is compared raw. Both are first **unwrapped** into the peer's offset
 space, where positions compare as plain integers at any stream length:
 
-- A record's **end** is its offset plus its `payload_len`. Offsets unwrap along
-  stored order, as
-  [Referencing](#referencing-the-source-by-stream-offset) defines.
+- A record's **end** is a position in its own stream: for a data record, its
+  offset plus its `payload_len`. A zero-length record may have one or not
+  ([Fields used](#fields-used) defines which). Offsets unwrap along stored
+  order, as [Referencing](#referencing-the-source-by-stream-offset) defines.
 - An `ack`'s **position** unwraps the same way, along the *acker's* records in
   stored order. Each ack's position is the previous ack's position plus the
   signed serial delta of the two values. The first ack's position is its signed
@@ -388,12 +389,25 @@ Per **Record** (TCP):
 | `seq_start`  | absolute sequence number of the sender's first payload byte    |
 | `ack`        | the acknowledgement number from the wire: one past the highest contiguous peer byte the sender had received |
 
-A record's **end** — one past its last byte, the value an `ack` is compared
-against — is not stored: it is the record's offset plus `payload_len`, which is
-`seq_start + payload_len` on the wire, unwrapped (see
-[The guarantee](#the-guarantee)). A zero-length pure-ACK record's end is simply
-its own offset. An unplaceable record has no end, so no edge runs **from** it;
-an `ack` it carries still places it after the peer bytes that ack covers.
+A record's **end** is the value an `ack` is compared against. It is not stored.
+An ack acknowledges **sequence numbers**: each byte of data, plus the one number
+that a SYN and a FIN each consume. So a record's end is one past the last
+sequence number it occupies, unwrapped into its stream's offsets (see
+[The guarantee](#the-guarantee)):
+
+| Record | End |
+|---|---|
+| carries data (`payload_len > 0`) | its offset + `payload_len`, which is `seq_start + payload_len` on the wire, whether or not it also carries `fin` |
+| zero-length, `syn` | its offset. The SYN occupies `isn`, one below the origin where a [handshake record](#record-0x20) is stored, so an ack of `isn + 1` covers it |
+| zero-length, `fin` | its offset + 1. The FIN occupies the sequence number at its offset |
+| zero-length, neither (a pure ACK, a bare RST) | **none**. It occupies no sequence number |
+
+A data record carrying `fin` keeps the end of its data, because an ack that
+covers the data proves the segment was sent, whether or not the FIN has been
+acknowledged yet. A record with no end is never the source of an edge: an ack
+reaching its offset says nothing about it. An unplaceable record has no end
+either. Either kind is still ordered by an `ack` it carries, which places it
+after the peer bytes that ack covers.
 
 ### Merge algorithm
 
@@ -409,8 +423,10 @@ OUTPUT: one interleaved, causally-consistent sequence
 2. Build edges between participants from acks:
      for each record R from participant P with ack position a:
          add edge  Q_record -> R   for every record Q_record from the
-         *peer* whose end (offset + payload_len) <= a
-     (R's sender had already received those peer bytes, so they precede R.)
+         *peer* that has an end (see Fields used) and whose end <= a
+     (R's sender had already received what Q_record sent, so Q_record
+     precedes R. A record that occupies no sequence number sent nothing
+     an ack could cover, and has no end.)
 
 3. Topologically sort the resulting DAG.
 
@@ -491,7 +507,9 @@ never changing the algorithm.
   tie-breaker.
 - Pure ACK segments (no payload) carry ordering information but no bytes; store
   them as zero-length records (or fold their `ack` into the next data record)
-  so their happens-before edges aren't lost.
+  so their happens-before edges aren't lost. Those are the edges **into** them:
+  a pure ACK's `ack` orders it after the peer bytes it covers. It occupies no
+  sequence number, so it has no end and no edge runs **from** it.
 - Unwrapping an ack needs each step within 2³¹, the bound the offset walk has.
   A **forward** step wider than that can occur when a peer was silent across
   2 GiB of data and none of its pure ACKs were stored, or when the first ack

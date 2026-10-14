@@ -4510,6 +4510,154 @@ vector(
     extents=[(7, 0, 8), (7, 1, 12)],
 )
 
+# 0.23 (#160). A record's end is one past the last sequence number it
+# occupies. A pure ACK occupies none, so no edge runs from it; through 0.22 it
+# had an end at its offset, and the ordinary handshake, data, pure-ACK trace
+# made a cycle. The close is added for the zero-length FIN, which occupies the
+# number at its offset and so ends one past it.
+vector(
+    "sequenced-pure-ack-and-fin",
+    "accept",
+    "A SEQUENCED session with a recorded handshake, eight bytes of data, the "
+    "server's pure ACK of them, the client's zero-length FIN, and the server's "
+    "pure ACK of the FIN -- pure ACKs stored as zero-length records, as "
+    "Caveats advises. Ends: the SYN 0 (it occupies isn, below the origin), "
+    "the SYN-ACK 0, the data 8, the FIN 9 (it occupies the number at its "
+    "offset 8), and the two pure ACKs NONE, since they occupy no sequence "
+    "number. The edges are SYN -> SYN-ACK and both pure ACKs, SYN-ACK -> data "
+    "and FIN, data -> both pure ACKs, and FIN -> the last pure ACK; the stored "
+    "order respects all of them. Through 0.22 a pure ACK's end was its own "
+    "offset, 0, which the data's ack of 5001 (position 0) covers: the false "
+    "edge pure-ACK -> data against the real data -> pure-ACK, a cycle. The "
+    "sequenced check refused the true order and an unsequenced merge "
+    "stalled. Not caught before because no producer stored pure ACKs and "
+    "every zero-length record in the suite was a SYN, whose edge is real.",
+    "Causal ordering from TCP seq/ack -- a record's end is one past the last sequence "
+    "number it occupies",
+    [
+        file_header(),
+        source(1, 0, [o_uri("close.pcap")]),
+        session(7, [o_proto("tcp"), o_sess_flags(0x0001)]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
+        record(7, 1, 1, 1100, b"", flags=0x0008, options=[o_seq_start(5001), o_ack(1001)]),
+        record(
+            7, 0, 1, 1200, b"HELO 1\r\n", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]
+        ),
+        # A pure ACK: no end. Through 0.22 its end was 0, and the data's ack
+        # covering 0 made the edge pure-ACK -> data, a cycle with data -> here.
+        record(7, 1, 1, 1300, b"", options=[o_seq_start(5001), o_ack(1009)]),
+        # A zero-length FIN at offset 8: it occupies 1009, so its end is 9 and the
+        # ack of 1009 just before it (position 8) does NOT cover it.
+        record(7, 0, 1, 1400, b"", flags=0x0002, options=[o_seq_start(1009), o_ack(5001)]),
+        record(7, 1, 1, 1500, b"", options=[o_seq_start(5001), o_ack(1010)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "close.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp", "sequenced": True},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+            "tcp_role": "responder",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1100,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "flags": ["psh"],
+            "payload": b64(b"HELO 1\r\n"),
+            "seq_start": 1001,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1300,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1009,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1400,
+            "flags": ["fin"],
+            "payload": "",
+            "seq_start": 1009,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1500,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1010,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept, and consume the records in STORED order: the session is "
+    "SEQUENCED and the order is causal. Client ends: SYN 0, data 8, FIN 9. "
+    "Server ends: SYN-ACK 0, and none for the two pure ACKs. Server ack "
+    "positions 0, 8 and 9; client ack positions 0 (data and FIN). Every edge "
+    "runs forward in stored order. A reader that gives a pure ACK an end at "
+    "its offset draws pure-ACK -> data (0 <= 0) against data -> pure-ACK "
+    "(8 <= 8), a cycle: it refuses the order, or, merging, stalls. A reader "
+    "that ends the zero-length FIN at its offset (8) draws FIN -> the first "
+    "pure ACK (8 <= 8), which is stored before the FIN, and refuses the order: "
+    "that pure ACK acknowledged the data, not the FIN. Rejecting, isolating, "
+    "or refusing to write the file is NOT conformant. Extents are 8 for the "
+    "client -- the FIN occupies a sequence number but no byte -- and 0 for "
+    "the server.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 0)],
+)
+
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
 # layer, so a reassembler over a unit sequence could never coalesce two
 # packets. Its sequence numbers carry any break as a hole, so now it may.
