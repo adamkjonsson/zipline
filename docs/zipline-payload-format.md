@@ -364,12 +364,13 @@ space, where positions compare as plain integers at any stream length:
   captured byte, because it acknowledges bytes sent before the capture began.
   A position below 0 acknowledges no captured peer byte, so no edge reaches it.
 
-The step is taken from the **previous** ack, never from the largest so far.
-Stored order is `seq_start` order, not the order the segments were sent, so a
-participant's acks can retreat in it: a segment retransmitted after newer data
-was acknowledged carries a later ack than the record stored after it. A maximum
-would credit a record's sender with bytes it had not yet received when it built
-the record.
+The step is taken from the **previous** ack, because acks can retreat in stored
+order. Stored order is `seq_start` order, not the order the segments were sent,
+so a segment retransmitted after newer data was acknowledged carries a later ack
+than the record stored after it. Where only the ordering matters, a running
+maximum of ack **positions** gives the same result. Any edge it adds to a record
+is already implied through that participant's own earlier record, which the
+merge never reorders.
 
 ### Fields used
 

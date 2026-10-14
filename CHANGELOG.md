@@ -93,8 +93,10 @@ Scope and reasoning in [docs/RELEASE-0.22-PLAN.md](docs/RELEASE-0.22-PLAN.md).
     `payload_len`. An ack's position is unwrapped along the *acker's* records:
     the previous ack's position plus the signed serial delta, with the first
     ack measured from the peer's origin. Step 2 compares plain integers.
-  - **Previous ack, never a running maximum.** Stored order is `seq_start`
-    order, acks can retreat in it, and a maximum would invent edges.
+  - **Step from the previous ack.** Stored order is `seq_start` order, and acks
+    can retreat in it. For ordering, a running maximum of positions gives the
+    same result, because any edge it adds is implied through the participant's
+    own earlier record ([#155](https://github.com/adamkjonsson/zipline/issues/155)).
   - **Nothing changes for existing files.** No byte changes, and no answer
     where consecutive acks are within 2³¹.
   - **The bound, with no keyword.** A forward step of 2³¹ or more reads as a

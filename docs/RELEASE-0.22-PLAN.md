@@ -91,7 +91,9 @@ sentences `0.21` wrote for `seq_start`, applied to a second field.
   this exactly. A running maximum would not: it would credit a record's sender
   with bytes it had not yet received when it built the record, which is a
   **false edge**. The rule therefore says *signed delta from the previous ack*
-  and never *maximum*.
+  and never *maximum*. *(Wrong about the maximum, as #155 showed. Any edge a
+  maximum adds is implied through the participant's own earlier record, so
+  ordering is unchanged. The rule stands; the reason was replaced in Phase 5.)*
 - **The walk skips records with no `ack`,** just as the offset walk skips an
   unplaceable record. The predecessor is the last record that carries one. A peer
   record that is **unplaceable** has no end, so it is never a `Q` and draws no
@@ -432,7 +434,7 @@ from before any edit.
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| The ack rule is written with a running maximum, because the issue says acks never retreat | **high**, since it is the issue's own wording | Scope decision 1's first bullet goes into the text as a sentence: signed delta from the previous ack, and why a maximum invents edges |
+| The ack rule is written with a running maximum, because the issue says acks never retreat | **high**, since it is the issue's own wording | Scope decision 1's first bullet goes into the text as a sentence: signed delta from the previous ack, and why *(the "why" was wrong; see #155)* |
 | The bound sentence grows into a SHOULD during writing | medium | The decision is recorded above; the soundness argument is *Caveats*' and is cited, not re-made |
 | The carve-out is read as *transport outputs owe nothing*, and a UDP sessionizer coalesces datagrams | medium | It is scoped by `seq_start` in its own sentence, and the third bullet of scope decision 2 explains why |
 | Retyping `tunnel` is done with a blind substitution that also rewrites the HTTP hop's `dec:request` | low–medium | The faces are edited by hand, and the face check refuses any mismatch with the bytes |
@@ -478,7 +480,10 @@ an exit (omit that retransmission's `ack`) that again only removes edges, so the
 release still adds no keyword. Working through the issue's wording, *an ack never
 retreats*, showed it to be false in stored order, and a running maximum, the
 natural first draft, would have invented edges in the ordinary retransmission
-case. Phase 1 found this before writing the rule, not after.
+case. Phase 1 found this before writing the rule, not after. *(The last claim was
+itself wrong. #155 showed that a maximum's extra edges are all implied by the
+participant's chain, so it changes no order. Phase 5 replaced the reason in the
+text.)*
 
 **`tunnel`'s packets were not packets.** The plan said to retype three records,
 but their payloads were filler whose first nibble was 5, so `net:ip` would have
