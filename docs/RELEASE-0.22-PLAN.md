@@ -459,8 +459,11 @@ from before any edit.
 - [x] Counts `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`, or the difference
       accounted for by entries. *(Exactly these. One addition and no removals.)*
 - [x] `ruff check` and `ruff format` clean.
-- [ ] `CHANGELOG.md` `[0.22]` dated; three implementations told; `v0.22` tagged.
-      *(The entry is written; the date waits for the merge.)*
+- [x] `CHANGELOG.md` `[0.22]` dated; three implementations told; `v0.22` tagged.
+      *(Dated 2026-10-14 and tagged on the merge commit `c907beb`.
+      `python-zipline` reviewed the candidate and verified the review round.
+      Adam notifies `python-zipline-wire` and `kober`. The issues are closed by
+      Adam.)*
 
 ---
 
