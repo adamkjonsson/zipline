@@ -100,10 +100,13 @@ keyword or option is added. Scope and reasoning in
     records are all SYNs reads the same, which covers every vector before this
     one and every file an implementation has written. Nothing had met the bug
     because no producer stored pure ACKs.
-  - **Vector and retired spelling.** `sequenced-pure-ack-and-fin` extends the
-    issue's trace with a close, and each wrong reading fails on its own record.
-    The retired sentence reproduces against `v0.22`. **67 vectors, 35 options,
-    39 rules.**
+  - **Two vectors and a retired spelling.** `sequenced-pure-ack-and-fin`
+    extends the issue's trace with a close, and each reading that adds an edge
+    fails on its own record. Its unsequenced twin, `merge-pure-ack-and-fin`,
+    has a skewed server clock. It catches what a sequenced file cannot: a SYN
+    given no end (a dropped edge reorders it) and a merge that stalls
+    ([#161](https://github.com/adamkjonsson/zipline/issues/161)). The retired
+    sentence reproduces against `v0.22`. **68 vectors, 35 options, 40 rules.**
 
 ---
 

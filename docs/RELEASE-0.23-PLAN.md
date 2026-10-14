@@ -199,6 +199,38 @@ else gives a zero-length record an end:
 
 The release earns no "first" for the status history.
 
+## Phase 3 — #161, the unsequenced twin
+
+*Added 2026-10-14, after `python-zipline` read the branch at `9a43781`. It
+confirmed #160 is fixed and filed #161 against the vector.*
+
+**The gap.** `sequenced-pure-ack-and-fin` is consumed in stored order, so only
+the stored-order check reaches the end rule, and that check fails only on an
+**extra** edge. A reading that **drops** one passes, and so does a merge that
+stalls only when it merges. That covers the risk table's own top row, *a SYN
+given no end*, and the changelog's claim that the old rule made *an
+unsequenced merge stall*. `python-zipline`'s merge had exactly such a bug,
+passing the sequenced vector and stalling unsequenced.
+
+**The twin, `merge-pure-ack-and-fin`, as the issue proposes**, with one
+addition. It has the same six records, **unsequenced**, with the server's clock
+50 ticks behind. The addition is that the records are **stored server first**,
+each participant's own order kept, so stored order is not the merged answer and
+a reader that skips the merge fails too. Merged by the spec's own algorithm
+(per-participant chains, ack edges, ties by `(timestamp, participant_id)`), the
+generated file gives:
+
+| Reading | Merged order (stored indices) |
+|---|---|
+| **`0.23`** | 4 1 5 2 6 3: SYN, SYN-ACK, data, pure ACK, FIN, pure ACK |
+| SYN given no end | 1 4 5 2 6 3: the SYN-ACK overtakes the SYN |
+| pure ACK ends at its offset | 4 1, then **stall** |
+| FIN ends at its offset | 4 1 5 6 2 3: the FIN overtakes the pure ACK |
+
+These were checked by script against the generated `.jsonl`, and they agree
+with the issue's table. No spec text, keyword or byte elsewhere changes. The
+sequenced vector's summary names its twin. `RULES`: `merge-orders-by-end`.
+
 ## Risks
 
 | Risk | Likelihood | Mitigation |
@@ -216,9 +248,10 @@ The release earns no "first" for the status history.
       unchanged, SYN at its offset, a zero-length FIN at offset + 1, and no end
       otherwise. Step 2 and *Caveats* agree, and the retired spelling is gone.
 - [x] `sequenced-pure-ack-and-fin` exists, and each wrong reading fails on its
-      own record.
-- [x] `python3 vectors/check.py` green at 0.23: **67 vectors, 35 options,
-      39 rules**; `reject-unknown-minor` at `0/24`.
+      own record. Its unsequenced twin `merge-pure-ack-and-fin` (#161) catches
+      the readings a sequenced file cannot.
+- [x] `python3 vectors/check.py` green at 0.23: **68 vectors, 35 options,
+      40 rules** (67 and 39 before #161's twin); `reject-unknown-minor` at `0/24`.
 - [x] Counts unchanged: `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`.
 - [x] `ruff check` and `ruff format` clean.
 - [ ] `CHANGELOG.md` `[0.23]` dated; `python-zipline` reviewed the branch;

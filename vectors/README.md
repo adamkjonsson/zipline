@@ -370,12 +370,16 @@ then drew an edge from it, backwards to the peer data that ack acknowledged. The
 ordinary trace (handshake, data, pure ACK) made a cycle. Since `0.23` a record's
 end is one past the last sequence number it occupies. Data is unchanged, a
 zero-length SYN ends at its offset, a zero-length FIN ends one past it, and a
-pure ACK has no end, so no edge runs from it (#160). `check.py` draws no causal
-edges, so this vector tests implementations only.
+pure ACK has no end, so no edge runs from it (#160). The vectors come as a pair.
+A sequenced file is read in stored order, so it can only catch a reading that
+*adds* an edge. Its unsequenced twin is merged, so it catches a dropped edge and
+a merge that stalls (#161). `check.py` draws no causal edges, so both test
+implementations only.
 
 | Vector | What it carries |
 |--------|-----------------|
 | `sequenced-pure-ack-and-fin` | *(accept)* A **SEQUENCED** session: handshake, eight bytes of data, the server's pure ACK, the client's zero-length FIN, and the server's pure ACK of the FIN. Pure ACKs are stored as zero-length records, as *Caveats* advises. Ends: SYN 0, SYN-ACK 0, data 8, FIN **9**, pure ACKs **none**. Every edge runs forward in stored order. A reader that gives a pure ACK an end at its offset draws `pure ACK → data` against `data → pure ACK`, a cycle, and refuses the order or stalls. One that ends the FIN at its offset draws `FIN → pure ACK` against the stored order. Extents 8 and 0. |
+| `merge-pure-ack-and-fin` | *(accept)* The same six records, **unsequenced**, stored server first, with the server's clock 50 ticks behind, so the timestamp tie-break pulls a server record too early wherever an edge is missing. Merged: client SYN, SYN-ACK, data, pure ACK, FIN, pure ACK. Each wrong reading gives its own answer: a SYN given no end puts the SYN-ACK first, a pure ACK ended at its offset **stalls**, and a FIN ended at its offset overtakes the pure ACK that acknowledged only the data. A reader returning stored order has not merged. Extents 8 and 0. |
 
 ## Multi-file fixtures
 

@@ -4532,7 +4532,10 @@ vector(
     "edge pure-ACK -> data against the real data -> pure-ACK, a cycle. The "
     "sequenced check refused the true order and an unsequenced merge "
     "stalled. Not caught before because no producer stored pure ACKs and "
-    "every zero-length record in the suite was a SYN, whose edge is real.",
+    "every zero-length record in the suite was a SYN, whose edge is real. "
+    "Being SEQUENCED, this file can only catch a reading that ADDS an edge; "
+    "merge-pure-ack-and-fin is its unsequenced twin, for the readings that "
+    "drop one and for a merge that stalls.",
     "Causal ordering from TCP seq/ack -- a record's end is one past the last sequence "
     "number it occupies",
     [
@@ -4655,6 +4658,148 @@ vector(
     "or refusing to write the file is NOT conformant. Extents are 8 for the "
     "client -- the FIN occupies a sequence number but no byte -- and 0 for "
     "the server.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 0)],
+)
+
+# 0.23 (#161). The sequenced vector above is consumed in stored order, so only
+# the stored-order check reaches the end rule, and that check fails only on an
+# EXTRA edge. A reading that drops one passes it, and so does a merge that
+# stalls only when it merges. This twin is unsequenced, with the server's clock
+# 50 ticks behind, so the timestamp tie-break pulls a server record too early
+# wherever an edge is missing: each wrong reading gives a different order.
+vector(
+    "merge-pure-ack-and-fin",
+    "accept",
+    "sequenced-pure-ack-and-fin's six records, NOT sequenced, with the "
+    "server's capture clock 50 ticks behind the client's, and stored server "
+    "first (each participant's own order kept), so stored order is not the "
+    "answer. A reader merges: edges from acks, each participant's records in "
+    "stored order, ties broken by (timestamp, participant_id). Under the 0.23 "
+    "end rule the edges are SYN -> SYN-ACK and both pure ACKs, SYN-ACK -> data "
+    "and FIN, data -> both pure ACKs, FIN -> the last pure ACK, and the merged "
+    "order is client SYN, SYN-ACK, data, pure ACK, FIN, pure ACK -- the causal "
+    "order, though the skew would put every server record first. Each wrong "
+    "reading gives its own answer: a SYN given no end loses SYN -> SYN-ACK and "
+    "the SYN-ACK (ts 950) overtakes the SYN it acknowledges; a pure ACK ended "
+    "at its offset makes the cycle and the merge stalls after the SYN-ACK; a "
+    "FIN ended at its offset puts the FIN before the pure ACK that "
+    "acknowledged only the data.",
+    "Causal ordering from TCP seq/ack -- the merge, over records with and without an end",
+    [
+        file_header(),
+        source(1, 0, [o_uri("skewed.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
+        # Server first, its clock 50 behind. Stored order is not the merged one.
+        record(7, 1, 1, 950, b"", flags=0x0008, options=[o_seq_start(5001), o_ack(1001)]),
+        record(7, 1, 1, 1150, b"", options=[o_seq_start(5001), o_ack(1009)]),
+        record(7, 1, 1, 1350, b"", options=[o_seq_start(5001), o_ack(1010)]),
+        record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
+        record(
+            7, 0, 1, 1200, b"HELO 1\r\n", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]
+        ),
+        record(7, 0, 1, 1400, b"", flags=0x0002, options=[o_seq_start(1009), o_ack(5001)]),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "skewed.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+            "tcp_role": "initiator",
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+            "tcp_role": "responder",
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 950,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1150,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1009,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 1,
+            "source_id": 1,
+            "ts": 1350,
+            "payload": "",
+            "seq_start": 5001,
+            "ack": 1010,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1000,
+            "flags": ["syn"],
+            "payload": "",
+            "seq_start": 1001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1200,
+            "flags": ["psh"],
+            "payload": b64(b"HELO 1\r\n"),
+            "seq_start": 1001,
+            "ack": 5001,
+        },
+        {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1400,
+            "flags": ["fin"],
+            "payload": "",
+            "seq_start": 1009,
+            "ack": 5001,
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. Merged, the order is: client SYN (ts 1000), server SYN-ACK "
+    "(950), client data (1200), server pure ACK (1150), client FIN (1400), "
+    "server pure ACK (1350) -- in stored terms, records 4, 1, 5, 2, 6, 3. "
+    "Every adjacent inversion of timestamp is an edge doing its work. A "
+    "reader that gives a SYN no end puts the SYN-ACK first; one that gives a "
+    "pure ACK an end at its offset stalls after the SYN-ACK, the data and the "
+    "first pure ACK each waiting on the other; one that ends the zero-length "
+    "FIN at its offset puts the FIN before the first pure ACK. A reader that "
+    "returns stored order has not merged. Rejecting or isolating is NOT "
+    "conformant. Extents are 8 for the client and 0 for the server.",
     violations=0,
     extents=[(7, 0, 8), (7, 1, 0)],
 )

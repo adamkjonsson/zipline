@@ -607,6 +607,16 @@ RULES = {
         "offset + 1, and a pure ACK none -- no edge runs from it",
         "sequenced-pure-ack-and-fin",
     ),
+    # 0.23 (#161). The sequenced vector reaches the end rule only through the
+    # stored-order check, which fails only on an extra edge. Its unsequenced
+    # twin is merged: a dropped edge (a SYN given no end) reorders it under the
+    # skewed clock, and the old rule stalls it.
+    "merge-orders-by-end": (
+        "the merge draws edges only from records with an end and breaks ties by "
+        "(timestamp, participant_id); with the server's clock behind, each wrong "
+        "end reading gives a different merged order, or a stall",
+        "merge-pure-ack-and-fin",
+    ),
     # 0.22 (#152). The permission the carry duty's letter withheld. No checker
     # can see a wrong coalesce -- the sequence numbers are the producer's
     # assertion -- so the vector shows the shape and fails a reader that
