@@ -3682,8 +3682,9 @@ vector(
         session(7, [o_proto("tcp")]),
         participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000), o_tcp_role(1)]),
         participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000), o_tcp_role(2)]),
-        # The client's SYN, at the origin. Zero length, so its computed end
-        # equals its seq_start and every causal edge works unchanged.
+        # The client's SYN, at the origin. It occupies isn, one below, so its
+        # end equals its seq_start -- not because it is zero length: since 0.23
+        # a zero-length record with no syn or fin has no end at all.
         record(7, 0, 1, 1000, b"", flags=0x0008, options=[o_seq_start(1001)]),
         # The responder's SYN-ACK: its own zero-length syn record, acking the
         # client's SYN, whose end is 1001.

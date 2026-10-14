@@ -177,6 +177,28 @@ tests implementations only. `RULES`: `pure-ack-has-no-end`.
 
 ---
 
+## What the sweep found (Phase 2, 2026-10-14)
+
+One site, stated twice, that a reader of the new rule would trip on. *Handshake
+records* said a SYN record's *computed end equals* its offset, implicitly
+because it is zero length, and `handshake-at-origin`'s builder comment said
+*Zero length, so its computed end equals its seq_start*. Since `0.23` zero
+length gives no end at all. The SYN has one because it occupies `isn`. Both
+now give that reason, and the spec sentence points at *Fields used*. Nothing
+else gives a zero-length record an end:
+
+- the streaming merge's *(end ≤ `ack`)* stays true, because a record with no
+  end is never waited for;
+- the Record block's *a pure-ACK record carrying only an `ack` hint* and the
+  timestamp rule for a zero-length pure-ACK record are not about ends;
+- the companion's framing-cost note on pure-ACK records is not about ends
+  either;
+- `sequenced-past-2gib-pure-ack`'s summary already says the server's pure ACKs
+  are *not records*, so its name does not invite the reading the risk table
+  feared.
+
+The release earns no "first" for the status history.
+
 ## Risks
 
 | Risk | Likelihood | Mitigation |
@@ -190,14 +212,14 @@ tests implementations only. `RULES`: `pure-ack-has-no-end`.
 
 ## Definition of done
 
-- [ ] *Fields used* defines a record's end per sequence space: data
+- [x] *Fields used* defines a record's end per sequence space: data
       unchanged, SYN at its offset, a zero-length FIN at offset + 1, and no end
       otherwise. Step 2 and *Caveats* agree, and the retired spelling is gone.
-- [ ] `sequenced-pure-ack-and-fin` exists, and each wrong reading fails on its
+- [x] `sequenced-pure-ack-and-fin` exists, and each wrong reading fails on its
       own record.
-- [ ] `python3 vectors/check.py` green at 0.23: **67 vectors, 35 options,
+- [x] `python3 vectors/check.py` green at 0.23: **67 vectors, 35 options,
       39 rules**; `reject-unknown-minor` at `0/24`.
-- [ ] Counts unchanged: `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`.
-- [ ] `ruff check` and `ruff format` clean.
+- [x] Counts unchanged: `MAY 55, MUST 124, MUST NOT 44, SHOULD 28`.
+- [x] `ruff check` and `ruff format` clean.
 - [ ] `CHANGELOG.md` `[0.23]` dated; `python-zipline` reviewed the branch;
       `v0.23` tagged; #160 closed.

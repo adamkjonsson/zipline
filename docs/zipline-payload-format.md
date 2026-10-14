@@ -1852,8 +1852,10 @@ the resolutions `tick_hz` is meant for.
 
 **Handshake records.** A writer MAY record an observed TCP handshake as a
 zero-length record carrying the `syn` flag: `timestamp` is the SYN packet's
-capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin, so
-its computed end equals it and every causal edge and ordering rule works unchanged
+capture time, and its `seq_start` **MUST** be `isn + 1` — the stream origin. The
+SYN occupies `isn`, one below, so the record's end
+([Fields used](#fields-used)) equals its offset, 0, and every causal edge and
+ordering rule works unchanged
 (it precedes the data that starts at the same origin simply by being produced
 first — the tie the [ordering rule](#identifiers--ordering) admits, and the reason
 it says so). Recording the handshake is the writer's choice; where it does, this is the

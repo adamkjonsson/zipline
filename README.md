@@ -150,6 +150,10 @@ rounds as they happened, not plans:
   coalesce across an input seam, and a closed `net:` scheme names one network
   packet. It ends with what execution changed, including a bound the plan had
   stated in only one direction.
+- [docs/RELEASE-0.23-PLAN.md](docs/RELEASE-0.23-PLAN.md) — the pure-ACK
+  release. One defect, shipped alone: a stored pure ACK was given an end and
+  drew causal edges backwards, so an ordinary TCP session made a cycle. A
+  record's end is now one past the last sequence number it occupies.
 
 ## License
 
