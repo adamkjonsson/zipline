@@ -66,7 +66,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.22] — unreleased
+## [0.22] — 2026-10-14
 
 **The downstream release.** Three issues filed from `python-zipline-wire`, each a
 downstream stage that `0.21` made possible and the text then failed: acks unwrap
