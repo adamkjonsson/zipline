@@ -46,13 +46,13 @@ definition. Each new keyword gets a `NORMATIVE_ADDITIONS` entry with its argumen
 
 ## Scope decisions
 
-*All four are **proposed, not decided**. Each one says what Adam is choosing
-between. Phase 0 posts the decided form on the issue before any text is written,
-so the implementations can build to it.*
+*All four decided 2026-10-28, each as proposed. Phase 0 posted the decided form
+on each issue before any text was written, so the implementations can build to
+it.*
 
 ### D1 — #168: an extent is measured in sequence space, and a FIN's position is not a hole
 
-*Proposed: the issue's reading 1, plus one sentence on coverage.*
+*Decided 2026-10-28: the issue's reading 1, plus one sentence on coverage.*
 
 The offset space **is** sequence-number space already. Every transport offset is
 `seq_start` unwrapped from the origin. *Fields used* says a zero-length FIN
@@ -95,14 +95,15 @@ captured leaves a one-position gap that nothing explains. That is honest: a
 segment *was* lost, and `gap` is the right word for it. The plan says so in the
 sentence's rationale and does not make a rule for it.
 
-**The alternative Adam may prefer.** Reading 2 is one sentence too (*a
+**The alternative not taken.** Reading 2 is one sentence too (*a
 zero-length record extends no extent*). It costs the lost-tail evidence above,
 and it changes the measure that `check.py` and python-zipline both compute
 today.
 
 ### D2 — #166: the permission is keyed on `seq_start` **or `message`**
 
-*Proposed: the issue's option 1, keyed on something a checker can see.*
+*Decided 2026-10-28: the issue's option 1, keyed on something a checker can
+see.*
 
 Option 1 as written keys the permission on *an output unit reassembled from
 fragments of one network-layer datagram*. That is true, and a checker cannot see
@@ -135,19 +136,20 @@ then the negative case for both.
 holds pieces that are not a message. Writing them as a `message` would be
 false, and the withholding rule (`:2124`) forbids leaving them out of a
 non-anchored stream. This is #169's tension again (the comment on #166 quotes
-it), and it is not what #166 asks for. **Proposed:** open a separate issue for
+it), and it is not what #166 asks for. **Decided:** open a separate issue for
 it, against a later milestone, rather than settle it under this one.
 
 ### D3 — #169: a `copy` flag, at bit `0x0100`
 
-*Proposed: the issue's option 1, with two constraints that make it checkable.*
+*Decided 2026-10-28: the issue's option 1, with two constraints that make it
+checkable.*
 
 Option 2 contradicts the withholding rule's own premise, as the issue says.
 Option 3 writes the ambiguity down without resolving it. Option 1 mirrors
 `retransmit`, so the flag says what the capture point did and the content stays
 in the stream.
 
-| Choice | Proposed | Why |
+| Choice | Decided | Why |
 |---|---|---|
 | bit | **`0x0100`**; the reserved mask becomes `0xFE20` | `0x0020` is the bit `escape-reserved-flag-bit` sets. Taking it would change that vector's bytes and its lesson, and taking `0x0100` changes nothing |
 | token | `copy` | the issue's word, and it reads against `retransmit` in the table |
@@ -167,7 +169,7 @@ question, and #169 does not ask it. It goes into the sweep's findings.
 
 ### D4 — #163: multi-file `merged` items name their file
 
-*Proposed: as the issue writes it.* `{"file": "raw", "session_id": 7, "order":
+*Decided 2026-10-28: as the issue writes it.* `{"file": "raw", "session_id": 7, "order":
 [1, 2, 3]}`. `file` is the stem as `files` lists it, required on a multi-file
 entry and absent on a single-file one. `check_merged` and `build.py` apply the
 ownership rule per file. A grep confirms that **only `chain` owes it today**
@@ -232,7 +234,8 @@ numbers go in the Definition of done.
 
 ### Phase 0 — stamp, decisions, the posts
 
-1. Adam decides D1–D4. Record the dates here, as in `0.23`.
+1. Adam decides D1–D4. Record the dates here, as in `0.23`. *(Done: all four
+   decided 2026-10-28, as proposed.)*
 2. `MAJOR, MINOR = 0, 24` in `build.py` and `check.py`. Regenerate. Update the
    spec's version sites and the File Header row. Open `## [0.24] — unreleased`
    with `Added` and `Changed`.
