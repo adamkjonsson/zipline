@@ -1,10 +1,11 @@
 # Release 0.24 — the sessionizer release
 
 *Written 2026-10-28 against `main` at `7332016`, one commit past **`v0.23`**
-(`3808439`). The source is the five issues on the `0.24` milestone, #163 and
-#166–#169. Four were filed from `python-zipline` and `python-zipline-wire` while
+(`3808439`). The source is the six issues on the `0.24` milestone, #163 and
+#166–#170. Four were filed from `python-zipline` and `python-zipline-wire` while
 building sessionizers over packet streams, and one (#163) is a follow-up to
-#162. This is a working roadmap, not normative text.*
+#162. #170 was split out of #166 during Phase 3 and added to the milestone on
+2026-10-28. This is a working roadmap, not normative text.*
 
 *The release is **`0.24`**, not `0.24.0`, per the changelog's Conventions.*
 
@@ -22,6 +23,7 @@ TCP. Putting real traffic through it has found what those rules leave out:
 | #168 | spec, question | A pure ACK stored past a FIN puts the FIN's sequence number inside the stream's extent, and nothing says that position is not a hole |
 | #166 | spec | A UDP datagram reassembled from IP fragments in a `units` input has no conformant record, because the 0.22 permission is keyed on `seq_start` |
 | #169 | spec | A capture-point copy of a UDP datagram must be written, and nothing can mark it as a copy |
+| #170 | spec, question | A fragmented datagram that lost a fragment is not a message, and the transport layer may not withhold it, so it has no conformant form |
 | #167 | vectors | No vector has a sequence-anchored record crossing a **declared** Discontinuity, and no vector has its mirror that must be reported |
 | #163 | vectors | Multi-file vectors are exempt from `merged`, because the key cannot say which file's session an order belongs to |
 
@@ -29,26 +31,31 @@ TCP. Putting real traffic through it has found what those rules leave out:
 `zpfwire 0.8.0` fail `check_coverage` in zipline-kober (64 of 64 failures).
 #166 loses every fragmented datagram on the packets path (0 of 1,600 written
 for 1,000–4,000 B datagrams at MTU 576). #169 leaves 330 of 330 mirror copies
-in a 40-seed run unmarked.
+in a 40-seed run unmarked. #170 has no measurement yet. Its cost is #166's,
+moved to the lossy case: once #166 is fixed, every datagram that loses a
+fragment still has no conformant form.
 
 **Byte impact.** #169 adds a flag bit, which is new in the Record body's `flags`.
 Under the `0.x` rule a `0.23` reader rejects a `0.24` file anyway, so no reserved
-bit is reinterpreted. #166 and #168 change no byte of any file. They change what
-a stage may write and what a coverage check counts. #163 and #167 are suite
+bit is reinterpreted. #166, #168 and #170 change no byte of any file. They change
+what a stage may write and what a coverage check counts. #163 and #167 are suite
 work only.
 
 **Keyword counts.** `0.23` left them at `MAY 55, MUST 124, MUST NOT 44,
-SHOULD 28`. #169 is expected to add one or two `MUST NOT`s. #166 should rewrite
-an existing `MAY` without adding one. #168 should need none, since it is a
-definition. Each new keyword gets a `NORMATIVE_ADDITIONS` entry with its argument.
+SHOULD 28`. #169 is expected to add one or two `MUST NOT`s. #166 rewrote an
+existing `MAY` without adding one. #168 needed none, since it is a definition.
+#170 needs none if D5's scope sentence stands alone, and one `SHOULD` if the
+reason word is pinned, as `capture-gap` was. Each new keyword gets a
+`NORMATIVE_ADDITIONS` entry with its argument.
 
 ---
 
 ## Scope decisions
 
-*All four decided 2026-10-28, each as proposed. Phase 0 posted the decided form
-on each issue before any text was written, so the implementations can build to
-it.*
+*D1–D4 decided 2026-10-28, each as proposed. Phase 0 posted the decided form on
+each issue before any text was written, so the implementations can build to it.
+D5 was added the same day with #170 and is **proposed, not decided**. It is
+posted on #170 once decided, before its text is written.*
 
 ### D1 — #168: an extent is measured in sequence space, and a FIN's position is not a hole
 
@@ -137,7 +144,9 @@ holds pieces that are not a message. Writing them as a `message` would be
 false, and the withholding rule (`:2124`) forbids leaving them out of a
 non-anchored stream. This is #169's tension again (the comment on #166 quotes
 it), and it is not what #166 asks for. **Decided:** open a separate issue for
-it, against a later milestone, rather than settle it under this one.
+it, against a later milestone, rather than settle it under this one. *(Filed as
+#170 in Phase 3. Adam added it to this milestone on 2026-10-28, so it is
+settled here after all, as D5.)*
 
 ### D3 — #169: a `copy` flag, at bit `0x0100`
 
@@ -177,6 +186,51 @@ ownership rule per file. A grep confirms that **only `chain` owes it today**
 sender each, and `merged` is sequenced). The new multi-file vectors below may
 owe it as well, which is why it lands first.
 
+### D5 — #170: an incomplete reassembly is not content of the stream
+
+*Proposed, not decided: the issue's option 3, with the trace the coverage
+guarantee already gives.*
+
+**The line D3 and D5 draw together.** A message-oriented transport stream's
+content is its **messages**. A copy (#169) is a whole message that reached the
+stage, so it is content: it must be written, and the `copy` flag says what it
+is. Fragments that never completed are not a message. No datagram of the stream
+reached the stage, only pieces of one. So the withholding rule, which binds
+*content* of a stream without a sequence anchor, does not reach them. Leaving
+them out withholds nothing of the stream. That is a statement of the rule's
+scope, not an exception to it.
+
+**The trace is already owed.** The fragments are content of the **input**, so
+the coverage guarantee requires an Undecoded block naming their ranges, in the
+same file as the transport output. This is what separates the case from the one
+the withholding rule was written for. That rule exists because *a file that
+withheld and one that did not are byte-identical*. Here they are not: the block
+is there, in the input's space, for any reader of the file to see. A
+capture-sourced producer, with no input stream, has the home the `retransmit`
+paragraph already gives what a reassembler discards: an Undecoded block against
+the `capture` source.
+
+**The word: `undecodable`, the existing bytes-class value.** The reassembler
+tried and failed, which is what that word means. It is also what zpfwire already
+writes, citing #166. `dropped` would be wrong, because it asserts that content
+*of the stream* was removed, and D5's whole argument is that none was. A new
+word such as `incomplete` is possible, and the vocabulary is open. **The choice
+for Adam:** leave the word to the producer (no keyword), or pin it with a
+`SHOULD` as *Referencing the source by stream offset* pins `capture-gap`, so
+that two producers name the shape alike (`SHOULD` 28 → 29). Pinning is
+proposed, for the reason given there.
+
+**The options not taken.** Option 1, an explicit exception to the withholding
+rule, has the same effect on files. But it weakens the rule's text, while
+option 3 only states its scope. Option 2, an unflagged partial record, writes
+bytes that no application sent as a unit. A reader could not tell it from a
+whole datagram whose writer omitted `message`, which is only a `SHOULD` for UDP.
+
+**Sites.** The withholding rule at spec `:2146–2150` gains the scope sentence.
+*Conformance*'s restatement at `:2823` already points there and is checked in
+the sweep. The `retransmit` paragraph, rewritten in Phase 5 for D3, gains half a
+sentence pointing at the capture-sourced home.
+
 ---
 
 ## Sites, from a grep against `7332016`
@@ -191,8 +245,10 @@ owe it as well, which is why it lands first.
   sentence.
 - spec `:1726–1728`, *Session End* `extent`. It already points at *Layers*.
   Check that it still lands on the definition.
-- spec `:2124–2128`, the withholding rule. Unchanged. D2 and D3 are both built
-  so that it holds as written.
+- spec `:2124–2128`, the withholding rule. D2 and D3 are both built so that it
+  holds as written. D5 adds one sentence on its scope: content of a
+  message-oriented stream is its messages, and an incomplete reassembly is none.
+  *(It is at `:2146` since Phases 2–3.)*
 - spec `:2223–2245`, the unit-sequence duty and the transport permission. D2's
   rewrite.
 - spec `:2534–2559`, the `flags` table, the reserved row and the `retransmit`
@@ -219,14 +275,16 @@ script against the generated `.jsonl`, as in `0.23`.*
 | `isolate-transport-splice` | #167, #166 | isolate, pair | `sessionized-across-break`'s `inner.zpf` with flow A's record carrying neither `seq_start` nor `message` | a splice check that waves every transport record through misses it. It is the pairwise twin of `isolate-unmarked-break` |
 | `udp-capture-copy` | #169 | accept, single file | a UDP exchange with one datagram seen twice, the second flagged `copy` | a reader without the token fails the JSONL round-trip. The `expect` prose states messages-as-sent |
 | `isolate-copy-differs` | #169 | isolate, single file | a `copy` record whose payload differs from its predecessor's | a reader that trusts the flag blindly accepts it |
+| `sessionized-fragment-lost` | #170 | accept, pair | `sessionized-fragments`' shape with the second fragment lost: `packets.zpf` holds fragment 1 of one datagram and another flow's datagram. `inner.zpf` writes flow B only, and marks fragment 1's range `undecodable` | a checker that calls the missing datagram withheld content reports a violation that is not there. One that wants every `net:ip` unit cited by a record finds the Undecoded block in its place |
 
 `sessionized-fragments` and `sessionized-across-break` may share one
-`packets.zpf` builder. Whether to ship the input `sessionized-across-units` has
+`packets.zpf` builder, and so may `sessionized-fragment-lost`, through
+`udp_fragments()`. Whether to ship the input `sessionized-across-units` has
 never shipped (#167's first bullet) is **left alone**: `sessionized-across-break`
 checks a crossing against a shipped input, which is what that bullet asked for.
 
-Estimated counts: **68 → 75 vectors**, about six new `RULES` entries. The real
-numbers go in the Definition of done.
+Estimated counts: **68 → 76 vectors**, about seven new `RULES` entries. Phases
+1–3 have reached 71 and 43. The real numbers go in the Definition of done.
 
 ---
 
@@ -245,6 +303,8 @@ numbers go in the Definition of done.
    himself. "Fixed" comments wait for the merge to `main`. *(Done 2026-10-28:
    posted on all five, #167's noting that its mirror now carries neither
    `seq_start` nor `message`.)*
+5. *(Added with #170.)* Adam decides D5, and the decided form is posted on #170
+   before Phase 6 writes any text.
 
 ### Phase 1 — #163, `merged` per file
 
@@ -333,8 +393,8 @@ under `ruff`'s branch limit. That is a fix, not an ignore.
 The session in `inner.zpf` holds one sender per flow, so it owes no `merged`.
 The record's timestamp is its first fragment's, as `sessionized-across-units`
 takes its first packet's. Incomplete reassembly was filed as **#170**
-(`spec`, `question`, no milestone, since none later exists). **71 vectors,
-43 rules.**
+(`spec`, `question`, no milestone, since none later exists). Adam then added it
+to `0.24`, so it is D5 and Phase 6. **71 vectors, 43 rules.**
 
 ### Phase 4 — #167, the declared break, both ways
 
@@ -351,20 +411,40 @@ takes its first packet's. Incomplete reassembly was filed as **#170**
 - The JSONL token, wherever the `enumerations` check lists `flags`.
 - `udp-capture-copy` and `isolate-copy-differs`.
 
-### Phase 6 — sweep, changelog, review, tag
+### Phase 6 — #170, an incomplete reassembly
+
+*Comes after Phase 5 so the two halves of one line land in order. The copy is
+content and must be written (D3); the incomplete reassembly is not, and need
+not be (D5). D5's sentence can then point at the `copy` paragraph rather than
+argue the contrast twice.*
+
+- The withholding rule's scope sentence (D5), and the `SHOULD` for the word if
+  Adam pins it, with its `NORMATIVE_ADDITIONS` entry. The `retransmit`
+  paragraph's half-sentence on the capture-sourced home.
+- The companion: why it is scope and not an exception, and why `undecodable`
+  rather than `dropped`.
+- `sessionized-fragment-lost`, and a pair check confirming three things: the
+  orphan fragment really has no partner in `packets.zpf` (no other unit shares
+  its identification), no record of `inner.zpf` cites it, and an Undecoded block
+  of the bytes class covers exactly its range. Seen to fail on each of those
+  before it is trusted.
+
+### Phase 7 — sweep, changelog, review, tag
 
 1. Sweep the spec, the companion, the vectors README and every `expect` string
    for: an extent described as a byte count (D1); a permission or `expect` that
    names only `seq_start` (D2); any text that says a UDP copy cannot be marked
-   (D3). Record the findings here.
+   (D3); any text that calls every bytes-class Undecoded block in a transport
+   output a withholding (D5). Record the findings here.
 2. `vectors/README.md`: an *Added in `0.24`* section.
 3. `CHANGELOG.md` `[0.24]`. **Added:** the `copy` flag. **Changed:** the
    transport permission accepts `message`; a transport extent is defined, and a
-   FIN's position owes no coverage. No byte of an existing file changes.
+   FIN's position owes no coverage; an incomplete reassembly is not content of
+   the stream. No byte of an existing file changes.
 4. A `RELEASE-0.24-PLAN.md` line in `README.md`, and the status history if the
    release earns a "first".
 5. python-zipline reads the branch. Then the PR, and Adam merges, tags `v0.24`,
-   and closes the five issues.
+   and closes the six issues.
 
 ---
 
@@ -377,24 +457,29 @@ takes its first packet's. Incomplete reassembly was filed as **#170**
 | D2's `message` wording lets any message-oriented record cross a seam for any reason | medium | the permission is for a record that **is** one message built from the units it cites. A record that joins two messages is not one message, and the flag is already a claim the writer answers for |
 | `copy` is read as covering TCP | low–medium | the `seq_start` exclusion is normative, and the paragraph keeps `duplicate-discarded` as the TCP path |
 | A new multi-file vector owes `merged` and is built before Phase 1 | low | Phase 1 comes first, and `build.py` refuses an unowed shape once it lands |
+| D5's scope sentence is read as licence to leave out **whole** messages, e.g. a filter at the transport layer | medium | the sentence names an incomplete reassembly only, and says why: no message of the stream arrived. D3's `copy` paragraph, just before it, is the counter-case of a whole message that must be written |
+| `undecodable` on fragments reads as "the payload was unparseable", and a consumer counting unparsed bytes miscounts | low | the word's existing meaning, *tried and failed*, fits a reassembly. A pinned `SHOULD` can ask for a `comment` naming the shape |
 
 ---
 
 ## Definition of done
 
 - [x] D1–D4 decided and dated here, and posted on their issues.
+- [ ] D5 decided and dated here, and posted on #170.
 - [x] A transport extent is defined once, and the coverage guarantee owes a
       FIN's position nothing (#168).
 - [x] A transport record carrying `message` may cross input units or a declared
       break, and one with neither `seq_start` nor `message` owes both duties
       (#166).
 - [ ] `copy` defined at `0x0100`, with its two `MUST NOT`s accounted for (#169).
+- [ ] The withholding rule states that an incomplete reassembly is not content
+      of the stream, and its fragments are marked in the input's space (#170).
 - [x] Multi-file `merged` items name their file, and `chain` declares its
       three orders (#163).
-- [ ] The seven vectors above, or what the build made of them (#166–#169).
+- [ ] The eight vectors above, or what the build made of them (#166–#170).
 - [ ] `python3 vectors/check.py` green at 0.24, with the real counts recorded;
       `reject-unknown-minor` at `0/25`.
 - [ ] Keyword counts recorded, with every change accounted for.
 - [ ] `ruff check` and `ruff format` clean.
 - [ ] `CHANGELOG.md` `[0.24]` dated; python-zipline reviewed the branch; `v0.24`
-      tagged; #163 and #166–#169 closed.
+      tagged; #163 and #166–#170 closed.
