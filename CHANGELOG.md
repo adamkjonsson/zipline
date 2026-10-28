@@ -79,6 +79,17 @@ vectors. Scope and reasoning in
 
 ### Changed
 
+- **Multi-file vectors state merged orders too** ([#163](https://github.com/adamkjonsson/zipline/issues/163)).
+  `0.23`'s `merged` was single-file only, because the files of one entry share
+  session ids and the key named a session alone. A multi-file entry's items now
+  name their file by the stem `files` lists, as `{"file", "session_id",
+  "order"}`. The key is required on a multi-file entry and refused on a
+  single-file one. The ownership rule applies per file. `chain` is the only
+  multi-file vector that owes it, and each of its three orders (`raw` 1 2 3,
+  `decoded` 1 2, `annotated` 1 2) equals stored order. It lands first so the
+  release's new multi-file vectors are held to it. Suite only: no
+  specification text changes.
+
 ---
 
 ## [0.23] — 2026-10-14

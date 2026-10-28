@@ -798,6 +798,7 @@ def vector(
     Required wherever that shape occurs, for the reason `extents` is. Checked
     here for shape only -- a permutation of the session's records that keeps
     each participant's own order -- and never computed: the merge is semantics.
+    A multi-file fixture declares it through fixture(), naming each file (#163).
     """
     if advisory and tier != "accept":
         raise ValueError(f"{name}: advisory is meaningless off the accept tier")
@@ -5891,8 +5892,23 @@ def member(fixture: str, name: str, summary: str, blocks: list[Blk], jsonl: list
     return to_bytes(assemble(blocks))
 
 
-def fixture(name: str, tier: str, summary: str, spec: str, expect: str, *, violations: int) -> None:
-    """Declare a multi-file fixture. Its files are added by member()."""
+def fixture(
+    name: str,
+    tier: str,
+    summary: str,
+    spec: str,
+    expect: str,
+    *,
+    violations: int,
+    merged: list[tuple[str, int, list[int]]] | None = None,
+) -> None:
+    """Declare a multi-file fixture. Its files are added by member().
+
+    `merged` is vector()'s key with the file named (#163): the files of one
+    fixture share session ids, so an order is `(file, session_id, order)`, the
+    file being the member's name. It is checked once the members exist, by
+    check_fixture_merged().
+    """
     FIXTURES[name] = {
         "name": name,
         "tier": tier,
@@ -5900,8 +5916,24 @@ def fixture(name: str, tier: str, summary: str, spec: str, expect: str, *, viola
         "spec": spec,
         "expect": expect,
         "violations": violations,
+        "merged": merged,
         "members": [],
     }
+
+
+def check_fixture_merged(fx: dict) -> list[dict] | None:
+    """Require `merged` per member file, by the single-file rule, and name each item's file."""
+    members = [c["name"] for c in fx["members"]]
+    given = fx["merged"] or []
+    unknown = sorted({f for f, _sid, _order in given} - set(members))
+    if unknown:
+        raise ValueError(f"{fx['name']}: merged names files {unknown}, not among {members}")
+    for c in fx["members"]:
+        mine = [(sid, order) for f, sid, order in given if f == c["name"]]
+        check_merged(f"{fx['name']}/{c['name']}", fx["tier"], c["blocks"], mine or None)
+    if not given:
+        return None
+    return [{"file": f, "session_id": sid, "order": order} for f, sid, order in given]
 
 
 def chain_file(name: str, summary: str, blocks: list[Blk], jsonl: list[dict]) -> bytes:
@@ -5922,6 +5954,10 @@ def build_chain() -> None:
         "digest is the real SHA-256 of the sibling file it names, so a reader "
         "can verify the chain.",
         violations=0,
+        # Each file's session 7 has two senders. raw is ordered by its acks
+        # (the response acks the request's end), the two decoded files by
+        # timestamp alone. Every order equals stored order (#163).
+        merged=[("raw", 7, [1, 2, 3]), ("decoded", 7, [1, 2]), ("annotated", 7, [1, 2])],
     )
     raw_blocks = [
         file_header(options=[o_creator("zpf-sessionize 1.0")]),
@@ -7518,6 +7554,7 @@ def main() -> int:
             files[f"{c['name']}.hex"] = to_hexdump(pieces, f"{fx['name']}/{c['name']}").encode()
             files[f"{c['name']}.jsonl"] = jsonl_bytes(c["jsonl"])
         problems += emit(fdir, files, fx["name"], check)
+        merged = check_fixture_merged(fx)
         fixture_entries.append(
             {
                 "name": fx["name"],
@@ -7531,6 +7568,7 @@ def main() -> int:
                 "expect": fx["expect"],
                 "has_jsonl": True,
                 "files": sorted(files),
+                **({"merged": merged} if merged is not None else {}),
             }
         )
     for v in VECTORS:

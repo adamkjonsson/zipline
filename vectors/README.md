@@ -140,6 +140,13 @@ merge is semantics. `check.py` checks their shape: exactly the owed sessions are
 named, and each order is a permutation of the session's records that keeps each
 participant's own order.
 
+**A multi-file `accept` entry owes the same, file by file**, since `0.24`
+(#163). The files of one entry share session ids, so each item also names its
+file by the stem `files` lists: `{"file", "session_id", "order"}`. `file` is
+required on a multi-file entry and absent on a single-file one. Only `chain`
+owes the key today. Its three orders (`raw` 1 2 3, `decoded` 1 2, `annotated`
+1 2) each equal stored order.
+
 **Every capability the format defines is exercised by some vector**, and since
 `0.14` that is enforced too. `check.py` parses the option-id registry and the
 block-type table out of the specification and requires each entry to appear in

@@ -2129,18 +2129,42 @@ def check_merged(v: dict) -> list[str]:
     keeps every participant's own order, and that exactly the owed sessions
     are named. Computing the merge here would make check.py a second normative
     authority.
+
+    A multi-file entry owes the same, file by file (#163). Its files share
+    session ids, so each of its items names its file by the stem `files`
+    lists, and a single-file entry's items name none.
     """
     name, tier = v["name"], v["tier"]
-    if "files" in v or tier != "accept":
-        return [f"{name}: declares merged off the single-file accept tier"] if "merged" in v else []
-    jl = fixture_lines(os.path.join(HERE, name), name)
+    if tier != "accept":
+        return [f"{name}: declares merged off the accept tier"] if "merged" in v else []
+    given = v.get("merged", [])
+    d = os.path.join(HERE, name)
+    if "files" not in v:
+        if any("file" in m for m in given):
+            return [f"{name}: a single-file entry's merged items name a file"]
+        return merged_orders(name, fixture_lines(d, name), given)
+    if any("file" not in m for m in given):
+        return [f"{name}: a multi-file entry's merged items each name their file"]
+    stems = sorted({f.rsplit(".", 1)[0] for f in v["files"]})
+    unknown = sorted({m["file"] for m in given} - set(stems))
+    if unknown:
+        return [f"{name}: merged names files {unknown}, not among {stems}"]
+    out = []
+    for stem in stems:
+        mine = [m for m in given if m["file"] == stem]
+        out += merged_orders(f"{name}/{stem}", fixture_lines(d, stem), mine)
+    return out
+
+
+def merged_orders(name: str, jl: list[dict], merged: list[dict]) -> list[str]:
+    """Check one file's merged orders: exactly the owed sessions, each a stable permutation."""
     sequenced = {o["session_id"] for o in jl if o.get("type") == "session" and o.get("sequenced")}
     senders: dict[int, list[int]] = {}
     for o in jl:
         if o.get("type") == "record" and o["session_id"] not in sequenced:
             senders.setdefault(o["session_id"], []).append(o["sender_pid"])
     owed = {sid: pids for sid, pids in senders.items() if len(set(pids)) > 1}
-    given = {m["session_id"]: m["order"] for m in v.get("merged", [])}
+    given = {m["session_id"]: m["order"] for m in merged}
     if sorted(given) != sorted(owed):
         return [f"{name}: merged names sessions {sorted(given)}, owes {sorted(owed)}"]
     out = []

@@ -255,6 +255,19 @@ numbers go in the Definition of done.
 - See each new check fail (a missing `file`, an unknown stem, a file's session
   left out) before trusting it, as in #162.
 
+*Done 2026-10-28.* `fixture()` takes `merged` as `(file, session_id, order)`
+triples, and `check_fixture_merged` hands each member its own orders through the
+single-file `check_merged`. The ownership rule is reused, not restated.
+`check.py`'s copy moved into `merged_orders`, which takes one file's lines, and
+`check_merged` calls it once for a single file or once per stem. The three orders
+were re-derived by hand, not taken from the issue. `raw`'s response acks the
+request's end (9), which gives edges 1→2 and 1→3. The two decoded files are
+hint-less, at timestamps 1000 and 1100. Both sides were seen to fail on a
+missing key, an item with no `file` (check), a `file` on a single-file entry
+(check), an unknown stem, one file's session left out, a non-permutation and a
+reordered participant (build), and the key on an isolate fixture (build). No
+specification text changes, and the counts stay at 68 vectors and 40 rules.
+
 ### Phase 2 — #168, the FIN's position
 
 - The extent definition and the coverage sentence (D1). *Session End* still
@@ -323,7 +336,7 @@ numbers go in the Definition of done.
       break, and one with neither `seq_start` nor `message` owes both duties
       (#166).
 - [ ] `copy` defined at `0x0100`, with its two `MUST NOT`s accounted for (#169).
-- [ ] Multi-file `merged` items name their file, and `chain` declares its
+- [x] Multi-file `merged` items name their file, and `chain` declares its
       three orders (#163).
 - [ ] The seven vectors above, or what the build made of them (#166–#169).
 - [ ] `python3 vectors/check.py` green at 0.24, with the real counts recorded;

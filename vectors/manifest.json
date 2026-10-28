@@ -2335,6 +2335,33 @@
         "raw.hex",
         "raw.jsonl",
         "raw.zpf"
+      ],
+      "merged": [
+        {
+          "file": "raw",
+          "session_id": 7,
+          "order": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "file": "decoded",
+          "session_id": 7,
+          "order": [
+            1,
+            2
+          ]
+        },
+        {
+          "file": "annotated",
+          "session_id": 7,
+          "order": [
+            1,
+            2
+          ]
+        }
       ]
     },
     {
