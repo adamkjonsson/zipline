@@ -66,6 +66,21 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.24] — unreleased
+
+**The sessionizer release.** Five gaps found by producers that turn packet
+streams into transport streams: the FIN's position in a closed stream's extent,
+a UDP datagram reassembled from fragments, a capture-point copy of a datagram,
+a sessionized record crossing a declared break, and merged orders in multi-file
+vectors. Scope and reasoning in
+[docs/RELEASE-0.24-PLAN.md](docs/RELEASE-0.24-PLAN.md).
+
+### Added
+
+### Changed
+
+---
+
 ## [0.23] — 2026-10-14
 
 **The pure-ACK release.** One defect, shipped alone: merge step 2 gave a
