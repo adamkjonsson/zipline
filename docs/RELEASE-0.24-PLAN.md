@@ -44,8 +44,7 @@ work only.
 **Keyword counts.** `0.23` left them at `MAY 55, MUST 124, MUST NOT 44,
 SHOULD 28`. #169 is expected to add one or two `MUST NOT`s. #166 rewrote an
 existing `MAY` without adding one. #168 needed none, since it is a definition.
-#170 needs none if D5's scope sentence stands alone, and one `SHOULD` if the
-reason word is pinned, as `capture-gap` was. Each new keyword gets a
+#170 adds one `SHOULD`, pinning the reason word as `capture-gap` was (D5). Each new keyword gets a
 `NORMATIVE_ADDITIONS` entry with its argument.
 
 ---
@@ -54,8 +53,8 @@ reason word is pinned, as `capture-gap` was. Each new keyword gets a
 
 *D1–D4 decided 2026-10-28, each as proposed. Phase 0 posted the decided form on
 each issue before any text was written, so the implementations can build to it.
-D5 was added the same day with #170 and is **proposed, not decided**. It is
-posted on #170 once decided, before its text is written.*
+D5 was added the same day with #170, and decided the same day: option 3,
+with the word pinned. It was posted on #170 before its text was written.*
 
 ### D1 — #168: an extent is measured in sequence space, and a FIN's position is not a hole
 
@@ -188,8 +187,8 @@ owe it as well, which is why it lands first.
 
 ### D5 — #170: an incomplete reassembly is not content of the stream
 
-*Proposed, not decided: the issue's option 3, with the trace the coverage
-guarantee already gives.*
+*Decided 2026-10-28: the issue's option 3, with the trace the coverage
+guarantee already gives, and the word pinned with a `SHOULD`.*
 
 **The line D3 and D5 draw together.** A message-oriented transport stream's
 content is its **messages**. A copy (#169) is a whole message that reached the
@@ -217,8 +216,8 @@ writes, citing #166. `dropped` would be wrong, because it asserts that content
 word such as `incomplete` is possible, and the vocabulary is open. **The choice
 for Adam:** leave the word to the producer (no keyword), or pin it with a
 `SHOULD` as *Referencing the source by stream offset* pins `capture-gap`, so
-that two producers name the shape alike (`SHOULD` 28 → 29). Pinning is
-proposed, for the reason given there.
+that two producers name the shape alike (`SHOULD` 28 → 29). **Decided: pinned**,
+for the reason given there.
 
 **The options not taken.** Option 1, an explicit exception to the withholding
 rule, has the same effect on files. But it weakens the rule's text, while
@@ -304,7 +303,7 @@ Estimated counts: **68 → 76 vectors**, about seven new `RULES` entries. Phases
    posted on all five, #167's noting that its mirror now carries neither
    `seq_start` nor `message`.)*
 5. *(Added with #170.)* Adam decides D5, and the decided form is posted on #170
-   before Phase 6 writes any text.
+   before Phase 6 writes any text. *(Done 2026-10-28: option 3, word pinned.)*
 
 ### Phase 1 — #163, `merged` per file
 
@@ -418,8 +417,8 @@ content and must be written (D3); the incomplete reassembly is not, and need
 not be (D5). D5's sentence can then point at the `copy` paragraph rather than
 argue the contrast twice.*
 
-- The withholding rule's scope sentence (D5), and the `SHOULD` for the word if
-  Adam pins it, with its `NORMATIVE_ADDITIONS` entry. The `retransmit`
+- The withholding rule's scope sentence (D5), and the `SHOULD` for the word,
+  with its `NORMATIVE_ADDITIONS` entry. The `retransmit`
   paragraph's half-sentence on the capture-sourced home.
 - The companion: why it is scope and not an exception, and why `undecodable`
   rather than `dropped`.
@@ -458,14 +457,14 @@ argue the contrast twice.*
 | `copy` is read as covering TCP | low–medium | the `seq_start` exclusion is normative, and the paragraph keeps `duplicate-discarded` as the TCP path |
 | A new multi-file vector owes `merged` and is built before Phase 1 | low | Phase 1 comes first, and `build.py` refuses an unowed shape once it lands |
 | D5's scope sentence is read as licence to leave out **whole** messages, e.g. a filter at the transport layer | medium | the sentence names an incomplete reassembly only, and says why: no message of the stream arrived. D3's `copy` paragraph, just before it, is the counter-case of a whole message that must be written |
-| `undecodable` on fragments reads as "the payload was unparseable", and a consumer counting unparsed bytes miscounts | low | the word's existing meaning, *tried and failed*, fits a reassembly. A pinned `SHOULD` can ask for a `comment` naming the shape |
+| `undecodable` on fragments reads as "the payload was unparseable", and a consumer counting unparsed bytes miscounts | low | the word's existing meaning, *tried and failed*, fits a reassembly. The pinned `SHOULD`'s sentence can suggest a `comment` naming the shape, without a keyword |
 
 ---
 
 ## Definition of done
 
 - [x] D1–D4 decided and dated here, and posted on their issues.
-- [ ] D5 decided and dated here, and posted on #170.
+- [x] D5 decided and dated here, and posted on #170.
 - [x] A transport extent is defined once, and the coverage guarantee owes a
       FIN's position nothing (#168).
 - [x] A transport record carrying `message` may cross input units or a declared
