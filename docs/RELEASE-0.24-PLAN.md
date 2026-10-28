@@ -242,7 +242,9 @@ numbers go in the Definition of done.
 3. Confirm `reject-unknown-minor` reads `0/25` from its own bytes.
 4. Post each decision on its issue (#166, #168 and #169 especially), so
    python-zipline and zpfwire can build to them. Adam tells the implementations
-   himself. "Fixed" comments wait for the merge to `main`.
+   himself. "Fixed" comments wait for the merge to `main`. *(Done 2026-10-28:
+   posted on all five, #167's noting that its mirror now carries neither
+   `seq_start` nor `message`.)*
 
 ### Phase 1 — #163, `merged` per file
 
@@ -314,7 +316,7 @@ numbers go in the Definition of done.
 
 ## Definition of done
 
-- [ ] D1–D4 decided and dated here, and posted on their issues.
+- [x] D1–D4 decided and dated here, and posted on their issues.
 - [ ] A transport extent is defined once, and the coverage guarantee owes a
       FIN's position nothing (#168).
 - [ ] A transport record carrying `message` may cross input units or a declared
