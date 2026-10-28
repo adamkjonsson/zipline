@@ -98,6 +98,25 @@ vectors. Scope and reasoning in
     decode stage over the same capture leaves the FIN's position bare, and
     `check.py` exempts it. The reason the byte-count reading was not taken is
     in the rationale companion.
+- **A transport record flagged `message` may cross its input's seams** ([#166](https://github.com/adamkjonsson/zipline/issues/166)).
+  `0.22`'s permission let a sessionization stage emit a record whose spans
+  cross input units or a declared break, but only when the record carries
+  `seq_start`. A UDP datagram IP-fragmented inside a tunnel arrives as two
+  records of a unit sequence, and its reassembly carries no `seq_start`. So it
+  had no conformant record, and every such datagram was lost. The permission
+  now names two kinds of evidence of a join: sequence numbers, or one message's
+  reassembly in a record flagged `message`, as from IP fragments or SCTP DATA
+  chunks. The evidence is keyed on the flag rather than on the fragments
+  themselves because a checker can see the flag, while the fragments' IP
+  headers are in the input's bytes. A transport record carrying neither still
+  owes both duties.
+  - **No byte, and no keyword.** The existing `MAY` is rewritten.
+  - **Not settled here: an incomplete reassembly**, where a fragment is lost.
+    It runs into the withholding rule and is
+    [#170](https://github.com/adamkjonsson/zipline/issues/170).
+  - **One pair.** `sessionized-fragments` holds real IPv4 fragments, and
+    `check.py` reassembles them to show that the record's payload is their
+    datagram.
 - **Multi-file vectors state merged orders too** ([#163](https://github.com/adamkjonsson/zipline/issues/163)).
   `0.23`'s `merged` was single-file only, because the files of one entry share
   session ids and the key named a session alone. A multi-file entry's items now

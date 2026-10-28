@@ -2252,19 +2252,28 @@ layer no third case is defined — a stage that knows two units join has the sam
 recourse as one that knows it for a declared break, which is to say none but the
 declaration.
 
-**A transport-layer output whose records carry `seq_start` meets both duties
-through its offsets.** It has neither recourse, since a transport-layer stream
-carries no Discontinuity (below) and is never declared `units`. It needs neither,
-because a break in such a stream is a range of sequence numbers that no record
-covers, and that cannot be lost. Such a stage — a
-[sessionization stage](#conformance) reassembling a packet stream — **MAY** emit
-a record whose `spans` cross input units, or an input Discontinuity. Its
-sequence numbers then assert that those bytes join, and it answers for that
-assertion as any reassembler does. Crossing a declared break is ordinary under
-fan-out. The input unit missing between two of a flow's packets may have
-belonged to another flow, and the packets either side then join in their own
-sequence space. A transport output without sequence numbers has no hole to carry
-a break in, and owes both duties as stated.
+**A transport-layer record meets both duties when it carries the evidence of its
+own join.** It has neither recourse, since a transport-layer stream carries no
+Discontinuity (below) and is never declared `units`. A record needs neither when
+it carries one of two kinds of evidence:
+
+- **sequence numbers**, in a record carrying `seq_start`. A break in such a
+  stream is a range of sequence numbers that no record covers, and that cannot
+  be lost;
+- **one message's reassembly**, in a record flagged [`message`](#enums). The
+  record is exactly one transport message, so the input units it cites are that
+  message's fragments: the IP fragments of one datagram, or the SCTP DATA chunks
+  of one message.
+
+Such a stage — a [sessionization stage](#conformance) reassembling a packet
+stream — **MAY** emit a record of either kind whose `spans` cross input units, or
+an input Discontinuity. The record then asserts that those bytes join, and the
+stage answers for that assertion as any reassembler does. Crossing a declared
+break is ordinary under fan-out. The input unit missing between two of a flow's
+packets, or between two fragments of one datagram, may have belonged to another
+flow, and the units either side then join, in their own sequence space or as
+their own message. A transport record carrying neither has no evidence of a join
+for a checker to see, and owes both duties as stated.
 
 The no-splice sentence is what carries the property down a chain, and it is worth
 stating explicitly because it is easy to think the MUST NOT before it covers the

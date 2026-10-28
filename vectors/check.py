@@ -386,9 +386,12 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
     # units participant -- are both barred at the transport layer, so read
     # literally a reassembler over a packet stream could never coalesce two
     # packets. Its sequence numbers already carry any break as a hole, which is
-    # the reason the document gives for barring the block there.
+    # the reason the document gives for barring the block there. 0.24 (#166)
+    # widened the same MAY to a record flagged `message`, whose reassembly of one
+    # message is evidence of the join as sequence numbers are; no keyword moved.
     (
-        r"\*\*MAY\*\* emit\s*a record whose `spans` cross input units, or an input Discontinuity",
+        r"\*\*MAY\*\* emit\s*a record of either kind whose `spans` cross input units, "
+        r"or\s*an input Discontinuity",
         {"MAY": 1},
         "the duty exists so a break seen at one stage is not lost at the next, and "
         "at a sequence-anchored transport output it cannot be: a missing range is "
@@ -627,6 +630,16 @@ RULES = {
     ),
     # 0.24 (#168). The FIN's position inside such an extent holds no byte. A
     # coverage check that counts it reports a gap no decode stage could fill.
+    # 0.24 (#166). A record flagged `message` is exactly one transport message,
+    # so the units it cites are that message's fragments, and its reassembly
+    # is evidence of their join as sequence numbers are. Through 0.23 the
+    # permission to cross was keyed on seq_start, and a fragmented datagram over
+    # a unit sequence had no conformant record.
+    "message-record-may-cross": (
+        "a transport-layer record flagged message MAY cite input units across "
+        "seams or a declared break, as one message's reassembly, without seq_start",
+        "sessionized-fragments",
+    ),
     "fin-position-owed-nothing": (
         "the sequence number a FIN occupies, inside the extent, is owed neither a "
         "span nor an Undecoded block",
@@ -2094,6 +2107,113 @@ def check_past_fin() -> list[str]:
     return out
 
 
+def reassemble(packets: list[bytes]) -> bytes | str:
+    """Join IPv4 fragments into their datagram's IP payload, or say why they do not join.
+
+    Only what sessionized-fragments needs: one identification, fragment offsets
+    that close from 0, and a last fragment without More Fragments. This is the
+    fixture showing its own join is real, not a reassembler the suite offers.
+    """
+    import struct
+
+    heads = [struct.unpack(">HH", p[4:8]) for p in packets]  # identification, flags|offset
+    if len({ident for ident, _fo in heads}) != 1:
+        return "cites packets of different datagrams"
+    frags = sorted(
+        ((fo & 0x1FFF) * 8, fo & 0x2000, p[(p[0] & 0x0F) * 4 :])
+        for (_ident, fo), p in zip(heads, packets, strict=True)
+    )
+    joined = b""
+    for off, _mf, chunk in frags:
+        if off != len(joined):
+            return "has fragments that do not close from offset 0"
+        joined += chunk
+    if frags[-1][1]:
+        return "has no last fragment: More Fragments is set on every one"
+    return joined
+
+
+def crossing(o: dict, units: list[tuple[int, int, bytes]]) -> list[str] | None:
+    """Test one inner record that cites two or more input units; None if it cites fewer.
+
+    Returns its label followed by its failures: it must be a message record
+    without seq_start, and its cited packets must reassemble to its payload.
+    """
+    import base64
+
+    cited = [
+        u for u in units if any(s["off_start"] < u[1] and u[0] < s["off_end"] for s in o["spans"])
+    ]
+    if len(cited) < 2:
+        return None
+    label = f"sessionized-fragments/inner: session {o['session_id']}'s record"
+    out = [label]
+    if "message" not in o.get("flags", ()) or "seq_start" in o:
+        out.append(f"{label} crosses units, but is not a message record without seq_start")
+    datagram = reassemble([p for _a, _b, p in cited])
+    if isinstance(datagram, str):
+        out.append(f"{label} {datagram}")
+    elif datagram[8:] != base64.b64decode(o["payload"]):
+        out.append(f"{label}: its payload is not the fragments' datagram reassembled")
+    return out
+
+
+def check_fragments() -> list[str]:
+    """Verify sessionized-fragments: a message record crosses units, and its join is real.
+
+    The fifth pair check (#166). packets.zpf must be a unit sequence, so every
+    seam is a declared break, and inner.zpf must hold a record whose spans cite
+    two or more of its units -- or the fixture crosses nothing. That record
+    carries `message` and no seq_start, which is the case the permission newly
+    covers. Its join is then shown rather than asserted: the cited packets'
+    IPv4 headers share one identification, their fragment offsets close from 0
+    to a fragment without More Fragments, and their IP payloads joined at those
+    offsets, less the 8-byte UDP header, are the record's payload. With the
+    usual coverage and declared-extent checks over packets.zpf's concatenation.
+    """
+    import base64
+
+    d = os.path.join(HERE, "sessionized-fragments")
+    if not os.path.isdir(d):
+        return ["sessionized-fragments/ missing"]
+
+    out = fixture_digests(d, "sessionized-fragments", ("packets", "inner"), ("inner",))
+    packets = fixture_lines(d, "packets")
+    inner = fixture_lines(d, "inner")
+    if not any(o.get("type") == "participant" and o.get("adjacency") == "units" for o in packets):
+        out.append("sessionized-fragments/packets: not a unit sequence -- no seam is a break")
+    units, at = [], 0  # each packet's [start, end) in the concatenation, and its bytes
+    for o in packets:
+        if o.get("type") == "record":
+            p = base64.b64decode(o["payload"])
+            units.append((at, at + len(p), p))
+            at += len(p)
+    extent = at
+
+    crossings = [c for o in inner if o.get("type") == "record" for c in [crossing(o, units)] if c]
+    for found in crossings:
+        out += found[1:]
+    if not crossings:
+        out.append("sessionized-fragments/inner: no record crosses a seam -- nothing is tested")
+
+    out += covers("sessionized-fragments/inner", inner, 5, 0, extent)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if e["extent"] != extent:
+                out.append(
+                    f"sessionized-fragments: inner session {o['session_id']} declares "
+                    f"packets' extent {e['extent']}, but its records concatenate to {extent}"
+                )
+
+    if not out:
+        print(
+            f"  sessionized-fragments: 2 files, digests match, coverage complete "
+            f"(packets [0,{extent}), {len(units)} units); {len(crossings)} message record crosses "
+            f"seams, and its fragments reassemble to its payload"
+        )
+    return out
+
+
 def check_capability_coverage(manifest: dict) -> list[str]:
     """Every capability the format defines must be exercised by some vector.
 
@@ -2377,6 +2497,7 @@ def main() -> int:
     failures += check_tunnel()
     failures += check_merge()
     failures += check_past_fin()
+    failures += check_fragments()
     failures += check_capability_coverage(manifest)
     failures += check_jsonl_keys()
     failures += check_retired_claims()

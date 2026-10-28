@@ -310,6 +310,32 @@ reaching over the FIN (*the exemption is never tested*). No keyword moved.
   `units` seam and that it carries `message` and no `seq_start`.
 - File the incomplete-reassembly issue (D2's *Not in scope*), if Adam agrees.
 
+*Done 2026-10-28.* The paragraph now opens *A transport-layer record meets both
+duties when it carries the evidence of its own join* and lists the two kinds as
+bullets: `seq_start`, and one message's reassembly under `message`. The existing
+`MAY` covers both, and the last sentence narrows to a record carrying neither.
+`MAY` stays at 55. The 0.22 `NORMATIVE_ADDITIONS` entry matched that `MAY`
+sentence by its text, so `check.py` refused the rewrite until the pattern
+followed the new wording. That is the check working as intended.
+
+**The pair goes further than planned.** `packets.zpf` has no predecessor file:
+it is a decryptor's output citing a capture, with no spans, which is the shape
+`proxy-decoded` established. So nothing in the pair cites an unshipped input,
+and that is #167's complaint about `sessionized-across-units`. Its three
+`net:ip` records have real headers from a new builder helper,
+`udp_fragments()`. Their checksums were confirmed independently of the
+builder. The pair check reassembles the cited fragments from their IPv4
+headers and compares the result with the record's payload, so the join is shown
+rather than asserted. It was seen to fail eight ways (listed in the vectors
+README). Two helpers, `reassemble()` and `crossing()`, keep `check_fragments()`
+under `ruff`'s branch limit. That is a fix, not an ignore.
+
+The session in `inner.zpf` holds one sender per flow, so it owes no `merged`.
+The record's timestamp is its first fragment's, as `sessionized-across-units`
+takes its first packet's. Incomplete reassembly was filed as **#170**
+(`spec`, `question`, no milestone, since none later exists). **71 vectors,
+43 rules.**
+
 ### Phase 4 — #167, the declared break, both ways
 
 - `sessionized-across-break` and `isolate-transport-splice`, with a pair check
@@ -359,7 +385,7 @@ reaching over the FIN (*the exemption is never tested*). No keyword moved.
 - [x] D1–D4 decided and dated here, and posted on their issues.
 - [x] A transport extent is defined once, and the coverage guarantee owes a
       FIN's position nothing (#168).
-- [ ] A transport record carrying `message` may cross input units or a declared
+- [x] A transport record carrying `message` may cross input units or a declared
       break, and one with neither `seq_start` nor `message` owes both duties
       (#166).
 - [ ] `copy` defined at `0x0100`, with its two `MUST NOT`s accounted for (#169).

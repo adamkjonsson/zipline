@@ -2632,6 +2632,48 @@
           ]
         }
       ]
+    },
+    {
+      "name": "sessionized-fragments",
+      "tier": "accept",
+      "violations": 0,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00C1"
+      ],
+      "bytes": 1140,
+      "summary": "A sessionization stage reassembling an IP-fragmented UDP datagram. packets.zpf is a decryptor's output, a unit sequence of three net:ip records with real headers: the datagram's first fragment (id 0x1234, MF, 32 bytes of IP payload) at [0,52), another flow's datagram at [52,92), and the second fragment (offset 4, i.e. 32 bytes) at [92,128). inner.zpf's session 20 is the datagram reassembled, one record flagged message citing both fragments across two seams, with no seq_start. Through 0.23 that record had no conformant form: the permission to cross input units was keyed on seq_start.",
+      "spec_section": "Discontinuity (0x22) -- a transport-layer record meets both duties when it carries the evidence of its own join",
+      "expect": "Accept both files. Session 20's record is exactly one transport message, so the units it cites are that message's fragments and join as its reassembly: a splice check that requires seq_start to cross a unit sequence's seams reports a violation that is not there. Its 40-byte payload is the datagram's data, the fragments' IP payloads joined at their offsets with the UDP header removed. Both sessions declare packets.zpf's full extent, 128.",
+      "has_jsonl": true,
+      "files": [
+        "inner.hex",
+        "inner.jsonl",
+        "inner.zpf",
+        "packets.hex",
+        "packets.jsonl",
+        "packets.zpf"
+      ]
     }
   ]
 }

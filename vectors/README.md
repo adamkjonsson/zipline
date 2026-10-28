@@ -421,13 +421,23 @@ disagreed on every closed connection zpfwire wrote.
 | `closed-final-ack` | *(accept)* A closed connection: each side's FIN rides on its data, and the server's final pure ACK is stored at 5006, one past its FIN at 5005. Server: `PONG` at `[0,4)`, FIN at offset 4, pure ACK at 5. Client: `PING`, `QUIT` at `[0,8)`, FIN at 8 with nothing past it. Extents **8 and 5**: a reader that counts bytes measures the server's stream as 4. The asymmetry is deliberate, since only the side with something stored past its FIN reaches past it. Merged order is stored order. |
 | `decoded-past-fin/` | *(accept, two files)* A decode stage over the same capture that leaves the server's FIN position bare and declares extent 5. See [The closed stream](#the-closed-stream). |
 
+A transport-layer record may cross its input's seams when it carries the
+evidence of its own join. Since `0.22` that meant `seq_start`. Since `0.24` it
+also means the **`message`** flag: the record is exactly one transport message,
+so the units it cites are that message's fragments (#166). An IP-fragmented UDP
+datagram over a unit sequence had no conformant record before.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `sessionized-fragments/` | *(accept, two files)* A unit sequence of three real IPv4 packets: fragment 1 of a UDP datagram, another flow's datagram, fragment 2. The reassembly is one `message` record citing both fragments across two seams, with no `seq_start`. See [The fragmented datagram](#the-fragmented-datagram). |
+
 ## Multi-file fixtures
 
-Five directories are **fixtures** rather than vectors: several files that only
+Six directories are **fixtures** rather than vectors: several files that only
 mean anything together, because what they test is a relationship *between*
 files. `check.py` walks each member exactly as it walks a single-file vector —
 framing, projection, the lot — and adds arithmetic specific to `chain/`,
-`tunnel/`, `merge/` and `decoded-past-fin/` on top: one function each, sharing the digest check, the
+`tunnel/`, `merge/`, `decoded-past-fin/` and `sessionized-fragments/` on top: one function each, sharing the digest check, the
 unwrapping extent arithmetic (signed serial delta from the last placeable record,
 the origin `isn + 1` first — `stream-wraps-seq` is what keeps it honest) and the
 coverage union.
@@ -621,6 +631,41 @@ numbers, the server's FIN position seen to lie **inside** its extent and seen
 coverage exact with that position exempt, and the declared `input_extents` equal
 to the derived numbers. It was seen to fail without the exemption, on a declared
 extent of 4, and on a span reaching over the FIN before it was trusted.
+
+### The fragmented datagram
+
+`sessionized-fragments/` is the pair #166 asked for: **a record flagged
+`message` may cross a unit sequence's seams, as one message's reassembly**.
+
+```
+packets.zpf (units)                         inner.zpf (transport)
+  [0,52)    id 0x1234, MF, offset 0           session 20: one message record,
+  [52,92)   flow B's datagram                   spans [0,52) and [92,128),
+  [92,128)  id 0x1234, offset 32                no seq_start
+                                              session 21: flow B, [52,92)
+```
+
+`packets.zpf` is a decryptor's output with no predecessor file, so it cites a
+capture and carries no spans. Its three `net:ip` records have real headers. The
+datagram's two fragments share one identification, DF is clear, MF is set on the
+first only, and every checksum is true. `inner.zpf`'s session 20 is that datagram
+reassembled, 40 bytes of data. Both sessions declare `packets.zpf`'s full extent,
+128.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `sessionized-fragments/` | *(accept, two files)* The pair above. A splice check that requires `seq_start` before a record may cross a unit sequence's seams reports a violation that is not there. |
+
+`check.py` verifies the pair: `packets.zpf` is seen to be a unit sequence, a
+record of `inner.zpf` is seen to cite two or more of its units, and that record
+carries `message` and no `seq_start`. The join is then **shown rather than
+asserted**. The cited packets' IPv4 headers share one identification, their
+offsets close from 0 to a fragment without More Fragments, and their IP payloads
+joined at those offsets, less the UDP header, are the record's payload. Coverage
+and the declared extents are checked as for the other pairs. It was seen to fail
+without the flag, with a `seq_start`, on a fragment of another datagram, on a gap
+in the offsets, with More Fragments on the last fragment, on a payload that is
+not the reassembly, on a contiguous input, and on a record that crosses nothing.
 
 ## Coverage this does not have
 

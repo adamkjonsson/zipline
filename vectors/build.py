@@ -5185,6 +5185,37 @@ def udp_packet(sport: int, dport: int, payload: bytes) -> bytes:
     return ipv4(UDP, udp(sport, dport, payload, IPV4_SRC, IPV4_DST))
 
 
+def udp_fragments(sport: int, dport: int, payload: bytes, ident: int, cut: int) -> list[bytes]:
+    """Split one UDP datagram into two IPv4 fragments at byte `cut` of its IP payload.
+
+    Real headers, as ipv4() writes them, but with DF clear: both carry the
+    identification `ident`, the first sets More Fragments at offset 0, and the
+    second gives its offset in 8-byte units (#166). `cut` must be a multiple of 8.
+    """
+    datagram = udp(sport, dport, payload, IPV4_SRC, IPV4_DST)
+    out = []
+    for start, end, flags in ((0, cut, 0x2000), (cut, len(datagram), 0)):
+        chunk = datagram[start:end]
+        hdr = bytearray(
+            struct.pack(
+                ">BBHHHBBH4s4s",
+                0x45,
+                0,
+                20 + len(chunk),
+                ident,
+                flags | start // 8,
+                64,
+                UDP,
+                0,
+                IPV4_SRC,
+                IPV4_DST,
+            )
+        )
+        struct.pack_into(">H", hdr, 10, inet_checksum(bytes(hdr)))
+        out.append(bytes(hdr) + chunk)
+    return out
+
+
 ETH_DST, ETH_SRC = bytes.fromhex("aabbcc000002"), bytes.fromhex("aabbcc000001")
 
 
@@ -7755,6 +7786,195 @@ def build_past_fin() -> None:
     )
 
 
+# 0.24 (#166). One UDP datagram, IP-fragmented inside a tunnel, arrives as two
+# records of a unit sequence with another flow's packet between them. Its
+# reassembly is one message whose spans must cite both fragments, crossing two
+# seams, and it carries no seq_start. Through 0.23 the permission to cross was
+# keyed on seq_start alone, so the datagram had no conformant record. Since 0.24
+# the `message` flag is the evidence of a join a checker can see.
+FRAG_DATA, FLOW_B_DATA = b"d" * 40, b"e" * 12
+
+
+def build_fragments() -> None:
+    """Build a unit sequence carrying a fragmented datagram, and its reassembly."""
+    fixture(
+        "sessionized-fragments",
+        "accept",
+        "A sessionization stage reassembling an IP-fragmented UDP datagram. "
+        "packets.zpf is a decryptor's output, a unit sequence of three net:ip "
+        "records with real headers: the datagram's first fragment (id 0x1234, "
+        "MF, 32 bytes of IP payload) at [0,52), another flow's datagram at "
+        "[52,92), and the second fragment (offset 4, i.e. 32 bytes) at [92,128). "
+        "inner.zpf's session 20 is the datagram reassembled, one record flagged "
+        "message citing both fragments across two seams, with no seq_start. "
+        "Through 0.23 that record had no conformant form: the permission to "
+        "cross input units was keyed on seq_start.",
+        "Discontinuity (0x22) -- a transport-layer record meets both duties when "
+        "it carries the evidence of its own join",
+        "Accept both files. Session 20's record is exactly one transport message, "
+        "so the units it cites are that message's fragments and join as its "
+        "reassembly: a splice check that requires seq_start to cross a unit "
+        "sequence's seams reports a violation that is not there. Its 40-byte "
+        "payload is the datagram's data, the fragments' IP payloads joined at "
+        "their offsets with the UDP header removed. Both sessions declare "
+        "packets.zpf's full extent, 128.",
+        violations=0,
+    )
+    frag1, frag2 = udp_fragments(5000, 5353, FRAG_DATA, 0x1234, 32)
+    flow_b = udp_packet(5001, 53, FLOW_B_DATA)
+    pkts = [(1000, frag1), (1100, flow_b), (1200, frag2)]
+    packets = member(
+        "sessionized-fragments",
+        "packets",
+        "A decryptor's output: three inner IPv4 packets as a unit sequence, "
+        "the second between the two fragments of the first's datagram.",
+        [
+            file_header(options=[o_produced_by("zpf-wg 0.3"), o_produced_at(1719700000)]),
+            source(1, 0, [o_uri("wg.pcap")]),
+            decoder(1, [o_dec_name("wireguard-decrypt"), o_dec_version("0.3")]),
+            session(5, [o_proto("ip")]),
+            participant(5, 0, [o_endpoint("10.8.0.2")], adjacency=1),
+            *(
+                record(5, 0, 1, ts, p, options=[o_decoder_id(1), o_content_type("net:ip")])
+                for ts, p in pkts
+            ),
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-wg 0.3",
+                "produced_at": 1719700000,
+            },
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "wg.pcap"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "wireguard-decrypt",
+                "version": "0.3",
+            },
+            {"type": "session", "session_id": 5, "proto": "ip"},
+            {
+                "type": "participant",
+                "session_id": 5,
+                "pid": 0,
+                "adjacency": "units",
+                "endpoint": ["10.8.0.2"],
+            },
+            *(
+                {
+                    "type": "record",
+                    "session_id": 5,
+                    "sender_pid": 0,
+                    "source_id": 1,
+                    "ts": ts,
+                    "payload": b64(p),
+                    "decoder_id": 1,
+                    "content_type": "net:ip",
+                }
+                for ts, p in pkts
+            ),
+            {"type": "end"},
+        ],
+    )
+    dg = "sha256:" + hashlib.sha256(packets).hexdigest()
+
+    def flow(sess: int, port: int, ts: int, payload: bytes, spans: list) -> list:
+        """Both faces of one UDP flow's session: descriptors, its record, its end."""
+        blocks = [
+            session(sess, [o_proto("udp")]),
+            participant(sess, 0, [o_endpoint(f"10.8.0.2:{port}")]),
+            record(
+                sess,
+                0,
+                1,
+                ts,
+                payload,
+                flags=0x0080,
+                options=[o_decoder_id(1), o_spans([(1, 5, 0, a, b) for a, b in spans])],
+            ),
+            session_end(sess, [o_input_extents([(1, 5, 0, 128)])]),
+        ]
+        lines = [
+            {"type": "session", "session_id": sess, "proto": "udp"},
+            {
+                "type": "participant",
+                "session_id": sess,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": [f"10.8.0.2:{port}"],
+            },
+            {
+                "type": "record",
+                "session_id": sess,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": ts,
+                "flags": ["message"],
+                "payload": b64(payload),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": a, "off_end": b}
+                    for a, b in spans
+                ],
+            },
+            {
+                "type": "session_end",
+                "session_id": sess,
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 128}],
+            },
+        ]
+        return [blocks, lines]
+
+    # Flow A: one message, two spans, one per fragment, flow B's packet between.
+    a_blocks, a_lines = flow(20, 5000, 1000, FRAG_DATA, [(0, 52), (92, 128)])
+    b_blocks, b_lines = flow(21, 5001, 1100, FLOW_B_DATA, [(52, 92)])
+    member(
+        "sessionized-fragments",
+        "inner",
+        "The sessionization stage over packets.zpf: flow A's datagram "
+        "reassembled from its two fragments as one message record, and flow B's "
+        "datagram as its own session.",
+        [
+            file_header(options=[o_produced_by("zpf-sessionize 1.0"), o_produced_at(1719700100)]),
+            source(1, 1, [o_uri("packets.zpf"), o_digest(dg)]),
+            decoder(1, [o_dec_name("udp-reassembly"), o_dec_version("1.1")], output_layer=1),
+            *a_blocks,
+            *b_blocks,
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-sessionize 1.0",
+                "produced_at": 1719700100,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "packets.zpf",
+                "digest": dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "transport",
+                "name": "udp-reassembly",
+                "version": "1.1",
+            },
+            *a_lines,
+            *b_lines,
+            {"type": "end"},
+        ],
+    )
+
+
 def main() -> int:
     check = "--check" in sys.argv
     build_chain()
@@ -7762,6 +7982,7 @@ def main() -> int:
     build_tunnel()
     build_merge()
     build_past_fin()
+    build_fragments()
     manifest = []
     problems = []
 
