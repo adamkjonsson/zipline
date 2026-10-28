@@ -405,13 +405,29 @@ implementations only.
 | `sequenced-pure-ack-and-fin` | *(accept)* A **SEQUENCED** session: handshake, eight bytes of data, the server's pure ACK, the client's zero-length FIN, and the server's pure ACK of the FIN. Pure ACKs are stored as zero-length records, as *Caveats* advises. Ends: SYN 0, SYN-ACK 0, data 8, FIN **9**, pure ACKs **none**. Every edge runs forward in stored order. A reader that gives a pure ACK an end at its offset draws `pure ACK → data` against `data → pure ACK`, a cycle, and refuses the order or stalls. One that ends the FIN at its offset draws `FIN → pure ACK` against the stored order. Extents 8 and 0. |
 | `merge-pure-ack-and-fin` | *(accept)* The same six records, **unsequenced**, stored server first, with the server's clock 50 ticks behind, so the timestamp tie-break pulls a server record too early wherever an edge is missing. Merged: client SYN, SYN-ACK, data, pure ACK, FIN, pure ACK. Each wrong reading gives its own answer: a SYN given no end puts the SYN-ACK first, a pure ACK ended at its offset **stalls**, and a FIN ended at its offset overtakes the pure ACK that acknowledged only the data. A reader returning stored order has not merged. Extents 8 and 0. |
 
+### Added in `0.24`
+
+A transport stream's extent is the furthest point its placeable records reach,
+and like every transport offset it counts **sequence numbers**, not delivered
+bytes. A closing side's final pure ACK is stored at the sequence number its
+segment carries, one past that side's FIN, so the stream reaches one past its
+last byte, and the position between is the FIN's. That position holds no byte,
+and the coverage guarantee owes it nothing (#168). Through `0.23` the extent was
+never defined, and python-zipline's decode stage and its own coverage check
+disagreed on every closed connection zpfwire wrote.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `closed-final-ack` | *(accept)* A closed connection: each side's FIN rides on its data, and the server's final pure ACK is stored at 5006, one past its FIN at 5005. Server: `PONG` at `[0,4)`, FIN at offset 4, pure ACK at 5. Client: `PING`, `QUIT` at `[0,8)`, FIN at 8 with nothing past it. Extents **8 and 5**: a reader that counts bytes measures the server's stream as 4. The asymmetry is deliberate, since only the side with something stored past its FIN reaches past it. Merged order is stored order. |
+| `decoded-past-fin/` | *(accept, two files)* A decode stage over the same capture that leaves the server's FIN position bare and declares extent 5. See [The closed stream](#the-closed-stream). |
+
 ## Multi-file fixtures
 
-Four directories are **fixtures** rather than vectors: several files that only
+Five directories are **fixtures** rather than vectors: several files that only
 mean anything together, because what they test is a relationship *between*
 files. `check.py` walks each member exactly as it walks a single-file vector —
 framing, projection, the lot — and adds arithmetic specific to `chain/`,
-`tunnel/` and `merge/` on top: one function each, sharing the digest check, the
+`tunnel/`, `merge/` and `decoded-past-fin/` on top: one function each, sharing the digest check, the
 unwrapping extent arithmetic (signed serial delta from the last placeable record,
 the origin `isn + 1` first — `stream-wraps-seq` is what keeps it honest) and the
 coverage union.
@@ -578,6 +594,33 @@ real rather than asserted), `merged.zpf`'s spans plus Undecoded block covering
 each input stream exactly, per source, and its declared `input_extents` equal to
 the derived numbers. It was seen to fail on a `merged.jsonl` with the `gap` line
 removed before it was trusted.
+
+### The closed stream
+
+`decoded-past-fin/` is the pair #168 asked for: **the position a FIN occupies,
+inside an extent, is owed nothing**.
+
+```
+capture.zpf   closed-final-ack                decoded.zpf
+  server  PONG [0,4) + FIN at 4                 spans [0,4); nothing at 4
+          pure ACK at 5 (seq 5006)               declares extent 5
+```
+
+`capture.zpf` is `closed-final-ack`, byte for byte. Its server stream reaches 5,
+because the final pure ACK is stored at its wire number, one past the FIN.
+`decoded.zpf` spans the server's data and marks nothing at offset 4, the FIN's
+position, which holds no byte.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `decoded-past-fin/` | *(accept, two files)* The pair above. A coverage check that reports `[4,5)` as a gap, or a decode stage that declares 4, has counted bytes where the extent counts sequence numbers. Marking the position Undecoded is not required. |
+
+`check.py` verifies the pair: each input's extent re-derived from its sequence
+numbers, the server's FIN position seen to lie **inside** its extent and seen
+**not** to be covered by `decoded.zpf` (so the exemption is really exercised),
+coverage exact with that position exempt, and the declared `input_extents` equal
+to the derived numbers. It was seen to fail without the exemption, on a declared
+extent of 4, and on a span reaching over the FIN before it was trusted.
 
 ## Coverage this does not have
 

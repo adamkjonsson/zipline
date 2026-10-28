@@ -79,6 +79,25 @@ vectors. Scope and reasoning in
 
 ### Changed
 
+- **A transport stream's extent is defined, and a FIN's position is owed nothing** ([#168](https://github.com/adamkjonsson/zipline/issues/168)).
+  The extent is the furthest point a placeable record reaches, a zero-length
+  record reaching its own offset. It counts sequence numbers, not bytes, as
+  every transport offset does. This is the arithmetic `check.py`,
+  python-zipline's `check_coverage` and zpfwire already used, now stated, under
+  *Referencing the source by stream offset*. A closing side's final pure ACK is
+  stored at its wire number, one past that side's FIN, so the stream reaches one
+  past its last byte. *Coverage honesty* now says the FIN's position holds no
+  byte and is owed neither a span nor an Undecoded block.
+  - **Who changes.** A decode stage that declared the extent as the end of its
+    data declares one more on such a stream. python-zipline's
+    `_extent_and_gaps` is one. A coverage check exempts the FIN's position.
+  - **No byte of any file changes, and no keyword.** No earlier vector stores a
+    record past a FIN.
+  - **Two vectors.** `closed-final-ack` declares extents 8 and 5, and a reader
+    counting bytes gets 4 for the server. `decoded-past-fin` is a pair: a
+    decode stage over the same capture leaves the FIN's position bare, and
+    `check.py` exempts it. The reason the byte-count reading was not taken is
+    in the rationale companion.
 - **Multi-file vectors state merged orders too** ([#163](https://github.com/adamkjonsson/zipline/issues/163)).
   `0.23`'s `merged` was single-file only, because the files of one entry share
   session ids and the key named a session alone. A multi-file entry's items now

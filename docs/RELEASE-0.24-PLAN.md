@@ -276,6 +276,33 @@ specification text changes, and the counts stay at 68 vectors and 40 rules.
   fail on `decoded-past-fin` without the exemption.
 - `closed-final-ack` and `decoded-past-fin`, and their `RULES` entries.
 
+*Done 2026-10-28.* The extent paragraph sits after *Zero width is not
+deletion*, so it can say *placeable* next to the unplaceable rule, which
+addresses the second risk. It also states where a pure ACK is stored: at the
+sequence number its segment carries. The issue noted that the spec never said
+so. *Session End*'s *as Layers defines it* still lands on the definition. The
+coverage paragraph follows the guarantee in *Coverage honesty*, and it names
+the FIN's position only, which addresses the first risk. The argument for
+counting sequence numbers went into the companion's Layers section. Its claim
+that storing the ACK on the FIN's number stalls the merge is attributed to
+python-zipline's report and not stated as derived, because under the `0.23`
+end rule a pure ACK has no end and the spec alone does not show the stall.
+
+**The trace is asymmetric on purpose.** Both sides send data with FIN, but
+only the server has a final pure ACK stored past it (at 5006). So the server
+reaches 5 with its FIN at 4, and the client ends at 8 with its FIN at 8,
+outside its extent. One file shows both cases. `closed_final_ack()` builds both
+faces once, and the pair's `capture.zpf` is the single-file vector byte for
+byte. Both owe `merged` (Phase 1's key is used at once): `capture` 1 2 3 4 and
+`decoded` 1 2 3. These were re-derived with a reference merge outside the suite
+(edges 1→2, 1→4, 2→3, 3→4; ends 4, 4, 8, none).
+
+`check.py` gains `placed()`, the walk `anchored_ranges` now reports from, plus
+`fin_positions()`, `covers(exempt=…)` and `check_past_fin()`. The pair check
+was seen to fail with no exemption, with a declared extent of 4, and with a span
+reaching over the FIN (*the exemption is never tested*). No keyword moved.
+**70 vectors, 42 rules.**
+
 ### Phase 3 — #166, a reassembled message may cross
 
 - The §Discontinuity rewrite (D2). Confirm the `MAY` count does not move.
@@ -330,7 +357,7 @@ specification text changes, and the counts stay at 68 vectors and 40 rules.
 ## Definition of done
 
 - [x] D1–D4 decided and dated here, and posted on their issues.
-- [ ] A transport extent is defined once, and the coverage guarantee owes a
+- [x] A transport extent is defined once, and the coverage guarantee owes a
       FIN's position nothing (#168).
 - [ ] A transport record carrying `message` may cross input units or a declared
       break, and one with neither `seq_start` nor `message` owes both duties

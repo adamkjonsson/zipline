@@ -1920,6 +1920,55 @@
       ]
     },
     {
+      "name": "closed-final-ack",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 404,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0020",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0072"
+      ],
+      "summary": "A closed connection, as a sessionizer following Caveats writes it: each side's FIN rides on its data, and the server's final pure ACK is stored at the sequence number its segment carries, 5006 -- one past its own FIN at 5005. The server's stream is PONG at [0,4), its FIN at offset 4, and the pure ACK at offset 5, so the stream reaches 5: one past its last byte, and the position between is the FIN's. The client's FIN at offset 8 has nothing stored past it, so its stream ends at its last byte, 8. Since 0.24 the extent is stated as the furthest point a placeable record reaches, measured in sequence numbers; through 0.23 it was never defined, and python-zipline's decode stage and its own coverage check disagreed on every closed connection zpfwire wrote.",
+      "spec_section": "Referencing the source by stream offset -- a transport stream's extent",
+      "expect": "Accept. Extents are 8 for the client and 5 for the server: the server's final pure ACK at offset 5 extends its stream past the FIN's position, 4, which holds no byte. A reader that counts only bytes measures the server's stream as 4 and is wrong. Ends for the merge, per Fields used: PING 4, PONG 4 (a data record keeps its data end with FIN), QUIT 8, and none for the pure ACK. Ack positions 0, 4, 5 and 9. The merge is stored order.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 7,
+          "pid": 0,
+          "extent": 8
+        },
+        {
+          "session_id": 7,
+          "pid": 1,
+          "extent": 5
+        }
+      ],
+      "merged": [
+        {
+          "session_id": 7,
+          "order": [
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      ]
+    },
+    {
       "name": "sessionized-across-units",
       "tier": "accept",
       "violations": 0,
@@ -2517,6 +2566,71 @@
         "merged.hex",
         "merged.jsonl",
         "merged.zpf"
+      ]
+    },
+    {
+      "name": "decoded-past-fin",
+      "tier": "accept",
+      "violations": 0,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0072",
+        "0x0080",
+        "0x0090",
+        "0x00C1"
+      ],
+      "bytes": 1008,
+      "summary": "closed-final-ack's capture, and a decode stage over it. The server's stream reaches 5, one past its FIN at offset 4, because its final pure ACK is stored at its wire number. The decoder spans the server's data [0,4), owes the FIN's position nothing and marks nothing there, and declares the stream's extent as 5. The client's FIN has nothing past it, so its stream is [0,8) and is covered exactly.",
+      "spec_section": "Coverage honesty -- the position a FIN occupies is owed nothing",
+      "expect": "Accept both files. decoded.zpf's Session End declares extents 8 and 5, both what capture.zpf's sequence numbers give. A coverage check that reports [4,5) of the server's stream as a gap, or an extent mismatch against 4, is wrong: that position is the FIN's and holds no byte. Marking it Undecoded is not required.",
+      "has_jsonl": true,
+      "files": [
+        "capture.hex",
+        "capture.jsonl",
+        "capture.zpf",
+        "decoded.hex",
+        "decoded.jsonl",
+        "decoded.zpf"
+      ],
+      "merged": [
+        {
+          "file": "capture",
+          "session_id": 7,
+          "order": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "file": "decoded",
+          "session_id": 7,
+          "order": [
+            1,
+            2,
+            3
+          ]
+        }
       ]
     }
   ]

@@ -4868,6 +4868,106 @@ vector(
     merged=[(7, [4, 1, 5, 2, 6, 3])],
 )
 
+
+# 0.24 (#168). A closing side's final pure ACK is stored at the sequence number
+# its segment carries, one past that side's FIN, and the extent counts sequence
+# numbers: the stream reaches one past its last byte, and the position between
+# is the FIN's. The trace is asymmetric on purpose. The server's FIN rides on
+# its data and its final ACK is stored past it; the client's FIN rides on its
+# data with nothing after it, so the one stream reaches past its FIN and the
+# other does not. Shared with decoded-past-fin's capture.zpf.
+def closed_final_ack() -> tuple[list[Blk], list[dict]]:
+    """Build the capture-sourced close: both faces, for the vector and the fixture."""
+    blocks = [
+        file_header(),
+        source(1, 0, [o_uri("close.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+        record(7, 0, 1, 1000, b"PING", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]),
+        # Data and FIN: the data is [0,4), and the FIN occupies 5005, offset 4.
+        record(7, 1, 1, 1100, b"PONG", flags=0x0003, options=[o_seq_start(5001), o_ack(1005)]),
+        # Data and FIN again, [4,8) with the FIN at offset 8. It acks the
+        # server's FIN (5006), and nothing of the client's is stored past it.
+        record(7, 0, 1, 1200, b"QUIT", flags=0x0003, options=[o_seq_start(1005), o_ack(5006)]),
+        # The server's final pure ACK, at its wire number 5006: offset 5, one
+        # past its FIN. It acks the client's FIN (1010). No end, so no edge from it.
+        record(7, 1, 1, 1300, b"", options=[o_seq_start(5006), o_ack(1010)]),
+        end_block(),
+    ]
+
+    def rec(pid: int, ts: int, flags: list[str], payload: bytes, seq: int, ack: int) -> dict:
+        return {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": pid,
+            "source_id": 1,
+            "ts": ts,
+            **({"flags": flags} if flags else {}),
+            "payload": b64(payload),
+            "seq_start": seq,
+            "ack": ack,
+        }
+
+    jsonl = [
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "close.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+        },
+        rec(0, 1000, ["psh"], b"PING", 1001, 5001),
+        rec(1, 1100, ["psh", "fin"], b"PONG", 5001, 1005),
+        rec(0, 1200, ["psh", "fin"], b"QUIT", 1005, 5006),
+        rec(1, 1300, [], b"", 5006, 1010),
+        {"type": "end"},
+    ]
+    return blocks, jsonl
+
+
+CLOSED_BLOCKS, CLOSED_JSONL = closed_final_ack()
+vector(
+    "closed-final-ack",
+    "accept",
+    "A closed connection, as a sessionizer following Caveats writes it: each "
+    "side's FIN rides on its data, and the server's final pure ACK is stored "
+    "at the sequence number its segment carries, 5006 -- one past its own FIN "
+    "at 5005. The server's stream is PONG at [0,4), its FIN at offset 4, and "
+    "the pure ACK at offset 5, so the stream reaches 5: one past its last "
+    "byte, and the position between is the FIN's. The client's FIN at offset 8 "
+    "has nothing stored past it, so its stream ends at its last byte, 8. Since "
+    "0.24 the extent is stated as the furthest point a placeable record "
+    "reaches, measured in sequence numbers; through 0.23 it was never "
+    "defined, and python-zipline's decode stage and its own coverage check "
+    "disagreed on every closed connection zpfwire wrote.",
+    "Referencing the source by stream offset -- a transport stream's extent",
+    CLOSED_BLOCKS,
+    jsonl=CLOSED_JSONL,
+    expect="Accept. Extents are 8 for the client and 5 for the server: the "
+    "server's final pure ACK at offset 5 extends its stream past the FIN's "
+    "position, 4, which holds no byte. A reader that counts only bytes "
+    "measures the server's stream as 4 and is wrong. Ends for the merge, per "
+    "Fields used: PING 4, PONG 4 (a data record keeps its data end with FIN), "
+    "QUIT 8, and none for the pure ACK. Ack positions 0, 4, 5 and 9. The merge "
+    "is stored order.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 5)],
+    merged=[(7, [1, 2, 3, 4])],
+)
+
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
 # layer, so a reassembler over a unit sequence could never coalesce two
 # packets. Its sequence numbers carry any break as a hole, so now it may.
@@ -7530,12 +7630,138 @@ def build_merge() -> None:
     )
 
 
+# 0.24 (#168). closed-final-ack as the input to a decode stage. The server's
+# stream reaches 5 and its FIN occupies offset 4, which holds no byte: the
+# decoder spans [0,4), marks nothing at 4, and declares the extent 5. A
+# coverage check that counts the FIN's position reports a gap there, which is
+# the failure zipline-kober met on every TCP input over zpfwire 0.8.0.
+def build_past_fin() -> None:
+    """Build the capture and a decode stage over it that leaves the FIN's position bare."""
+    fixture(
+        "decoded-past-fin",
+        "accept",
+        "closed-final-ack's capture, and a decode stage over it. The server's "
+        "stream reaches 5, one past its FIN at offset 4, because its final pure "
+        "ACK is stored at its wire number. The decoder spans the server's data "
+        "[0,4), owes the FIN's position nothing and marks nothing there, and "
+        "declares the stream's extent as 5. The client's FIN has nothing past "
+        "it, so its stream is [0,8) and is covered exactly.",
+        "Coverage honesty -- the position a FIN occupies is owed nothing",
+        "Accept both files. decoded.zpf's Session End declares extents 8 and 5, "
+        "both what capture.zpf's sequence numbers give. A coverage check that "
+        "reports [4,5) of the server's stream as a gap, or an extent mismatch "
+        "against 4, is wrong: that position is the FIN's and holds no byte. "
+        "Marking it Undecoded is not required.",
+        violations=0,
+        merged=[("capture", 7, [1, 2, 3, 4]), ("decoded", 7, [1, 2, 3])],
+    )
+    capture = member(
+        "decoded-past-fin",
+        "capture",
+        "closed-final-ack, as this pair's input.",
+        CLOSED_BLOCKS,
+        CLOSED_JSONL,
+    )
+    dg = "sha256:" + hashlib.sha256(capture).hexdigest()
+
+    def dec(pid: int, ts: int, payload: bytes, start: int, end: int) -> tuple[Blk, dict]:
+        blk = record(
+            7, pid, 1, ts, payload, options=[o_decoder_id(1), o_spans([(1, 7, pid, start, end)])]
+        )
+        line = {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": pid,
+            "source_id": 1,
+            "ts": ts,
+            "payload": b64(payload),
+            "decoder_id": 1,
+            "spans": [
+                {"source_id": 1, "session_id": 7, "pid": pid, "off_start": start, "off_end": end}
+            ],
+        }
+        return blk, line
+
+    recs = [
+        dec(0, 1000, b"PING", 0, 4),
+        dec(1, 1100, b"PONG", 0, 4),
+        dec(0, 1200, b"QUIT", 4, 8),
+    ]
+    member(
+        "decoded-past-fin",
+        "decoded",
+        "A decode stage over capture.zpf. Its spans cover the client's [0,8) "
+        "and the server's [0,4); the server's offset 4 is its FIN's, and is "
+        "owed nothing.",
+        [
+            file_header(options=[o_produced_by("zpf-decode 0.4"), o_produced_at(1719500000)]),
+            source(1, 1, [o_uri("capture.zpf"), o_digest(dg)]),
+            decoder(1, [o_dec_name("ping"), o_dec_version("0.4")]),
+            session(7, [o_proto("ping")]),
+            participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+            participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+            *(blk for blk, _ in recs),
+            session_end(7, [o_input_extents([(1, 7, 0, 8), (1, 7, 1, 5)])]),
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-decode 0.4",
+                "produced_at": 1719500000,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "capture.zpf",
+                "digest": dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "ping",
+                "version": "0.4",
+            },
+            {"type": "session", "session_id": 7, "proto": "ping"},
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.0.0.1:51000"],
+            },
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 1,
+                "adjacency": "contiguous",
+                "endpoint": ["93.184.216.34:80"],
+            },
+            *(line for _, line in recs),
+            {
+                "type": "session_end",
+                "session_id": 7,
+                "input_extents": [
+                    {"source_id": 1, "session_id": 7, "pid": 0, "extent": 8},
+                    {"source_id": 1, "session_id": 7, "pid": 1, "extent": 5},
+                ],
+            },
+            {"type": "end"},
+        ],
+    )
+
+
 def main() -> int:
     check = "--check" in sys.argv
     build_chain()
     build_splice()
     build_tunnel()
     build_merge()
+    build_past_fin()
     manifest = []
     problems = []
 

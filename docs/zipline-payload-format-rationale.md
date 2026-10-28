@@ -95,6 +95,25 @@ to end.
 whose bytes it cannot attribute to any offset, and a zero-width range is the only
 claim that stays true whatever the writer meant.
 
+**Why an extent counts a FIN's sequence number rather than only bytes**
+([#168](https://github.com/adamkjonsson/zipline/issues/168)).
+The other reading, that a zero-length record extends no extent, is one sentence
+too. But it is a rule written to undo what the offset space already is, and it
+costs evidence. A pure ACK stored after a lost tail segment is the only record
+that the tail was sent:
+
+```
+A: data [0, 100)      lost: [100, 150)      A: pure ACK at 150
+```
+
+Counted in sequence numbers, the extent is 150, and `[100, 150)` is a gap that a
+decode stage must mark. Counted in bytes, it is 100, and the loss vanishes. The
+mirror of the handshake's answer, storing the final ACK on the FIN's own number
+as a SYN record sits at the origin, was tried downstream. python-zipline reported
+that its linearizing writer then stalled on 13 of zpfwire's 22 fixtures, and the
+wire number is what a capture gives a producer anyway. The cost of the reading
+taken is one sentence: the FIN's position is not a hole.
+
 ## Binary encoding (normative reference)
 
 *Field-layout decisions: what a body field costs against an option, why packed

@@ -617,6 +617,21 @@ RULES = {
         "end reading gives a different merged order, or a stall",
         "merge-pure-ack-and-fin",
     ),
+    # 0.24 (#168). The extent is measured in sequence numbers. A closing side's
+    # final pure ACK, stored at its wire number, sits one past that side's FIN
+    # and extends the stream by one. Read as bytes, the stream measures short.
+    "extent-reaches-past-fin": (
+        "a transport extent is the furthest point a placeable record reaches; a "
+        "final pure ACK stored one past its side's FIN extends it past the last byte",
+        "closed-final-ack",
+    ),
+    # 0.24 (#168). The FIN's position inside such an extent holds no byte. A
+    # coverage check that counts it reports a gap no decode stage could fill.
+    "fin-position-owed-nothing": (
+        "the sequence number a FIN occupies, inside the extent, is owed neither a "
+        "span nor an Undecoded block",
+        "decoded-past-fin",
+    ),
     # 0.22 (#152). The permission the carry duty's letter withheld. No checker
     # can see a wrong coalesce -- the sequence numbers are the producer's
     # assertion -- so the vector shows the shape and fails a reader that
@@ -1799,6 +1814,11 @@ def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
     fixture whose sequence numbers passed through 2**32 (the Phase 0 probe in
     RELEASE-0.21-PLAN.md); stream-wraps-seq is the vector that keeps it gone.
     """
+    return [(k, start, end) if keyed else (start, end) for k, start, end, _o in placed(lines)]
+
+
+def placed(lines: list[dict]) -> list[tuple[tuple[int, int], int, int, dict]]:
+    """Each placeable record as (key, start, end, record): the walk anchored_ranges reports."""
     import base64
 
     prev: dict[tuple[int, int], tuple[int, int]] = {}  # key -> (seq_start, offset)
@@ -1815,8 +1835,18 @@ def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
             start = off_prev + delta
             end = start + len(base64.b64decode(o["payload"]))
             prev[k] = (o["seq_start"], start)
-            out.append((k, start, end) if keyed else (start, end))
+            out.append((k, start, end, o))
     return out
+
+
+def fin_positions(lines: list[dict]) -> dict[tuple[int, int], int]:
+    """Map each stream (session_id, pid) to the offset its FIN occupies (#168).
+
+    The data end of the record carrying `fin`, which for a zero-length FIN is its
+    own offset. A stream reaching past it holds no byte there, and the coverage
+    guarantee owes the position nothing.
+    """
+    return {k: end for k, _start, end, o in placed(lines) if "fin" in o.get("flags", ())}
 
 
 def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -1831,7 +1861,13 @@ def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
 
 
 def covers(
-    label: str, lines: list[dict], sess: int, pid: int, want_end: int, source_id: int | None = None
+    label: str,
+    lines: list[dict],
+    sess: int,
+    pid: int,
+    want_end: int,
+    source_id: int | None = None,
+    exempt: tuple[int, ...] = (),
 ) -> list[str]:
     """Confirm one hop accounts for every offset of the input stream it reads.
 
@@ -1839,8 +1875,9 @@ def covers(
     fan-out one input stream feeds several output sessions and no single one
     covers it, which is the property tunnel/inner.zpf exists to show. `source_id`
     narrows to one input where a hop reads several, as merged.zpf does.
+    `exempt` names positions owed nothing -- a FIN's, inside the extent (#168).
     """
-    cov: list[tuple[int, int]] = []
+    cov: list[tuple[int, int]] = [(p, p + 1) for p in exempt]
     for o in lines:
         for sp in o.get("spans", []):
             if (sp["session_id"], sp["pid"]) == (sess, pid) and source_id in (
@@ -1996,6 +2033,63 @@ def check_merge() -> list[str]:
         print(
             f"  merge: 3 files, digests match, a.zpf's hole {hole} is in its sequence "
             f"numbers, merged.zpf covers both inputs exactly and declares their extents"
+        )
+    return out
+
+
+def check_past_fin() -> list[str]:
+    """Verify decoded-past-fin: the extent reaches past a FIN, and the FIN is owed nothing.
+
+    The fourth pair check (#168). capture.zpf's extents are re-derived from its
+    sequence numbers, so a final pure ACK stored one past its side's FIN
+    extends its stream. The FIN's position must really lie inside an extent and
+    really be left uncovered by decoded.zpf, or the fixture tests nothing. With
+    that position exempt, decoded.zpf must cover each stream exactly, and its
+    Session End must declare the derived extents.
+    """
+    d = os.path.join(HERE, "decoded-past-fin")
+    if not os.path.isdir(d):
+        return ["decoded-past-fin/ missing"]
+
+    out = fixture_digests(d, "decoded-past-fin", ("capture", "decoded"), ("decoded",))
+    capture = fixture_lines(d, "capture")
+    decoded = fixture_lines(d, "decoded")
+    ext = anchored_extents(capture)
+    fins = fin_positions(capture)
+    inside = {k: p for k, p in fins.items() if p < ext[k]}
+    if not inside:
+        out.append("decoded-past-fin/capture: no stream reaches past its FIN -- nothing to exempt")
+    for (sess, pid), p in sorted(inside.items()):
+        if not covers("", decoded, sess, pid, ext[(sess, pid)]):
+            out.append(
+                f"decoded-past-fin/decoded: covers the FIN's position {p} of pid {pid} -- "
+                f"the exemption is never tested"
+            )
+
+    declared = {
+        (e["session_id"], e["pid"]): e["extent"]
+        for o in decoded
+        if o.get("type") == "session_end"
+        for e in o.get("input_extents", [])
+    }
+    for (sess, pid), end in sorted(ext.items()):
+        exempt = (inside[(sess, pid)],) if (sess, pid) in inside else ()
+        out += covers("decoded-past-fin/decoded", decoded, sess, pid, end, exempt=exempt)
+        if declared.get((sess, pid)) != end:
+            out.append(
+                f"decoded-past-fin/decoded: pid {pid} is [0,{end}) by its sequence numbers, "
+                f"but Session End declares {declared.get((sess, pid))}"
+            )
+
+    if not out:
+        print(
+            "  decoded-past-fin: 2 files, digests match, coverage complete with each FIN "
+            "inside an extent exempt ("
+            + ", ".join(
+                f"pid {p} [0,{e})" + (f" FIN at {inside[(s, p)]}" if (s, p) in inside else "")
+                for (s, p), e in sorted(ext.items())
+            )
+            + ")"
         )
     return out
 
@@ -2282,6 +2376,7 @@ def main() -> int:
     failures += check_chain()
     failures += check_tunnel()
     failures += check_merge()
+    failures += check_past_fin()
     failures += check_capability_coverage(manifest)
     failures += check_jsonl_keys()
     failures += check_retired_claims()

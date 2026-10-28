@@ -844,6 +844,18 @@ it. Where such a record carries payload those bytes are excluded from the extent
 and from every coverage answer the file supports, which is the price of not
 trusting the wrapped offset.
 
+**A transport stream's extent is the furthest point its placeable records
+reach.** A record reaches its offset plus its `payload_len`, so a zero-length
+record reaches its own offset, and an unplaceable record reaches nothing. Like
+every offset here, the extent is measured in sequence numbers, not in delivered
+bytes: a hole before the furthest record counts, and so does the sequence number
+a FIN occupies. A pure ACK is stored at the sequence number its segment carries,
+which on a closing side's final ACK is one past that side's FIN. The stream then
+reaches one past its last byte, and the position between is the FIN's (see
+[Fields used](#fields-used)). That position holds no byte, and
+[the coverage guarantee](#coverage-honesty-undecoded-blocks) owes it nothing.
+A stream whose FIN has nothing stored past it ends at its last byte, as before.
+
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
 however it was produced: reassembled from a capture, reassembled from a `.zpf` by
@@ -1122,6 +1134,16 @@ whether the bytes are fetchable at all — and is the part it must get right; th
 **word** carries the producer's intent, which a consumer is free to use for its
 own ends, as one counting genuinely unparsed bytes does when it separates
 `undecodable` from `skipped` (see [Undecoded](#undecoded-0x21)).
+
+**The position a FIN occupies is owed nothing.** Where a transport stream reaches
+past its FIN, the sequence number the FIN occupies lies inside the
+[extent](#referencing-the-source-by-stream-offset) and holds no byte. It is not a
+hole, so it takes no `gap`. It is not content, so it takes no span. A span
+reaching over it covers it harmlessly, as a span over any hole resolves to no
+bytes. A checker finds the position in the input: it is the data end of the
+record carrying `fin`, or the offset of a zero-length `fin` record. Where the FIN's
+segment was lost and a later record was captured, no record marks the position,
+and it is the one-wide hole it then is.
 
 ### A decoded file, end to end
 
