@@ -561,8 +561,13 @@ changelog's #166 entry says so.
 **Left open, as D3 planned: what a decode stage does with a copy.** A DNS
 decoder over `udp-capture-copy` may decode the flagged record or leave it to a
 consumer. Whether `skipped` fits a copy's range is a real question, because the
-bytes are positions of the stream but carry no new content, and no issue has
-asked it. It is a candidate issue, not filed without Adam.
+bytes are positions of the stream but carry no new content, and no issue had
+asked it. *(Filed as **#171** on 2026-10-29 at Adam's request: `spec`,
+`question`, no milestone.)*
+
+**The PR waits for the review** *(Adam, 2026-10-29)*. python-zipline reads
+`plan_0_24` first. Its findings are handled on the branch, and only then is the
+PR opened.
 
 **Changelog.** The opening paragraph now counts six gaps and gives the
 keyword and vector totals. The Changed entries are reordered to follow their
