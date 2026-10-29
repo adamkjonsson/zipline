@@ -66,7 +66,7 @@ neither is safe to skip within `0.x`.
 
 ---
 
-## [0.24] — unreleased
+## [0.24] — 2026-10-29
 
 **The sessionizer release.** Six gaps, found by producers that turn packet
 streams into transport streams: the FIN's position in a closed stream's extent,

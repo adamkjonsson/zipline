@@ -660,4 +660,7 @@ MUST NOT 46, SHOULD 29`.**
 - [x] `ruff check` and `ruff format` clean.
 - [ ] `CHANGELOG.md` `[0.24]` dated; python-zipline reviewed the branch *(done:
       six findings, all handled)*; `v0.24` tagged; #163 and #166–#171 closed
-      as fixed or filed.
+      as fixed or filed. *(Dated 2026-10-29. python-zipline reviewed it once,
+      at `66d2ec3`, and its six findings are handled on the branch. #170 joined
+      the milestone mid-release, and #171 was filed for later. The tag,
+      closing the issues and the "fixed" comments come after the merge.)*
