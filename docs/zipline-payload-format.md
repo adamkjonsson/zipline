@@ -852,12 +852,19 @@ reach.** A record reaches its offset plus its `payload_len`, so a zero-length
 record reaches its own offset, and an unplaceable record reaches nothing. Like
 every offset here, the extent is measured in sequence numbers, not in delivered
 bytes: a hole before the furthest record counts, and so does the sequence number
-a FIN occupies. A pure ACK is stored at the sequence number its segment carries,
-which on a closing side's final ACK is one past that side's FIN. The stream then
-reaches one past its last byte, and the position between is the FIN's (see
-[Fields used](#fields-used)). That position holds no byte, and
-[the coverage guarantee](#coverage-honesty-undecoded-blocks) owes it nothing.
-A stream whose FIN has nothing stored past it ends at its last byte, as before.
+a FIN occupies, where something is stored past it. A pure ACK is stored at the
+sequence number its segment carries, which on a closing side's final ACK is one
+past that side's FIN. The stream then reaches one past its last byte, and the
+position between is the FIN's (see [Fields used](#fields-used)). That position
+holds no byte, and [the coverage guarantee](#coverage-honesty-undecoded-blocks)
+owes it nothing. A stream whose FIN has nothing stored past it ends at its last
+byte, as before.
+
+**How far a record reaches is not its [end](#fields-used).** The two differ on
+one kind of record: a zero-length FIN ends one past its offset, for the merge,
+but reaches only its offset. A stream whose last record is a zero-length FIN
+therefore ends where the FIN sits. `sequenced-pure-ack-and-fin`'s client stream
+is one: its FIN at offset 8 ends at 9, and the stream's extent is 8.
 
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
@@ -1749,7 +1756,7 @@ lead so the u64s stay 4-byte aligned, as in a span-list entry. The triple
 `(source_id, session_id, pid)` names an input participant stream **in the
 source's id namespace**, never this file's — the same rule that governs `spans`.
 `extent` is that stream's length in **its own** offset space, as
-[Layers](#layers-transport-and-decoded-live-in-separate-streams) defines it — this
+[Referencing the source by stream offset](#referencing-the-source-by-stream-offset) defines it — this
 re-states nothing, so there is one place to change if that definition ever moves.
 
 One consequence is worth naming, because it is easy to miss and no vector
@@ -2634,8 +2641,8 @@ constraints make the flag checkable from the file alone:
 - a writer **MUST NOT** set `copy` unless the record's payload is byte-identical
   to that of its participant's preceding record. A copy that arrives after
   another of the participant's messages stays unflagged;
-- a writer **MUST NOT** set `copy` on a record carrying `seq_start`. Such a copy
-  is the reassembler's to discard, as above.
+- a writer **MUST NOT** set `copy` on a record of a stream whose records carry
+  `seq_start`. Such a copy is the reassembler's to discard, as above.
 
 A reader that finds `copy` breaking either constraint **MAY** treat the session as
 a semantic violation and isolate it. How a producer tells a copy from a resend is
@@ -2643,6 +2650,13 @@ its own affair, as for `retransmit`. The same nonzero IPv4 identification on
 identical bytes, microseconds apart, is one way. A producer that cannot tell
 leaves the flag unset, which is the conservative reading the paragraph above
 asks for.
+
+The flag is the writer's statement about its own output. A stage that does not
+carry a copy's predecessor forward, such as a filter or a time window that drops
+it, clears `copy`, since the record no longer repeats the one before it. This
+version defines `copy` on transport-layer records only. On a decoded record it
+has no meaning, and a reader treats it there as it treats a reserved bit:
+preserved, never interpreted.
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an

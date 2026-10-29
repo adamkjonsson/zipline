@@ -411,7 +411,8 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "record verifiable from the file alone -- an Added line",
     ),
     (
-        r"a writer \*\*MUST NOT\*\* set `copy` on a record carrying `seq_start`",
+        r"a writer \*\*MUST NOT\*\* set `copy` on a record of a stream whose records "
+        r"carry\s*`seq_start`",
         {"MUST": 1, "MUST NOT": 1},
         "a sequence-anchored copy already has a home, discarded and cited "
         "duplicate-discarded; two marks for one fact would let them disagree -- "
@@ -2605,7 +2606,8 @@ def check_copy(v: dict) -> list[str]:
     """Check every record flagged `copy` against the two constraints a reader can check (#169).
 
     A writer MUST NOT set `copy` unless the payload is byte-identical to the
-    participant's preceding record's, nor on a record carrying seq_start. Both
+    participant's preceding record's, nor on a record of a stream whose records
+    carry seq_start (per stream since the release review, Finding 4). Both
     are decidable from one file, so the suite holds itself to them: an accept
     vector's every copy satisfies both, and a copy in a negative vector breaks
     one, so that it is that vector's violation and not a bystander.
@@ -2613,14 +2615,16 @@ def check_copy(v: dict) -> list[str]:
     if "files" in v or not v.get("has_jsonl"):
         return []
     name = v["name"]
+    lines = fixture_lines(os.path.join(HERE, name), name)
+    anchored = {(o["session_id"], o["sender_pid"]) for o in lines if "seq_start" in o}
     prev: dict[tuple[int, int], str] = {}
     out = []
-    for o in fixture_lines(os.path.join(HERE, name), name):
+    for o in lines:
         if o.get("type") != "record":
             continue
         k = (o["session_id"], o["sender_pid"])
         if "copy" in o.get("flags", ()):
-            broken = prev.get(k) != o["payload"] or "seq_start" in o
+            broken = prev.get(k) != o["payload"] or k in anchored
             if v["tier"] == "accept" and broken:
                 out.append(f"{name}: a record flagged copy breaks a MUST NOT on an accept vector")
             elif v["tier"] != "accept" and not broken:

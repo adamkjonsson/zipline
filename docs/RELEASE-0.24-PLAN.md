@@ -91,10 +91,13 @@ must mark. Under reading 2 the extent is 100, and the loss disappears.
    checker finds the position from the input itself: it is the data end of the
    record carrying `fin`, or the offset of a zero-length `fin` record.
 
-**What this decides for python-zipline.** `check_coverage` is right, and
-`_extent_and_gaps` changes: a decode stage declares 2363, not 2362, and leaves
-2362 uncovered. It is posted on #168 so the two computations can agree before
-the branch does.
+**What this decides for python-zipline.** A decode stage declares 2363, not
+2362, and leaves 2362 uncovered. It is posted on #168 so the two computations
+can agree before the branch does. *(Corrected after python-zipline's review,
+Finding 2. Both computations change, in opposite directions. `check_coverage`
+measures the extent correctly but needs the FIN exemption. The measurement that
+falls one short is `StreamView.extent_and_gaps`, since `_extent_and_gaps` was
+removed in python-zipline's `1a8d293`, after #168 was filed.)*
 
 **Not in scope.** A FIN whose segment was lost but whose trailing ACK was
 captured leaves a one-position gap that nothing explains. That is honest: a

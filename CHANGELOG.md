@@ -73,9 +73,11 @@ streams into transport streams: the FIN's position in a closed stream's extent,
 a UDP datagram reassembled from fragments, the same datagram missing a fragment,
 a capture-point copy of a datagram, a sessionized record crossing a declared
 break, and merged orders in multi-file vectors. One flag is added (`copy`), and
-no byte of an existing file changes meaning. Keywords: `MAY` 55 → 56, `MUST NOT`
-44 → 46 (`MUST` 124 → 126, which counts them too), `SHOULD` 28 → 29. **76
-vectors, 35 options, 48 rules.** Scope and reasoning in
+no byte of an existing file changes meaning. Keywords: `MAY` 55 → 56, `MUST`
+124 → 127 (one new `MUST`, plus the two `MUST NOT`s it also counts), `MUST NOT`
+44 → 46, `SHOULD` 28 → 29. **77 vectors, 35 options, 49 rules.**
+python-zipline reviewed the candidate. Its six findings are handled, and the
+first added the `MUST`. Scope and reasoning in
 [docs/RELEASE-0.24-PLAN.md](docs/RELEASE-0.24-PLAN.md).
 
 ### Added
@@ -91,9 +93,11 @@ vectors, 35 options, 48 rules.** Scope and reasoning in
   sender sent once.
   - **Two `MUST NOT`s make it checkable from one file.** A writer must not set it
     unless the payload is byte-identical to the participant's preceding
-    record's, nor on a record carrying `seq_start`. A reader **MAY** isolate a
-    session whose `copy` breaks either. A producer that cannot tell leaves it
-    unset.
+    record's, nor on a record of a stream whose records carry `seq_start`. A
+    reader **MAY** isolate a session whose `copy` breaks either. A producer that
+    cannot tell leaves it unset. A stage that drops a copy's predecessor clears
+    the flag, and on a decoded record it has no meaning in this version (#171
+    asks what it should mean).
   - **The reserved mask is `0xFE20`.** `0x0020` stays reserved, because
     `escape-reserved-flag-bit` sets it.
   - **Keywords:** `MUST NOT` 44 → 46 (each also counted under `MUST`, 124 →
@@ -112,10 +116,14 @@ vectors, 35 options, 48 rules.** Scope and reasoning in
   *Referencing the source by stream offset*. A closing side's final pure ACK is
   stored at its wire number, one past that side's FIN, so the stream reaches one
   past its last byte. *Coverage honesty* now says the FIN's position holds no
-  byte and is owed neither a span nor an Undecoded block.
+  byte and is owed neither a span nor an Undecoded block. A record's reach is
+  not its end: a zero-length FIN ends one past its offset for the merge, but
+  reaches only its offset, so a stream ending in one ends where it sits.
   - **Who changes.** A decode stage that declared the extent as the end of its
-    data declares one more on such a stream. python-zipline's
-    `_extent_and_gaps` is one. A coverage check exempts the FIN's position.
+    data declares one more on such a stream. A coverage check exempts the FIN's
+    position. In python-zipline both change: `StreamView.extent_and_gaps`
+    measures the server's stream in `closed-final-ack` as 4 where `0.24` says 5,
+    and `check_coverage`, which measures 5 already, needs the exemption.
   - **No byte of any file changes, and no keyword.** No earlier vector stores a
     record past a FIN.
   - **Two vectors.** `closed-final-ack` declares extents 8 and 5, and a reader
@@ -150,14 +158,18 @@ vectors, 35 options, 48 rules.** Scope and reasoning in
   and the withholding rule seemed to forbid leaving them out of a UDP stream.
   §Discontinuity now states the rule's scope. A message-oriented stream's
   content is its messages, so pieces that never completed are not content, and
-  leaving them out withholds nothing. Their input range is still owed an
-  Undecoded block, which is the trace, and the block **SHOULD** carry
-  `reason = undecodable`, pinned as `capture-gap` is. A capture-sourced
-  reassembler cites the `capture` source, and the `retransmit` paragraph says
-  so.
-  - **Keywords:** `SHOULD` 28 → 29.
-  - **One pair.** `sessionized-fragment-lost` is `sessionized-fragments` with the
-    second fragment lost, built by the same function.
+  leaving them out withholds nothing. What makes that honest is a trace, an
+  Undecoded block naming the pieces. A stage reading a `.zpf` owes one under
+  the coverage guarantee. A reassembler reading a capture owes no coverage, so
+  it **MUST** write one against the `capture` source. Either block **SHOULD**
+  carry `reason = undecodable`, pinned as `capture-gap` is.
+  - **Keywords:** `MUST` +1, `SHOULD` 28 → 29. The `MUST` came from
+    python-zipline's review: without it the commonest producer could leave no
+    trace at all, and its file would be byte-identical to one that withheld a
+    whole datagram.
+  - **Two vectors.** `sessionized-fragment-lost` is `sessionized-fragments` with
+    the second fragment lost, built by the same function. `capture-fragment-lost`
+    is the same shape from a capture, its trace against the `capture` source.
 - **A transport record crossing a declared break, both ways** ([#167](https://github.com/adamkjonsson/zipline/issues/167)).
   `0.22`'s permission lets a `seq_start` record cross input units **or an input
   Discontinuity**, and only the first half had a vector. `sessionized-across-units`

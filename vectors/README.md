@@ -447,7 +447,8 @@ A stream without a sequence anchor cannot discard a capture-point copy, because
 the withholding rule makes the copy content of the stream. So the copy is
 written, and since `0.24` the **`copy`** flag (`0x0100`) says the sender sent
 once (#169). A writer must not set it unless the payload is byte-identical to
-the participant's preceding record's, nor on a record carrying `seq_start`.
+the participant's preceding record's, nor on a record of a stream whose records
+carry `seq_start`.
 `check.py` holds the suite to both: every `copy` in an accept vector keeps them,
 and a `copy` in a negative vector breaks one.
 
@@ -474,7 +475,8 @@ Nine directories are **fixtures** rather than vectors: several files that only
 mean anything together, because what they test is a relationship *between*
 files. `check.py` walks each member exactly as it walks a single-file vector —
 framing, projection, the lot — and adds arithmetic specific to `chain/`,
-`tunnel/`, `merge/`, `decoded-past-fin/`, the two fragment pairs and the two across-break pairs on top: one function each, sharing the digest check, the
+`tunnel/`, `merge/`, `decoded-past-fin/`, the two fragment pairs and the two
+across-break pairs on top: one function each, sharing the digest check, the
 unwrapping extent arithmetic (signed serial delta from the last placeable record,
 the origin `isn + 1` first — `stream-wraps-seq` is what keeps it honest) and the
 coverage union.
