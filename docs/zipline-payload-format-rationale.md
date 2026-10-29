@@ -187,8 +187,16 @@ an exception to it** ([#170](https://github.com/adamkjonsson/zipline/issues/170)
 The rule exists because a datagram that never reaches a stream without a
 sequence anchor leaves no trace, and a file that withheld one is byte-identical
 to a file that did not. Neither half holds for fragments that never completed.
-They were never a datagram of the stream, and the coverage guarantee already
-puts an Undecoded block over them in the input's space. Writing the rule an
+They were never a datagram of the stream, and an Undecoded block marks them.
+For a stage reading a `.zpf`, the coverage guarantee already requires that
+block. For a reassembler reading a capture nothing did, because a block against
+a capture creates no coverage obligation. python-zipline's review of the
+release caught this: the argument held for the stages that need it least. Hence
+the requirement on a capture reassembler to write the block. Exempting the
+commonest producer from the withholding rule without requiring the trace would
+have let its files be byte-identical to ones that withheld whole datagrams. A
+recommendation was weighed instead, and it would have left that open for a
+producer with reasons. Writing the rule an
 exception would have had the same effect on files, but it would have weakened
 the rule's text where only its reach needed saying. Writing the pieces as a
 record without `message` was the other option. It keeps the bytes, but it

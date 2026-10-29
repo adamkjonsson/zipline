@@ -458,12 +458,15 @@ and a `copy` in a negative vector breaks one.
 
 An incomplete reassembly is not content of a message-oriented stream. A
 fragment whose datagram never completed was never a message of the stream, so
-leaving it out withholds nothing. Its input range is still owed an Undecoded
-block, and that block **should** say `undecodable` (#170).
+leaving it out withholds nothing. It is still owed an Undecoded block, the
+trace: by the coverage guarantee from a stage reading a `.zpf`, and by a
+**must** from a reassembler reading a capture, which owes no coverage. The block
+**should** say `undecodable` (#170).
 
 | Vector | What it carries |
 |--------|-----------------|
 | `sessionized-fragment-lost/` | *(accept, two files)* `sessionized-fragments` with the second fragment lost: no record for the datagram, `[0,52)` of `packets.zpf` marked `undecodable` with a comment naming the missing fragment, and flow B as before. See [The fragmented datagram](#the-fragmented-datagram). |
+| `capture-fragment-lost` | *(accept)* The same shape from a **capture**: a head-of-pipeline reassembler that owes no coverage. It writes the other flow's datagram, and an Undecoded block against the `capture` source naming the orphan fragment's frame (bytes `[40,106)` of the pcap), `undecodable`. The block is what the `MUST` requires, since nothing else would show the fragment was there. Like the withholding rule, the `MUST` cannot be checked from the file. The vector shows the shape a conformant producer writes. |
 
 ## Multi-file fixtures
 

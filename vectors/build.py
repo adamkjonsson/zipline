@@ -5077,6 +5077,97 @@ vector(
     violations=1,
 )
 
+# 0.24 (#170, python-zipline's review of the release, Finding 1). The trace for
+# an incomplete reassembly is owed by the coverage guarantee only to a stage
+# reading a .zpf, which sessionized-fragment-lost shows. A reassembler reading a
+# capture owes no coverage, so a MUST asks it for the block instead: against
+# the capture source, naming the orphan fragment's frame by its byte offsets in
+# the pcap. Without it this file would be byte-identical to one that withheld a
+# whole datagram. The MUST is uncheckable from the file, like the withholding
+# rule it completes; the vector shows the shape a conformant producer writes.
+vector(
+    "capture-fragment-lost",
+    "accept",
+    "A head-of-pipeline reassembler over wg-inner.pcap, which holds two frames: "
+    "the first fragment of a UDP datagram whose second fragment never arrived, "
+    "and another flow's datagram. The fragment is pieces of a message, not a "
+    "message, so the file writes no record for it, and that withholds nothing "
+    "of the stream. Being capture-sourced, it owes no coverage, so the trace "
+    "is the MUST's: an Undecoded block against the capture source naming the "
+    "fragment's frame, bytes 40..106 of the pcap, reason undecodable (the "
+    "SHOULD), with a comment naming the missing piece. Session 9 is the other "
+    "flow's datagram. sessionized-fragment-lost is the same shape from a .zpf.",
+    "Discontinuity (0x22) -- an incomplete reassembly is not content of the stream",
+    [
+        file_header(),
+        source(1, 0, [o_uri("wg-inner.pcap"), o_link_type(1)]),
+        session(9, [o_proto("udp")]),
+        participant(9, 0, [o_endpoint("10.8.0.2:5001")]),
+        record(9, 0, 1, 1100, b"e" * 12, flags=0x0080),
+        undecoded(
+            1,
+            0,
+            0,
+            40,
+            106,
+            [
+                o_reason("undecodable"),
+                o_comment("fragment 1 of 2 of datagram id 0x1234; fragment 2 never arrived"),
+            ],
+            capture=True,
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "capture",
+            "uri": "wg-inner.pcap",
+            "link_type": 1,
+        },
+        {"type": "session", "session_id": 9, "proto": "udp"},
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.8.0.2:5001"],
+        },
+        {
+            "type": "record",
+            "session_id": 9,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "flags": ["message"],
+            "payload": b64(b"e" * 12),
+        },
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 0,
+            "pid": 0,
+            "off_start": 40,
+            "off_end": 106,
+            "reason": "undecodable",
+            "comment": "fragment 1 of 2 of datagram id 0x1234; fragment 2 never arrived",
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. The file writes no record for the incomplete datagram, which "
+    "is not withholding: an incomplete reassembly is not content of the stream. "
+    "The Undecoded block is the trace the MUST requires of a reassembler reading "
+    "a capture. Its offsets are byte offsets into wg-inner.pcap (the fragment's "
+    "frame, after the 24-byte global header and 16-byte record header), its ids "
+    "are unused, and it creates no coverage obligation. A reader that "
+    "treats it as naming a stream of this file is wrong. Session 9's extent is "
+    "12, the one datagram written.",
+    violations=0,
+    extents=[(9, 0, 12)],
+)
+
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
 # layer, so a reassembler over a unit sequence could never coalesce two
 # packets. Its sequence numbers carry any break as a hole, so now it may.

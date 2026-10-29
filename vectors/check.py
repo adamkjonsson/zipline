@@ -422,11 +422,25 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
     # Undecoded block in the input's space. The SHOULD pins the word, as
     # capture-gap's does, so two producers name the shape alike.
     (
-        r"The block \*\*SHOULD\*\* carry `reason = undecodable`",
+        r"Either block \*\*SHOULD\*\* carry\s*`reason = undecodable`",
         {"SHOULD": 1},
         "the vocabulary is open, and an unpinned shape gets a word per producer; "
         "undecodable is the existing bytes-class value for tried-and-failed, and "
         "what zpfwire already writes -- a Changed line, advisory strength",
+    ),
+    # 0.24 (#170, python-zipline's review, Finding 1). The trace that makes
+    # leaving an incomplete reassembly out honest is owed by the coverage
+    # guarantee only to a stage reading a .zpf. A reassembler reading a capture
+    # owes no coverage, so without this MUST its file could be byte-identical to
+    # one that withheld a whole datagram -- the case the withholding MUST NOT
+    # forbids. The exemption from that MUST NOT is paid for by a MUST.
+    (
+        r"So a reassembler\s*reading a capture \*\*MUST\*\* write an Undecoded block",
+        {"MUST": 1},
+        "an exemption from an uncheckable MUST NOT that left the commonest producer "
+        "free to leave no trace would hollow the rule; the block is what separates "
+        "an incomplete reassembly from a withheld datagram -- a Changed line, "
+        "uncheckable from the file like the rule it completes",
     ),
     (
         r"A reader that finds `copy` breaking either constraint \*\*MAY\*\* treat",
@@ -709,6 +723,13 @@ RULES = {
     # 0.24 (#170). Fragments whose message never completed are not content of
     # a message-oriented stream: no record, and the withholding rule does not
     # reach them. Their input range is marked undecodable, which is the trace.
+    # 0.24 (#170, review Finding 1). A reassembler reading a capture owes no
+    # coverage, so the trace is a MUST: a capture-source block for the pieces.
+    "capture-reassembler-marks-incomplete": (
+        "a reassembler reading a capture MUST write an Undecoded block against the "
+        "capture source for the pieces of a message it could not complete",
+        "capture-fragment-lost",
+    ),
     "incomplete-reassembly-not-content": (
         "an incomplete reassembly writes no record; its fragments' input range is "
         "marked Undecoded, reason undecodable (SHOULD), and nothing is withheld",

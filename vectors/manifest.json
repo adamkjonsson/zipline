@@ -2037,6 +2037,40 @@
       "has_jsonl": true
     },
     {
+      "name": "capture-fragment-lost",
+      "tier": "accept",
+      "violations": 0,
+      "bytes": 308,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x10",
+        "0x11",
+        "0x20",
+        "0x21",
+        "0x41"
+      ],
+      "options": [
+        "0x0001",
+        "0x0020",
+        "0x0022",
+        "0x0050",
+        "0x0060",
+        "0x00A0"
+      ],
+      "summary": "A head-of-pipeline reassembler over wg-inner.pcap, which holds two frames: the first fragment of a UDP datagram whose second fragment never arrived, and another flow's datagram. The fragment is pieces of a message, not a message, so the file writes no record for it, and that withholds nothing of the stream. Being capture-sourced, it owes no coverage, so the trace is the MUST's: an Undecoded block against the capture source naming the fragment's frame, bytes 40..106 of the pcap, reason undecodable (the SHOULD), with a comment naming the missing piece. Session 9 is the other flow's datagram. sessionized-fragment-lost is the same shape from a .zpf.",
+      "spec_section": "Discontinuity (0x22) -- an incomplete reassembly is not content of the stream",
+      "expect": "Accept. The file writes no record for the incomplete datagram, which is not withholding: an incomplete reassembly is not content of the stream. The Undecoded block is the trace the MUST requires of a reassembler reading a capture. Its offsets are byte offsets into wg-inner.pcap (the fragment's frame, after the 24-byte global header and 16-byte record header), its ids are unused, and it creates no coverage obligation. A reader that treats it as naming a stream of this file is wrong. Session 9's extent is 12, the one datagram written.",
+      "has_jsonl": true,
+      "extents": [
+        {
+          "session_id": 9,
+          "pid": 0,
+          "extent": 12
+        }
+      ]
+    },
+    {
       "name": "sessionized-across-units",
       "tier": "accept",
       "violations": 0,

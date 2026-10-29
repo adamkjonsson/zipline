@@ -1965,7 +1965,9 @@ duplicated — which nothing else in the file can express.
 creates one.** The [coverage guarantee](#coverage-honesty-undecoded-blocks) is
 scoped *within each input participant stream*, and a capture has none, so a block
 naming one is purely declarative: it records what a stage discarded, and no rule
-consumes it. A [decoded stream with no predecessor file](#conformance) carries
+consumes it. One rule requires such a block: a reassembler that could not
+complete a message writes one for its pieces, because nothing else would show
+they were there (see [Discontinuity](#discontinuity-0x22)). A [decoded stream with no predecessor file](#conformance) carries
 none for a different reason — it read no input at all, so it has nothing to
 declare.
 
@@ -2158,18 +2160,24 @@ SCTP message that lost a chunk, never reached the stage as a message, only as
 pieces of one. Leaving those pieces out withholds nothing of the stream, so the
 rule above does not reach them. Writing them as a record would be false either
 way. Flagged `message`, the record would claim a whole message. Unflagged, it
-would carry bytes that no sender sent as a unit. The pieces are still content of
-the stage's **input**, so the
-[coverage guarantee](#coverage-honesty-undecoded-blocks) owes them an Undecoded
-block, and that block is the trace: a reader of the file can see which input
-bytes became no message. The block **SHOULD** carry `reason = undecodable`, since
-the reassembler tried and failed, so that two producers name the shape alike.
-Its `comment` can say which piece was missing. `dropped` is the wrong word,
-because it asserts that content of the stream was removed. A reassembler reading
-a capture rather than a `.zpf` names the `capture` source, as it does for
-anything it discards (see [`retransmit`](#enums)). The [`copy`](#enums) flag
-marks the opposite case: a whole message seen twice is content, and it is
-written.
+would carry bytes that no sender sent as a unit.
+
+What makes leaving them out honest is a **trace**: an Undecoded block naming the
+pieces, so that a reader of the file can see which input bytes became no
+message. A stage reading a `.zpf` owes one already, because the pieces are
+content of its **input** and the
+[coverage guarantee](#coverage-honesty-undecoded-blocks) covers them. A
+reassembler reading a capture owes no coverage, so nothing there would require
+the block. Without it, the file would be byte-identical to one that withheld a
+whole datagram, which is the case the rule above forbids. So a reassembler
+reading a capture **MUST** write an Undecoded block against the `capture`
+source for the pieces of each message it could not complete, as it would for
+anything it discards (see [`retransmit`](#enums)). Either block **SHOULD** carry
+`reason = undecodable`, since the reassembler tried and failed, so that two
+producers name the shape alike. Its `comment` can say which piece was missing.
+`dropped` is the wrong word, because it asserts that content of the stream was
+removed. The [`copy`](#enums) flag marks the opposite case: a whole message seen
+twice is content, and it is written.
 
 **Do these two join?** is the whole test, and it falls to the producer because
 only the producer knows what it did with the input:
