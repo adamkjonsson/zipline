@@ -524,7 +524,9 @@ never changing the algorithm.
   *reassembler* before records are emitted; the format records the reassembled
   result and its favor-old overlap policy, not the raw segments. Whether the
   *sender* resent is kept as the `retransmit` flag (see [enums](#enums)); what
-  the reassembler discarded is an Undecoded block.
+  the reassembler discarded is an Undecoded block. On a stream without a
+  sequence anchor a duplicate cannot be discarded, and the `copy` flag marks it
+  instead.
 - A **mid-stream** capture (handshake never seen) needs no special handling for
   *ordering* — the writer simply omits `isn` (it is responsible for confirming the
   SYN is genuinely absent rather than merely delayed before declaring a
@@ -2574,7 +2576,8 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0010` | `urg`        | TCP URG seen                                             |
 | `0x0040` | `retransmit` | the sender **resent** bytes of this record's range — a retransmission — and the reassembler resolved it inside this record (see below) |
 | `0x0080` | `message`    | message boundary: the record is exactly one transport message (a UDP datagram, an SCTP message, …) |
-| `0xFF20` | —            | reserved, MUST be written 0, and MUST be ignored on read; a bit nonetheless set is preserved through a round-trip (as a hex token in JSONL), never interpreted |
+| `0x0100` | `copy`       | the capture point saw this record's transmission twice: it repeats its participant's preceding record, and the sender sent once (see below) |
+| `0xFE20` | —            | reserved, MUST be written 0, and MUST be ignored on read; a bit nonetheless set is preserved through a round-trip (as a hex token in JSONL), never interpreted |
 
 **`retransmit` names the sender's act, not the reassembler's.** A copy of one
 transmission — every packet seen twice through a mirror port, a two-interface
@@ -2588,6 +2591,28 @@ retransmission is its own affair (the TCP Timestamps option is one way, and is
 not always negotiated); a producer that **cannot** tell them apart SHOULD treat
 the repeat as a retransmission, which is the conservative reading and what every
 producer did before this paragraph.
+
+**`copy` names the capture point's act, where the copy cannot be discarded.** On
+a sequence-anchored stream the reassembler discards a copy, and the block above
+records it. A stream without a sequence anchor, such as UDP, has no such exit: the
+[withholding rule](#discontinuity-0x22) makes the copy content of the stream, so
+it is written as a record of its own. Unmarked, it reads as a message the sender
+sent twice. The flag is the mark. A reader that wants messages as sent skips
+flagged records, and one that wants what the capture saw keeps them. Two
+constraints make the flag checkable from the file alone:
+
+- a writer **MUST NOT** set `copy` unless the record's payload is byte-identical
+  to that of its participant's preceding record. A copy that arrives after
+  another of the participant's messages stays unflagged;
+- a writer **MUST NOT** set `copy` on a record carrying `seq_start`. Such a copy
+  is the reassembler's to discard, as above.
+
+A reader that finds `copy` breaking either constraint **MAY** treat the session as
+a semantic violation and isolate it. How a producer tells a copy from a resend is
+its own affair, as for `retransmit`. The same nonzero IPv4 identification on
+identical bytes, microseconds apart, is one way. A producer that cannot tell
+leaves the flag unset, which is the conservative reading the paragraph above
+asks for.
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an

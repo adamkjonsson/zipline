@@ -119,6 +119,21 @@ taken is one sentence: the FIN's position is not a hole.
 *Field-layout decisions: what a body field costs against an option, why packed
 types state their entry size, and where an alignment choice was forced.*
 
+**Why `copy` is a flag tied to its predecessor, and why it takes `0x0100`**
+([#169](https://github.com/adamkjonsson/zipline/issues/169)). Two other answers
+were weighed. Permitting a stage to withhold an exact copy and cite it
+`duplicate-discarded` contradicts the withholding rule's premise: the block names
+bytes, but nothing ties them to the record they repeat. Saying only that such
+streams may hold copies leaves every reader to deduplicate at its own risk. A
+flag keeps the content in the stream and says what the producer knew. It is
+**tied to the participant's preceding record and to identical bytes** so that a
+reader can check every flagged record without knowing how the producer told a
+copy from a resend. A copy that arrives after another message stays unflagged,
+which costs a mark and never misplaces one. The bit is `0x0100` rather than the
+free `0x0020` because `escape-reserved-flag-bit` sets `0x0020`. Taking it would
+have changed that vector's bytes and its lesson for no gain, since under `0.x`
+no reader of an older minor reads a `0.24` file anyway.
+
 ### Undecoded (`0x21`)
 
 **Why a hole may not be declared against a capture.** The rule is that only the

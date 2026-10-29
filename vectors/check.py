@@ -399,6 +399,31 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "forbade what its purpose allowed -- a Clarified line, since a file that "
         "declined every crossing stays conformant",
     ),
+    # 0.24 (#169). A capture-point copy on a stream without a sequence anchor
+    # must be written, and nothing could mark it. The `copy` flag does, and two
+    # MUST NOTs make it checkable from one file; the MAY gives a reader its
+    # remedy, and the isolate vector something to test.
+    (
+        r"a writer \*\*MUST NOT\*\* set `copy` unless the record's payload is byte-identical",
+        {"MUST": 1, "MUST NOT": 1},
+        "a flag that may sit on any record cannot be checked; tying it to the "
+        "participant's preceding record and identical bytes makes every flagged "
+        "record verifiable from the file alone -- an Added line",
+    ),
+    (
+        r"a writer \*\*MUST NOT\*\* set `copy` on a record carrying `seq_start`",
+        {"MUST": 1, "MUST NOT": 1},
+        "a sequence-anchored copy already has a home, discarded and cited "
+        "duplicate-discarded; two marks for one fact would let them disagree -- "
+        "an Added line",
+    ),
+    (
+        r"A reader that finds `copy` breaking either constraint \*\*MAY\*\* treat",
+        {"MAY": 1},
+        "a flag that asserts a repeat the bytes contradict misdescribes the "
+        "stream; isolating the session is the ordinary semantic-violation "
+        "remedy, stated so a reader knows it is open -- an Added line",
+    ),
 )
 
 # Capabilities that are RULES rather than syntax, and the vector exercising each.
@@ -655,6 +680,20 @@ RULES = {
         "a transport-layer record carrying neither seq_start nor message that "
         "crosses a declared break in its input violates the carry duty",
         "isolate-transport-splice",
+    ),
+    # 0.24 (#169). A capture-point copy on a stream without a sequence anchor
+    # is written, being content, and the copy flag says the sender sent once.
+    "copy-marks-capture-point-repeat": (
+        "a record flagged copy repeats its participant's preceding record as one "
+        "transmission seen twice; it stays in the stream and counts in its extent",
+        "udp-capture-copy",
+    ),
+    # 0.24 (#169). The constraint a reader can check: a copy whose bytes differ
+    # from the record it claims to repeat misdescribes the stream.
+    "copy-must-repeat-exactly": (
+        "a writer MUST NOT set copy unless the payload is byte-identical to the "
+        "participant's preceding record's; a reader MAY isolate the session",
+        "isolate-copy-differs",
     ),
     "fin-position-owed-nothing": (
         "the sequence number a FIN occupies, inside the extent, is owed neither a "
@@ -2456,6 +2495,34 @@ def check_extents(v: dict) -> list[str]:
     return out
 
 
+def check_copy(v: dict) -> list[str]:
+    """Check every record flagged `copy` against the two constraints a reader can check (#169).
+
+    A writer MUST NOT set `copy` unless the payload is byte-identical to the
+    participant's preceding record's, nor on a record carrying seq_start. Both
+    are decidable from one file, so the suite holds itself to them: an accept
+    vector's every copy satisfies both, and a copy in a negative vector breaks
+    one, so that it is that vector's violation and not a bystander.
+    """
+    if "files" in v or not v.get("has_jsonl"):
+        return []
+    name = v["name"]
+    prev: dict[tuple[int, int], str] = {}
+    out = []
+    for o in fixture_lines(os.path.join(HERE, name), name):
+        if o.get("type") != "record":
+            continue
+        k = (o["session_id"], o["sender_pid"])
+        if "copy" in o.get("flags", ()):
+            broken = prev.get(k) != o["payload"] or "seq_start" in o
+            if v["tier"] == "accept" and broken:
+                out.append(f"{name}: a record flagged copy breaks a MUST NOT on an accept vector")
+            elif v["tier"] != "accept" and not broken:
+                out.append(f"{name}: its copy flag keeps both constraints -- not the violation")
+        prev[k] = o["payload"]
+    return out
+
+
 def check_merged(v: dict) -> list[str]:
     """Check a vector's declared merged orders are shaped right, and present where owed.
 
@@ -2618,6 +2685,7 @@ def main() -> int:
         failures += check_violations(v)
         failures += check_extents(v)
         failures += check_merged(v)
+        failures += check_copy(v)
         failures += check_vector(v)
 
     failures += check_chain()

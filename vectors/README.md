@@ -443,6 +443,19 @@ The mirror's record carries neither kind of evidence, `seq_start` or
 | `sessionized-across-break/` | *(accept, two files)* A contiguous packet stream (flow A, flow B, a declared Discontinuity, flow A) and a sessionizer whose flow-A record carries `seq_start` and crosses the break. See [The declared break](#the-declared-break). |
 | `isolate-transport-splice/` | *(isolate, two files)* The same pair with flow A's record stripped of `isn`, `seq_start` and `ack`. Nothing in it evidences the join, so the crossing violates the carry duty. It is the pairwise twin of `isolate-unmarked-break`. |
 
+A stream without a sequence anchor cannot discard a capture-point copy, because
+the withholding rule makes the copy content of the stream. So the copy is
+written, and since `0.24` the **`copy`** flag (`0x0100`) says the sender sent
+once (#169). A writer must not set it unless the payload is byte-identical to
+the participant's preceding record's, nor on a record carrying `seq_start`.
+`check.py` holds the suite to both: every `copy` in an accept vector keeps them,
+and a `copy` in a negative vector breaks one.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `udp-capture-copy` | *(accept)* A DNS query and its answer over UDP through a mirror port, the answer seen twice. The second answer is flagged `message` and `copy` (`0x0180`). Read as sent, the exchange is one query and one answer. Read as captured, it is three records. The copy is content either way, so the server's extent is **58**, twice the answer's 29. Merged order is stored order. |
+| `isolate-copy-differs` | *(isolate)* The same file with the copy's last byte changed. The flag asserts a repeat the bytes contradict. A reader that trusted it would skip a different answer. |
+
 ## Multi-file fixtures
 
 Eight directories are **fixtures** rather than vectors: several files that only

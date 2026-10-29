@@ -77,6 +77,28 @@ vectors. Scope and reasoning in
 
 ### Added
 
+- **The `copy` flag, `0x0100`** ([#169](https://github.com/adamkjonsson/zipline/issues/169)).
+  The `retransmit` paragraph separates a sender's resend from a copy the
+  capture point saw twice, and on a sequence-anchored stream the reassembler
+  discards the copy and cites it. A stream without a sequence anchor, such as
+  UDP, has no such exit. The withholding rule makes the copy content, so it is
+  written, and through `0.23` nothing could say it was a copy. A DNS answer seen
+  twice through a mirror port read as two answers. `copy` names the capture
+  point's act: the record repeats its participant's preceding record, and the
+  sender sent once.
+  - **Two `MUST NOT`s make it checkable from one file.** A writer must not set it
+    unless the payload is byte-identical to the participant's preceding
+    record's, nor on a record carrying `seq_start`. A reader **MAY** isolate a
+    session whose `copy` breaks either. A producer that cannot tell leaves it
+    unset.
+  - **The reserved mask is `0xFE20`.** `0x0020` stays reserved, because
+    `escape-reserved-flag-bit` sets it.
+  - **Keywords:** `MUST NOT` 44 → 46 (each also counted under `MUST`, 124 →
+    126) and `MAY` 55 → 56.
+  - **Two vectors.** `udp-capture-copy` is a DNS exchange with the answer
+    flagged as copied. Its server extent counts the copy, because the copy is
+    content. `isolate-copy-differs` flags a record whose bytes differ.
+
 ### Changed
 
 - **A transport stream's extent is defined, and a FIN's position is owed nothing** ([#168](https://github.com/adamkjonsson/zipline/issues/168)).

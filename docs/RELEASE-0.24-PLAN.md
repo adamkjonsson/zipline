@@ -283,7 +283,7 @@ never shipped (#167's first bullet) is **left alone**: `sessionized-across-break
 checks a crossing against a shipped input, which is what that bullet asked for.
 
 Estimated counts: **68 → 76 vectors**, about seven new `RULES` entries. Phases
-1–4 have reached 73 and 45. The real numbers go in the Definition of done.
+1–5 have reached 75 and 47. The real numbers go in the Definition of done.
 
 ---
 
@@ -432,6 +432,28 @@ on #167 waits for the merge. **73 vectors, 45 rules.**
 - The JSONL token, wherever the `enumerations` check lists `flags`.
 - `udp-capture-copy` and `isolate-copy-differs`.
 
+*Done 2026-10-29.* The row, the mask (`0xFE20`) and a `copy` paragraph after
+`retransmit`'s, its two constraints written as bullets so each `MUST NOT` is a
+sentence of its own. The reader's remedy is a `MAY`. *Caveats*' reassembler
+bullet gains one sentence pointing at the flag. The counts went to `MAY 56, MUST
+126, MUST NOT 46, SHOULD 28`. The counter's `\bMUST\b` also matches inside `MUST
+NOT`, so each new `MUST NOT` is accounted as `{"MUST": 1, "MUST NOT": 1}`, as
+every earlier one is. The first attempt omitted the `MUST`, and the check
+refused it. The companion records why the flag is tied to its predecessor and
+why it takes `0x0100`.
+
+**One check more than planned.** The constraint is decidable from a single
+file, so `check.py` now holds the suite to it (`check_copy`). Every `copy` in an
+accept vector must keep both rules, and a `copy` in a negative vector must break
+one, so the violation is the flag's and not a bystander's. It was seen to fail
+on a differing copy, a copy carrying `seq_start` and a copy with no predecessor
+(all accept), and on an isolate copy that kept both rules. The vectors' JSONL
+faces write their flag tokens literally rather than through build.py's
+`flag_tokens()`, so the two faces stay independently authored. The extent the
+accept vector declares for the server is 58, twice the answer, because the copy
+is content. That is the D3 decision, stated as a number a harness checks.
+**75 vectors, 47 rules.**
+
 ### Phase 6 — #170, an incomplete reassembly
 
 *Comes after Phase 5 so the two halves of one line land in order. The copy is
@@ -492,7 +514,7 @@ argue the contrast twice.*
 - [x] A transport record carrying `message` may cross input units or a declared
       break, and one with neither `seq_start` nor `message` owes both duties
       (#166).
-- [ ] `copy` defined at `0x0100`, with its two `MUST NOT`s accounted for (#169).
+- [x] `copy` defined at `0x0100`, with its two `MUST NOT`s accounted for (#169).
 - [ ] The withholding rule states that an incomplete reassembly is not content
       of the stream, and its fragments are marked in the input's space (#170).
 - [x] Multi-file `merged` items name their file, and `chain` declares its

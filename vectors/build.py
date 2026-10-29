@@ -629,6 +629,7 @@ FLAG_TOKENS = {
     0x0010: "urg",
     0x0040: "retransmit",
     0x0080: "message",
+    0x0100: "copy",
 }
 
 # Options whose repetition is a list (endpoint) or chunking (spans,
@@ -4966,6 +4967,114 @@ vector(
     violations=0,
     extents=[(7, 0, 8), (7, 1, 5)],
     merged=[(7, [1, 2, 3, 4])],
+)
+
+
+# 0.24 (#169). A DNS answer seen twice through a mirror port. On UDP the copy
+# cannot be discarded -- the withholding rule makes it content of the stream --
+# so it is written, and since 0.24 the `copy` flag says the sender sent once.
+# The isolate twin flags a record whose bytes differ from its predecessor's, the
+# one constraint a reader can check without knowing how the producer told.
+DNS_QUERY = b"Q example.com A"
+DNS_ANSWER = b"R example.com A 93.184.216.34"
+
+
+def udp_capture_copy(copy_payload: bytes) -> tuple[list[Blk], list[dict]]:
+    """Build a query, its answer, and the answer's capture-point copy: both faces."""
+    sent = [(0, 1000, DNS_QUERY, 0x0080, ["message"]), (1, 1100, DNS_ANSWER, 0x0080, ["message"])]
+    recs = [*sent, (1, 1101, copy_payload, 0x0180, ["message", "copy"])]
+    blocks = [
+        file_header(),
+        source(1, 0, [o_uri("mirror.pcap")]),
+        session(9, [o_proto("udp")]),
+        participant(9, 0, [o_endpoint("10.0.0.1:53000")]),
+        participant(9, 1, [o_endpoint("10.0.0.53:53")]),
+        *(record(9, pid, 1, ts, p, flags=f) for pid, ts, p, f, _tokens in recs),
+        end_block(),
+    ]
+    jsonl = [
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "mirror.pcap"},
+        {"type": "session", "session_id": 9, "proto": "udp"},
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:53000"],
+        },
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.53:53"],
+        },
+        *(
+            {
+                "type": "record",
+                "session_id": 9,
+                "sender_pid": pid,
+                "source_id": 1,
+                "ts": ts,
+                "flags": tokens,
+                "payload": b64(p),
+            }
+            for pid, ts, p, _f, tokens in recs
+        ),
+        {"type": "end"},
+    ]
+    return blocks, jsonl
+
+
+COPY_BLOCKS, COPY_JSONL = udp_capture_copy(DNS_ANSWER)
+vector(
+    "udp-capture-copy",
+    "accept",
+    "A DNS query and its answer over UDP, captured through a mirror port that "
+    "saw the answer twice, a microsecond apart. On a sequence-anchored stream "
+    "the reassembler would discard the copy and cite it; a stream without a "
+    "sequence anchor has no such exit, since the withholding rule makes the "
+    "copy content of the stream. So it is written, as the server's second "
+    "record, and since 0.24 the copy flag says the sender sent once. It "
+    "repeats its participant's preceding record byte for byte and carries no "
+    "seq_start, as the two MUST NOTs require. Through 0.23 the file could only "
+    "say the server answered twice.",
+    "Enums -- copy names the capture point's act, where the copy cannot be discarded",
+    COPY_BLOCKS,
+    jsonl=COPY_JSONL,
+    expect="Accept. The server's second record carries the token copy (flags "
+    "message and copy, 0x0180), and the JSONL projection names it; a reader "
+    "without the token renders 0x0100 as a hex token and fails the "
+    "projection. Read as messages as sent, the exchange is one query and one "
+    "answer: skip the flagged record. Read as what the capture saw, it is "
+    "three records. The copy is content of the stream either way, so the "
+    "server's extent counts it: 58, twice the answer's 29. The client's is 15. "
+    "The session is hint-less, so the merge is by timestamp: stored order.",
+    violations=0,
+    extents=[(9, 0, 15), (9, 1, 58)],
+    merged=[(9, [1, 2, 3])],
+)
+
+DIFF_BLOCKS, DIFF_JSONL = udp_capture_copy(DNS_ANSWER[:-1] + b"5")
+vector(
+    "isolate-copy-differs",
+    "isolate",
+    "udp-capture-copy with the copy's last byte changed: the record flagged "
+    "copy says 93.184.216.35 where the record it claims to repeat says "
+    "93.184.216.34. A writer MUST NOT set copy unless the record's payload is "
+    "byte-identical to its participant's preceding record's, so the flag "
+    "asserts a repeat the bytes contradict. This is the constraint a reader "
+    "can check from the file alone, whatever the producer knew.",
+    "Enums -- copy names the capture point's act, where the copy cannot be discarded",
+    DIFF_BLOCKS,
+    jsonl=DIFF_JSONL,
+    expect="Isolate session 9 (a reader MAY treat it as a semantic violation), "
+    "or reject. A reader that trusts the flag and skips the record drops an "
+    "answer that differs from the first, which is the misreading the "
+    "constraint prevents. The projection is still the .jsonl: the flag "
+    "round-trips as copy whatever the reader concludes about it.",
+    violations=1,
 )
 
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
