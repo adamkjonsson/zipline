@@ -7975,6 +7975,230 @@ def build_fragments() -> None:
     )
 
 
+# 0.24 (#167). The second half of 0.22's permission: a sequence-anchored record
+# crossing a DECLARED break, which sessionized-across-units never tested (it
+# crosses unit seams, which no splice check examines as declared blocks). The
+# input is contiguous, flow A, flow B, flow A, with a Discontinuity before A's
+# second packet: the lost packet upstream was another flow's, as #152's own
+# example puts it, so A's two packets join in A's sequence space. The mirror
+# is the same pair with A's record carrying neither seq_start nor message: no
+# evidence of the join, so it owes the carry duty, and a transport stream can
+# meet it with neither a Discontinuity nor units. Both pairs come from here.
+def build_across_break(name: str, anchored: bool) -> None:
+    """Build packets.zpf with a declared break, and a sessionizer crossing it."""
+    if anchored:
+        fixture(
+            name,
+            "accept",
+            "A sessionization stage crossing a DECLARED break. packets.zpf is a "
+            "contiguous packet stream of three net:ip records with real headers "
+            "-- flow A at [0,80), flow B at [80,140), flow A at [140,210) -- and "
+            "a Discontinuity (decrypt-failed, no width) between flow B's packet "
+            "and flow A's second. Flow A's sequence numbers join across it (1001 "
+            "+ 40 = 1041), so what was lost belonged to another flow. inner.zpf's "
+            "session 10 is flow A as one record with seq_start, its two spans "
+            "crossing the break; session 11 is flow B.",
+            "Discontinuity (0x22) -- a transport-layer record meets both duties "
+            "when it carries the evidence of its own join",
+            "Accept both files. Session 10's record carries seq_start, so its "
+            "sequence numbers assert the join and a break between its packets is "
+            "a range of sequence numbers no record covers: it MAY cross the "
+            "declared Discontinuity. A splice check that applies the decoded "
+            "layer's carry duty to it reports a violation that is not there. "
+            "isolate-transport-splice is this pair with the evidence removed.",
+            violations=0,
+        )
+    else:
+        fixture(
+            name,
+            "isolate",
+            "sessionized-across-break with flow A's record stripped of its "
+            "evidence: no isn on its participant, no seq_start and no ack on the "
+            "record, and no message flag, since it is TCP. The record still "
+            "crosses packets.zpf's declared Discontinuity with two spans, so it "
+            "asserts a join nothing in it can answer for. A transport output "
+            "without the evidence owes both duties, and has neither recourse: a "
+            "transport stream carries no Discontinuity and is never units.",
+            "Discontinuity (0x22) -- a transport record carrying neither owes both "
+            "duties as stated",
+            "Accept packets.zpf; it breaks no rule. ISOLATE or reject inner.zpf's "
+            "session 10: its record crosses a declared Discontinuity in its input "
+            "and carries neither seq_start nor message, so nothing in it says the "
+            "two packets join, and the break is gone one hop along. Session 11 "
+            "is conformant. A reader handed only inner.zpf cannot judge it: the "
+            "violation needs packets.zpf in hand, as splice does. This is the "
+            "pairwise twin of isolate-unmarked-break.",
+            violations=1,
+        )
+    pkts = [
+        (1000, tcp_packet(44300, 80, 1001, 7001, b"a" * 40)),  # flow A, [0,80)
+        (1100, tcp_packet(44301, 53, 5001, 9001, b"c" * 20)),  # flow B, [80,140)
+        (1300, tcp_packet(44300, 80, 1041, 7001, b"b" * 30)),  # flow A, [140,210)
+    ]
+
+    def pkt(ts: int, p: bytes) -> tuple[Blk, dict]:
+        line = {
+            "type": "record",
+            "session_id": 5,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": ts,
+            "payload": b64(p),
+            "decoder_id": 1,
+            "content_type": "net:ip",
+        }
+        return record(5, 0, 1, ts, p, options=[o_decoder_id(1), o_content_type("net:ip")]), line
+
+    recs = [pkt(ts, p) for ts, p in pkts]
+    # The break sits after flow B's packet, before flow A's second.
+    brk = (
+        discontinuity(5, 0, [o_disc_reason("decrypt-failed")]),
+        {"type": "discontinuity", "session_id": 5, "pid": 0, "reason": "decrypt-failed"},
+    )
+    body = [recs[0], recs[1], brk, recs[2]]
+    packets = member(
+        name,
+        "packets",
+        "A decryptor's output: three inner IPv4 packets as a contiguous stream, "
+        "with a declared break after the second, where a packet failed to decrypt.",
+        [
+            file_header(options=[o_produced_by("zpf-wg 0.3"), o_produced_at(1719700000)]),
+            source(1, 0, [o_uri("wg.pcap")]),
+            decoder(1, [o_dec_name("wireguard-decrypt"), o_dec_version("0.3")]),
+            session(5, [o_proto("ip")]),
+            participant(5, 0, [o_endpoint("10.8.0.2")]),
+            *(b for b, _ in body),
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-wg 0.3",
+                "produced_at": 1719700000,
+            },
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "wg.pcap"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "wireguard-decrypt",
+                "version": "0.3",
+            },
+            {"type": "session", "session_id": 5, "proto": "ip"},
+            {
+                "type": "participant",
+                "session_id": 5,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.8.0.2"],
+            },
+            *(line for _, line in body),
+            {"type": "end"},
+        ],
+    )
+    dg = "sha256:" + hashlib.sha256(packets).hexdigest()
+
+    def flow(sess: int, port: int, isn: int, ack: int, payload: bytes, spans: list) -> list:
+        """Both faces of one TCP flow's session; flow A loses its evidence in the mirror."""
+        evidence = anchored or sess != 10
+        blocks = [
+            session(sess, [o_proto("tcp")]),
+            participant(
+                sess, 0, [o_endpoint(f"10.8.0.2:{port}")] + ([o_isn(isn)] if evidence else [])
+            ),
+            record(
+                sess,
+                0,
+                1,
+                1000 if sess == 10 else 1100,
+                payload,
+                flags=0x0001,
+                options=[o_decoder_id(1), o_spans([(1, 5, 0, a, b) for a, b in spans])]
+                + ([o_seq_start(isn + 1), o_ack(ack)] if evidence else []),
+            ),
+            session_end(sess, [o_input_extents([(1, 5, 0, 210)])]),
+        ]
+        lines = [
+            {"type": "session", "session_id": sess, "proto": "tcp"},
+            {
+                "type": "participant",
+                "session_id": sess,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": [f"10.8.0.2:{port}"],
+                **({"isn": isn} if evidence else {}),
+            },
+            {
+                "type": "record",
+                "session_id": sess,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000 if sess == 10 else 1100,
+                "flags": ["psh"],
+                "payload": b64(payload),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": a, "off_end": b}
+                    for a, b in spans
+                ],
+                **({"seq_start": isn + 1, "ack": ack} if evidence else {}),
+            },
+            {
+                "type": "session_end",
+                "session_id": sess,
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
+            },
+        ]
+        return [blocks, lines]
+
+    # Flow A: one record, two spans, crossing the declared break at 140.
+    a_blocks, a_lines = flow(10, 44300, 1000, 7001, b"a" * 40 + b"b" * 30, [(0, 80), (140, 210)])
+    b_blocks, b_lines = flow(11, 44301, 5000, 9001, b"c" * 20, [(80, 140)])
+    member(
+        name,
+        "inner",
+        "The sessionization stage over packets.zpf: flow A as one record whose "
+        "spans cross the declared break, and flow B as its own session."
+        + ("" if anchored else " Flow A's record carries no seq_start, which is the violation."),
+        [
+            file_header(options=[o_produced_by("zpf-sessionize 1.0"), o_produced_at(1719700100)]),
+            source(1, 1, [o_uri("packets.zpf"), o_digest(dg)]),
+            decoder(1, [o_dec_name("tcp-reassembly"), o_dec_version("1.1")], output_layer=1),
+            *a_blocks,
+            *b_blocks,
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-sessionize 1.0",
+                "produced_at": 1719700100,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "packets.zpf",
+                "digest": dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "transport",
+                "name": "tcp-reassembly",
+                "version": "1.1",
+            },
+            *a_lines,
+            *b_lines,
+            {"type": "end"},
+        ],
+    )
+
+
 def main() -> int:
     check = "--check" in sys.argv
     build_chain()
@@ -7983,6 +8207,8 @@ def main() -> int:
     build_merge()
     build_past_fin()
     build_fragments()
+    build_across_break("sessionized-across-break", anchored=True)
+    build_across_break("isolate-transport-splice", anchored=False)
     manifest = []
     problems = []
 

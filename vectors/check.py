@@ -640,6 +640,22 @@ RULES = {
         "seams or a declared break, as one message's reassembly, without seq_start",
         "sessionized-fragments",
     ),
+    # 0.24 (#167). The second half of 0.22's permission, which only crossing
+    # unit seams had tested: a seq_start record crossing a DECLARED break. A
+    # splice check examines declared blocks, so this is the case it can misread.
+    "transport-record-crosses-declared-break": (
+        "a transport-layer record carrying seq_start MAY cite input on both sides "
+        "of a declared Discontinuity; its sequence numbers carry the break",
+        "sessionized-across-break",
+    ),
+    # 0.24 (#167, #166). The mirror: the same crossing with neither seq_start
+    # nor message has no evidence of its join, owes the carry duty, and has no
+    # way to meet it at the transport layer. Twin of isolate-unmarked-break.
+    "transport-crossing-needs-evidence": (
+        "a transport-layer record carrying neither seq_start nor message that "
+        "crosses a declared break in its input violates the carry duty",
+        "isolate-transport-splice",
+    ),
     "fin-position-owed-nothing": (
         "the sequence number a FIN occupies, inside the extent, is owed neither a "
         "span nor an Undecoded block",
@@ -2214,6 +2230,117 @@ def check_fragments() -> list[str]:
     return out
 
 
+def tcp_join(packets: list[bytes]) -> tuple[int, bytes] | str:
+    """Join TCP segments in one flow's sequence space: (first seq, payload), or why not.
+
+    Only what the across-break pairs need: one source port, and each segment's
+    sequence number exactly where the previous one's payload ended. This is the
+    fixture showing its own join is real, not a reassembler the suite offers.
+    """
+    import struct
+
+    segs = []
+    for p in packets:
+        tcp = p[(p[0] & 0x0F) * 4 :]
+        sport, _dport, seq = struct.unpack(">HHI", tcp[:8])
+        segs.append((sport, seq, tcp[(tcp[12] >> 4) * 4 :]))
+    if len({sport for sport, _seq, _data in segs}) != 1:
+        return "cites packets of different flows"
+    joined = b""
+    for _sport, seq, data in segs:
+        if seq != segs[0][1] + len(joined):
+            return "cites segments whose sequence numbers do not join"
+        joined += data
+    return segs[0][1], joined
+
+
+def check_across_break(name: str, anchored: bool) -> list[str]:
+    """Verify an across-break pair: a record crosses a DECLARED break, with or without evidence.
+
+    Pair checks six and seven (#167). packets.zpf must be contiguous, so the
+    seam crossed is a declared Discontinuity and not a unit sequence's. A
+    record of inner.zpf must have spans on both sides of that break, or the pair
+    crosses nothing. Its cited packets must really join in one flow's sequence
+    space, their TCP payloads making its payload. Then the two pairs differ in
+    exactly one thing. sessionized-across-break's record carries seq_start, at
+    the first segment's number, which is the evidence that permits the crossing.
+    isolate-transport-splice's carries neither seq_start nor message, so its
+    one violation is that crossing and nothing else.
+    """
+    import base64
+
+    d = os.path.join(HERE, name)
+    if not os.path.isdir(d):
+        return [f"{name}/ missing"]
+    out = fixture_digests(d, name, ("packets", "inner"), ("inner",))
+    packets = fixture_lines(d, "packets")
+    inner = fixture_lines(d, "inner")
+    if any(o.get("type") == "participant" and o.get("adjacency") != "contiguous" for o in packets):
+        out.append(f"{name}/packets: not contiguous -- the break crossed would not be declared")
+    units, breaks, at = [], [], 0
+    for o in packets:
+        if o.get("type") == "discontinuity":
+            breaks.append(at)
+            at += o.get("width", 0)
+        elif o.get("type") == "record":
+            p = base64.b64decode(o["payload"])
+            units.append((at, at + len(p), p))
+            at += len(p)
+    across = [
+        o
+        for o in inner
+        if o.get("type") == "record"
+        and any(
+            any(s["off_end"] <= b for s in o["spans"])
+            and any(s["off_start"] >= b for s in o["spans"])
+            for b in breaks
+        )
+    ]
+    if not across:
+        out.append(f"{name}/inner: no record crosses a declared break -- nothing is tested")
+    for o in across:
+        out += crossed_break(name, o, units, anchored)
+    out += covers(f"{name}/inner", inner, 5, 0, at)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if e["extent"] != at:
+                out.append(
+                    f"{name}: inner session {o['session_id']} declares {e['extent']}, not {at}"
+                )
+    if not out:
+        print(
+            f"  {name}: 2 files, digests match, coverage complete (packets [0,{at}), break at "
+            f"{breaks}); the crossing record joins in its flow's sequence space and carries "
+            + ("seq_start" if anchored else "neither seq_start nor message -- the violation")
+        )
+    return out
+
+
+def crossed_break(
+    name: str, o: dict, units: list[tuple[int, int, bytes]], anchored: bool
+) -> list[str]:
+    """Test one record crossing a declared break: a real join, and the evidence it should carry."""
+    import base64
+
+    label = f"{name}/inner: session {o['session_id']}'s record"
+    cited = [
+        u for u in units if any(s["off_start"] < u[1] and u[0] < s["off_end"] for s in o["spans"])
+    ]
+    joined = tcp_join([p for _a, _b, p in cited])
+    if isinstance(joined, str):
+        return [f"{label} {joined}"]
+    seq, data = joined
+    out = []
+    if data != base64.b64decode(o["payload"]):
+        out.append(f"{label}: its payload is not its segments' payloads joined")
+    evidence = "seq_start" in o or "message" in o.get("flags", ())
+    if anchored and o.get("seq_start") != seq:
+        out.append(f"{label} should carry seq_start {seq}, the evidence that permits the crossing")
+    if not anchored and evidence:
+        out.append(f"{label} carries evidence of its join, so the pair has no violation")
+    return out
+
+
 def check_capability_coverage(manifest: dict) -> list[str]:
     """Every capability the format defines must be exercised by some vector.
 
@@ -2498,6 +2625,8 @@ def main() -> int:
     failures += check_merge()
     failures += check_past_fin()
     failures += check_fragments()
+    failures += check_across_break("sessionized-across-break", anchored=True)
+    failures += check_across_break("isolate-transport-splice", anchored=False)
     failures += check_capability_coverage(manifest)
     failures += check_jsonl_keys()
     failures += check_retired_claims()

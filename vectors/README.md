@@ -431,13 +431,25 @@ datagram over a unit sequence had no conformant record before.
 |--------|-----------------|
 | `sessionized-fragments/` | *(accept, two files)* A unit sequence of three real IPv4 packets: fragment 1 of a UDP datagram, another flow's datagram, fragment 2. The reassembly is one `message` record citing both fragments across two seams, with no `seq_start`. See [The fragmented datagram](#the-fragmented-datagram). |
 
+`0.22`'s permission has two halves: a sequence-anchored record may cross input
+units, **or an input Discontinuity**. Only the first half had a vector, and
+`sessionized-across-units` crosses unit seams, which no splice check examines as
+declared blocks. The second half now has a pair, and so does its mirror (#167).
+The mirror's record carries neither kind of evidence, `seq_start` or
+`message`, so it tests the rule as `0.24` leaves it.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `sessionized-across-break/` | *(accept, two files)* A contiguous packet stream (flow A, flow B, a declared Discontinuity, flow A) and a sessionizer whose flow-A record carries `seq_start` and crosses the break. See [The declared break](#the-declared-break). |
+| `isolate-transport-splice/` | *(isolate, two files)* The same pair with flow A's record stripped of `isn`, `seq_start` and `ack`. Nothing in it evidences the join, so the crossing violates the carry duty. It is the pairwise twin of `isolate-unmarked-break`. |
+
 ## Multi-file fixtures
 
-Six directories are **fixtures** rather than vectors: several files that only
+Eight directories are **fixtures** rather than vectors: several files that only
 mean anything together, because what they test is a relationship *between*
 files. `check.py` walks each member exactly as it walks a single-file vector —
 framing, projection, the lot — and adds arithmetic specific to `chain/`,
-`tunnel/`, `merge/`, `decoded-past-fin/` and `sessionized-fragments/` on top: one function each, sharing the digest check, the
+`tunnel/`, `merge/`, `decoded-past-fin/`, `sessionized-fragments/` and the two across-break pairs on top: one function each, sharing the digest check, the
 unwrapping extent arithmetic (signed serial delta from the last placeable record,
 the origin `isn + 1` first — `stream-wraps-seq` is what keeps it honest) and the
 coverage union.
@@ -666,6 +678,47 @@ and the declared extents are checked as for the other pairs. It was seen to fail
 without the flag, with a `seq_start`, on a fragment of another datagram, on a gap
 in the offsets, with More Fragments on the last fragment, on a payload that is
 not the reassembly, on a contiguous input, and on a record that crosses nothing.
+
+### The declared break
+
+`sessionized-across-break/` and `isolate-transport-splice/` are the pair and
+mirror #167 asked for: **a transport record may cross a declared break only
+with the evidence of its join**.
+
+```
+packets.zpf (contiguous)                    inner.zpf (transport)
+  [0,80)     flow A, seq 1001, 40 B           session 10: flow A, one record,
+  [80,140)   flow B, seq 5001, 20 B             spans [0,80) and [140,210)
+  BREAK at 140 (decrypt-failed, no width)     session 11: flow B, [80,140)
+  [140,210)  flow A, seq 1041, 30 B
+```
+
+Both `packets.zpf` files are the same: a decryptor's output citing a capture,
+three `net:ip` records with real TCP headers, and a Discontinuity before flow
+A's second packet. Flow A's sequence numbers join across it (1001 + 40 = 1041),
+so what was lost belonged to another flow, which is #152's own example. In
+`sessionized-across-break` session 10's record carries `seq_start` 1001, and the
+crossing is permitted. In `isolate-transport-splice` it carries neither
+`seq_start` nor `message`, and its participant has no `isn`, so nothing in the
+record says the two packets join. That crossing is the pair's one violation.
+
+| Vector | What it carries |
+|--------|-----------------|
+| `sessionized-across-break/` | *(accept, two files)* Accept both. A splice check that applies the decoded layer's carry duty to a `seq_start` record reports a violation that is not there. |
+| `isolate-transport-splice/` | *(isolate, two files)* Accept `packets.zpf`. Isolate or reject `inner.zpf`'s session 10. Its record crosses a declared break with no evidence, and a transport stream has neither recourse, a Discontinuity or `units`. Only judgeable with `packets.zpf` in hand, as `splice/` is. |
+
+`check.py` verifies both with one function. `packets.zpf` is seen to be
+contiguous, so the crossing is of a declared block. A record of `inner.zpf` is
+seen to have spans on both sides of the break. Its cited packets' TCP headers
+show the join is real: one flow, sequence numbers running on without a gap, and
+the TCP payloads joining to the record's payload. The pairs then differ in one
+thing. The accept pair's record carries `seq_start` at the first segment's
+number. The mirror's carries neither `seq_start` nor `message`. Coverage and
+declared extents are checked as for the other pairs. It was seen to fail nine
+ways before it was trusted: no `seq_start`, a wrong `seq_start`, segments whose
+numbers do not join, a packet of another flow, a payload that is not the join,
+a `units` input, a missing break, and a mirror that gained `seq_start` or
+`message`.
 
 ## Coverage this does not have
 

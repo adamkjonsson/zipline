@@ -283,7 +283,7 @@ never shipped (#167's first bullet) is **left alone**: `sessionized-across-break
 checks a crossing against a shipped input, which is what that bullet asked for.
 
 Estimated counts: **68 → 76 vectors**, about seven new `RULES` entries. Phases
-1–3 have reached 71 and 43. The real numbers go in the Definition of done.
+1–4 have reached 73 and 45. The real numbers go in the Definition of done.
 
 ---
 
@@ -401,6 +401,28 @@ to `0.24`, so it is D5 and Phase 6. **71 vectors, 43 rules.**
   that confirms the crossing really crosses the declared block.
 - These come after Phase 3 because the mirror tests the rule in its final form:
   a record with **neither** kind of evidence.
+
+*Done 2026-10-29.* Both pairs come from one builder, `build_across_break(name,
+anchored)`, and share a `packets.zpf`. That file is a decryptor's output citing
+a capture, as Phase 3 established, so nothing cited is unshipped. It holds three
+real TCP packets, flow A at `[0,80)`, flow B at `[80,140)` and flow A at
+`[140,210)`, with a Discontinuity (`decrypt-failed`, no width) at 140. These are
+the tunnel's own numbers, so the two fixtures can be compared at a glance. In
+the mirror, flow A's participant loses `isn`, and its record loses `seq_start`
+and `ack`, not `seq_start` alone. So session 10 carries no sequence hint of any
+kind, and nobody has to ask whether a stray `ack` counts as evidence. (An `ack`
+alone would not make the record unplaceable: that needs other records of the
+stream to carry `seq_start`, and session 10 has one record.) Flow B keeps its evidence, so session 11 is conformant in both. The pair has
+exactly one violation.
+
+`check.py` gains `check_across_break()`, which runs on both pairs, and two
+helpers, `tcp_join()` and `crossed_break()`. Like Phase 3's check, it shows the
+join is real: the cited packets' TCP headers give one flow and sequence numbers
+that run on, and their payloads join to the record's. It was seen to fail nine
+ways (listed in the vectors README). Two `RULES` entries:
+`transport-record-crosses-declared-break` and
+`transport-crossing-needs-evidence`. Suite only, so no keyword moved. Posting
+on #167 waits for the merge. **73 vectors, 45 rules.**
 
 ### Phase 5 — #169, `copy`
 

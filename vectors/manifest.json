@@ -2674,6 +2674,100 @@
         "packets.jsonl",
         "packets.zpf"
       ]
+    },
+    {
+      "name": "sessionized-across-break",
+      "tier": "accept",
+      "violations": 0,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x22",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0072",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00C1",
+        "0x00D1"
+      ],
+      "bytes": 1352,
+      "summary": "A sessionization stage crossing a DECLARED break. packets.zpf is a contiguous packet stream of three net:ip records with real headers -- flow A at [0,80), flow B at [80,140), flow A at [140,210) -- and a Discontinuity (decrypt-failed, no width) between flow B's packet and flow A's second. Flow A's sequence numbers join across it (1001 + 40 = 1041), so what was lost belonged to another flow. inner.zpf's session 10 is flow A as one record with seq_start, its two spans crossing the break; session 11 is flow B.",
+      "spec_section": "Discontinuity (0x22) -- a transport-layer record meets both duties when it carries the evidence of its own join",
+      "expect": "Accept both files. Session 10's record carries seq_start, so its sequence numbers assert the join and a break between its packets is a range of sequence numbers no record covers: it MAY cross the declared Discontinuity. A splice check that applies the decoded layer's carry duty to it reports a violation that is not there. isolate-transport-splice is this pair with the evidence removed.",
+      "has_jsonl": true,
+      "files": [
+        "inner.hex",
+        "inner.jsonl",
+        "inner.zpf",
+        "packets.hex",
+        "packets.jsonl",
+        "packets.zpf"
+      ]
+    },
+    {
+      "name": "isolate-transport-splice",
+      "tier": "isolate",
+      "violations": 1,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x22",
+        "0x41"
+      ],
+      "options": [
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0061",
+        "0x0070",
+        "0x0072",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00C1",
+        "0x00D1"
+      ],
+      "bytes": 1328,
+      "summary": "sessionized-across-break with flow A's record stripped of its evidence: no isn on its participant, no seq_start and no ack on the record, and no message flag, since it is TCP. The record still crosses packets.zpf's declared Discontinuity with two spans, so it asserts a join nothing in it can answer for. A transport output without the evidence owes both duties, and has neither recourse: a transport stream carries no Discontinuity and is never units.",
+      "spec_section": "Discontinuity (0x22) -- a transport record carrying neither owes both duties as stated",
+      "expect": "Accept packets.zpf; it breaks no rule. ISOLATE or reject inner.zpf's session 10: its record crosses a declared Discontinuity in its input and carries neither seq_start nor message, so nothing in it says the two packets join, and the break is gone one hop along. Session 11 is conformant. A reader handed only inner.zpf cannot judge it: the violation needs packets.zpf in hand, as splice does. This is the pairwise twin of isolate-unmarked-break.",
+      "has_jsonl": true,
+      "files": [
+        "inner.hex",
+        "inner.jsonl",
+        "inner.zpf",
+        "packets.hex",
+        "packets.jsonl",
+        "packets.zpf"
+      ]
     }
   ]
 }

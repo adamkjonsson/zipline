@@ -117,6 +117,18 @@ vectors. Scope and reasoning in
   - **One pair.** `sessionized-fragments` holds real IPv4 fragments, and
     `check.py` reassembles them to show that the record's payload is their
     datagram.
+- **A transport record crossing a declared break, both ways** ([#167](https://github.com/adamkjonsson/zipline/issues/167)).
+  `0.22`'s permission lets a `seq_start` record cross input units **or an input
+  Discontinuity**, and only the first half had a vector. `sessionized-across-units`
+  crosses unit seams, which no splice check examines as declared blocks, so an
+  implementation that misapplied the carry duty to transport records passed
+  every vector. python-zipline's `check_splice` did, through `0.6.0.dev0`.
+  `sessionized-across-break` is the conformant pair: flow A's `seq_start` record
+  crosses a declared break in a contiguous packet stream.
+  `isolate-transport-splice` is its mirror, the same record with neither
+  `seq_start` nor `message`, which must be reported. `check.py` reads the
+  packets' TCP headers to show that the crossing's join is real. Suite only:
+  no specification text changes.
 - **Multi-file vectors state merged orders too** ([#163](https://github.com/adamkjonsson/zipline/issues/163)).
   `0.23`'s `merged` was single-file only, because the files of one entry share
   session ids and the key named a session alone. A multi-file entry's items now
