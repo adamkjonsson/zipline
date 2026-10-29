@@ -2151,6 +2151,25 @@ reader can check it** — a file that withheld and one that did not are byte-ide
 is precisely the defect. A stage that needs to withhold from such a stream emits a
 decoded layer instead, where the break is expressible.
 
+**An incomplete reassembly is not content of the stream.** A message-oriented
+stream's content is its messages. An IP datagram that lost a fragment, or an
+SCTP message that lost a chunk, never reached the stage as a message, only as
+pieces of one. Leaving those pieces out withholds nothing of the stream, so the
+rule above does not reach them. Writing them as a record would be false either
+way. Flagged `message`, the record would claim a whole message. Unflagged, it
+would carry bytes that no sender sent as a unit. The pieces are still content of
+the stage's **input**, so the
+[coverage guarantee](#coverage-honesty-undecoded-blocks) owes them an Undecoded
+block, and that block is the trace: a reader of the file can see which input
+bytes became no message. The block **SHOULD** carry `reason = undecodable`, since
+the reassembler tried and failed, so that two producers name the shape alike.
+Its `comment` can say which piece was missing. `dropped` is the wrong word,
+because it asserts that content of the stream was removed. A reassembler reading
+a capture rather than a `.zpf` names the `capture` source, as it does for
+anything it discards (see [`retransmit`](#enums)). The [`copy`](#enums) flag
+marks the opposite case: a whole message seen twice is content, and it is
+written.
+
 **Do these two join?** is the whole test, and it falls to the producer because
 only the producer knows what it did with the input:
 
@@ -2585,6 +2604,8 @@ capture, a veth pair — is not a retransmission: the sender sent once, and the
 flag is not set, however the reassembler dealt with the copy. What the
 reassembler *discarded*, whether a retransmitted segment or a duplicated one, has
 its own home: an [Undecoded](#undecoded-0x21) block against the `capture` source.
+So do the fragments of a message it could not complete
+([Discontinuity](#discontinuity-0x22)).
 The two mechanisms split cleanly — the flag says what the sender did, the block
 says what the reassembler dropped. How a producer tells a copy from a
 retransmission is its own affair (the TCP Timestamps option is one way, and is

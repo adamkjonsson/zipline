@@ -101,6 +101,20 @@ vectors. Scope and reasoning in
 
 ### Changed
 
+- **An incomplete reassembly is not content of the stream** ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
+  `0.24`'s `message` permission covers a datagram reassembled whole. Split out
+  of #166 was the datagram that lost a fragment. Its pieces are not a message,
+  and the withholding rule seemed to forbid leaving them out of a UDP stream.
+  §Discontinuity now states the rule's scope. A message-oriented stream's
+  content is its messages, so pieces that never completed are not content, and
+  leaving them out withholds nothing. Their input range is still owed an
+  Undecoded block, which is the trace, and the block **SHOULD** carry
+  `reason = undecodable`, pinned as `capture-gap` is. A capture-sourced
+  reassembler cites the `capture` source, and the `retransmit` paragraph says
+  so.
+  - **Keywords:** `SHOULD` 28 → 29.
+  - **One pair.** `sessionized-fragment-lost` is `sessionized-fragments` with the
+    second fragment lost, built by the same function.
 - **A transport stream's extent is defined, and a FIN's position is owed nothing** ([#168](https://github.com/adamkjonsson/zipline/issues/168)).
   The extent is the furthest point a placeable record reaches, a zero-length
   record reaching its own offset. It counts sequence numbers, not bytes, as

@@ -182,6 +182,23 @@ having established only that it could not look.
 
 ### Discontinuity (`0x22`)
 
+**Why an incomplete reassembly is a matter of the withholding rule's scope, not
+an exception to it** ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
+The rule exists because a datagram that never reaches a stream without a
+sequence anchor leaves no trace, and a file that withheld one is byte-identical
+to a file that did not. Neither half holds for fragments that never completed.
+They were never a datagram of the stream, and the coverage guarantee already
+puts an Undecoded block over them in the input's space. Writing the rule an
+exception would have had the same effect on files, but it would have weakened
+the rule's text where only its reach needed saying. Writing the pieces as a
+record without `message` was the other option. It keeps the bytes, but it
+asserts a unit no sender sent, and a reader could not tell it from a whole
+datagram whose writer merely omitted the flag, which is only a `SHOULD` for UDP.
+The word pinned is `undecodable` and not `dropped`, because `dropped` asserts
+that content *of the stream* was removed, which is the one thing this argument
+denies. `copy` is the boundary case on the other side: a whole message seen
+twice did reach the stage, is content, and is written.
+
 **Why the output space needs its own marker at all.** Absent the block, a decode
 stage's output space is just the concatenation of its record payloads, so two
 records either side of an input gap are *adjacent* in it — the gap does not

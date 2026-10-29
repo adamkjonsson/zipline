@@ -7904,10 +7904,38 @@ def build_past_fin() -> None:
 FRAG_DATA, FLOW_B_DATA = b"d" * 40, b"e" * 12
 
 
-def build_fragments() -> None:
-    """Build a unit sequence carrying a fragmented datagram, and its reassembly."""
+# 0.24 (#170). The same input with the datagram's second fragment lost. The
+# first fragment is not a message, so it is not content of the stream: the
+# stage writes no record for it, which withholds nothing, and marks its range
+# in the INPUT's space undecodable, the word the SHOULD pins. That block is the
+# trace. Flow B is written as before. Built by the same function, `lost=True`.
+FRAGMENT_LOST_SUMMARY = (
+    "sessionized-fragments with the datagram's second fragment lost. packets.zpf "
+    "is a unit sequence of two net:ip records with real headers: the first "
+    "fragment (id 0x1234, MF) at [0,52) and another flow's datagram at [52,92). "
+    "No second fragment ever arrived, so the first is pieces of a message, not a "
+    "message. inner.zpf writes no record for it, which withholds nothing of the "
+    "stream, and marks [0,52) of packets.zpf undecodable, with a comment naming "
+    "the missing fragment. Session 21 is flow B. Through 0.23 the shape had no "
+    "conformant form: a partial datagram is not a message, and the transport "
+    "layer could not withhold it."
+)
+FRAGMENT_LOST_EXPECT = (
+    "Accept both files. An incomplete reassembly is not content of a "
+    "message-oriented stream, so leaving it out is not withholding: a check that "
+    "calls the missing datagram withheld content reports a violation that is not "
+    "there. The fragment's bytes are accounted for in the input's space by the "
+    "Undecoded block, reason undecodable (the SHOULD), and inner.zpf's coverage "
+    "of packets.zpf is complete with it. A reader wanting every input unit cited "
+    "by some record finds the block in its place. Session 21 declares "
+    "packets.zpf's full extent, 92."
+)
+
+
+def build_fragments(name: str, lost: bool) -> None:
+    """Build a unit sequence carrying a fragmented datagram, and its reassembly or its loss."""
     fixture(
-        "sessionized-fragments",
+        name,
         "accept",
         "A sessionization stage reassembling an IP-fragmented UDP datagram. "
         "packets.zpf is a decryptor's output, a unit sequence of three net:ip "
@@ -7917,25 +7945,35 @@ def build_fragments() -> None:
         "inner.zpf's session 20 is the datagram reassembled, one record flagged "
         "message citing both fragments across two seams, with no seq_start. "
         "Through 0.23 that record had no conformant form: the permission to "
-        "cross input units was keyed on seq_start.",
+        "cross input units was keyed on seq_start."
+        if not lost
+        else FRAGMENT_LOST_SUMMARY,
         "Discontinuity (0x22) -- a transport-layer record meets both duties when "
-        "it carries the evidence of its own join",
+        "it carries the evidence of its own join"
+        if not lost
+        else "Discontinuity (0x22) -- an incomplete reassembly is not content of the stream",
         "Accept both files. Session 20's record is exactly one transport message, "
         "so the units it cites are that message's fragments and join as its "
         "reassembly: a splice check that requires seq_start to cross a unit "
         "sequence's seams reports a violation that is not there. Its 40-byte "
         "payload is the datagram's data, the fragments' IP payloads joined at "
         "their offsets with the UDP header removed. Both sessions declare "
-        "packets.zpf's full extent, 128.",
+        "packets.zpf's full extent, 128."
+        if not lost
+        else FRAGMENT_LOST_EXPECT,
         violations=0,
     )
     frag1, frag2 = udp_fragments(5000, 5353, FRAG_DATA, 0x1234, 32)
     flow_b = udp_packet(5001, 53, FLOW_B_DATA)
-    pkts = [(1000, frag1), (1100, flow_b), (1200, frag2)]
+    pkts = [(1000, frag1), (1100, flow_b)] + ([] if lost else [(1200, frag2)])
+    extent = sum(len(p) for _ts, p in pkts)
     packets = member(
-        "sessionized-fragments",
+        name,
         "packets",
-        "A decryptor's output: three inner IPv4 packets as a unit sequence, "
+        "A decryptor's output: two inner IPv4 packets as a unit sequence, the "
+        "first a fragment whose partner never arrived."
+        if lost
+        else "A decryptor's output: three inner IPv4 packets as a unit sequence, "
         "the second between the two fragments of the first's datagram.",
         [
             file_header(options=[o_produced_by("zpf-wg 0.3"), o_produced_at(1719700000)]),
@@ -8005,7 +8043,7 @@ def build_fragments() -> None:
                 flags=0x0080,
                 options=[o_decoder_id(1), o_spans([(1, 5, 0, a, b) for a, b in spans])],
             ),
-            session_end(sess, [o_input_extents([(1, 5, 0, 128)])]),
+            session_end(sess, [o_input_extents([(1, 5, 0, extent)])]),
         ]
         lines = [
             {"type": "session", "session_id": sess, "proto": "udp"},
@@ -8033,18 +8071,43 @@ def build_fragments() -> None:
             {
                 "type": "session_end",
                 "session_id": sess,
-                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 128}],
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": extent}],
             },
         ]
         return [blocks, lines]
 
-    # Flow A: one message, two spans, one per fragment, flow B's packet between.
-    a_blocks, a_lines = flow(20, 5000, 1000, FRAG_DATA, [(0, 52), (92, 128)])
     b_blocks, b_lines = flow(21, 5001, 1100, FLOW_B_DATA, [(52, 92)])
+    if lost:
+        # No record for flow A: its one fragment is pieces of a message. The
+        # block names the input's range, in the input's ids, and is the trace.
+        note = "fragment 1 of 2 of datagram id 0x1234; fragment 2 never arrived"
+        a_blocks = [
+            undecoded(1, 0, 5, 0, 52, [o_reason("undecodable"), o_decoder_id(1), o_comment(note)])
+        ]
+        a_lines = [
+            {
+                "type": "undecoded",
+                "source_id": 1,
+                "session_id": 5,
+                "pid": 0,
+                "off_start": 0,
+                "off_end": 52,
+                "reason": "undecodable",
+                "decoder_id": 1,
+                "comment": note,
+            }
+        ]
+    else:
+        # Flow A: one message, two spans, one per fragment, flow B's packet between.
+        a_blocks, a_lines = flow(20, 5000, 1000, FRAG_DATA, [(0, 52), (92, 128)])
     member(
-        "sessionized-fragments",
+        name,
         "inner",
-        "The sessionization stage over packets.zpf: flow A's datagram "
+        "The sessionization stage over packets.zpf: no record for the incomplete "
+        "datagram, its fragment marked undecodable, and flow B's datagram as its "
+        "own session."
+        if lost
+        else "The sessionization stage over packets.zpf: flow A's datagram "
         "reassembled from its two fragments as one message record, and flow B's "
         "datagram as its own session.",
         [
@@ -8315,7 +8378,8 @@ def main() -> int:
     build_tunnel()
     build_merge()
     build_past_fin()
-    build_fragments()
+    build_fragments("sessionized-fragments", lost=False)
+    build_fragments("sessionized-fragment-lost", lost=True)
     build_across_break("sessionized-across-break", anchored=True)
     build_across_break("isolate-transport-splice", anchored=False)
     manifest = []

@@ -456,13 +456,22 @@ and a `copy` in a negative vector breaks one.
 | `udp-capture-copy` | *(accept)* A DNS query and its answer over UDP through a mirror port, the answer seen twice. The second answer is flagged `message` and `copy` (`0x0180`). Read as sent, the exchange is one query and one answer. Read as captured, it is three records. The copy is content either way, so the server's extent is **58**, twice the answer's 29. Merged order is stored order. |
 | `isolate-copy-differs` | *(isolate)* The same file with the copy's last byte changed. The flag asserts a repeat the bytes contradict. A reader that trusted it would skip a different answer. |
 
+An incomplete reassembly is not content of a message-oriented stream. A
+fragment whose datagram never completed was never a message of the stream, so
+leaving it out withholds nothing. Its input range is still owed an Undecoded
+block, and that block **should** say `undecodable` (#170).
+
+| Vector | What it carries |
+|--------|-----------------|
+| `sessionized-fragment-lost/` | *(accept, two files)* `sessionized-fragments` with the second fragment lost: no record for the datagram, `[0,52)` of `packets.zpf` marked `undecodable` with a comment naming the missing fragment, and flow B as before. See [The fragmented datagram](#the-fragmented-datagram). |
+
 ## Multi-file fixtures
 
-Eight directories are **fixtures** rather than vectors: several files that only
+Nine directories are **fixtures** rather than vectors: several files that only
 mean anything together, because what they test is a relationship *between*
 files. `check.py` walks each member exactly as it walks a single-file vector —
 framing, projection, the lot — and adds arithmetic specific to `chain/`,
-`tunnel/`, `merge/`, `decoded-past-fin/`, `sessionized-fragments/` and the two across-break pairs on top: one function each, sharing the digest check, the
+`tunnel/`, `merge/`, `decoded-past-fin/`, the two fragment pairs and the two across-break pairs on top: one function each, sharing the digest check, the
 unwrapping extent arithmetic (signed serial delta from the last placeable record,
 the origin `isn + 1` first — `stream-wraps-seq` is what keeps it honest) and the
 coverage union.
@@ -680,6 +689,7 @@ reassembled, 40 bytes of data. Both sessions declare `packets.zpf`'s full extent
 | Vector | What it carries |
 |--------|-----------------|
 | `sessionized-fragments/` | *(accept, two files)* The pair above. A splice check that requires `seq_start` before a record may cross a unit sequence's seams reports a violation that is not there. |
+| `sessionized-fragment-lost/` | *(accept, two files)* The same with fragment 2 never arriving (#170). `packets.zpf` is `[0,52)` fragment 1 and `[52,92)` flow B. `inner.zpf` writes flow B only and marks `[0,52)` `undecodable`. A check that calls the missing datagram withheld content is wrong: pieces of a message are not content of the stream. `check.py` confirms the orphan's datagram does not reassemble from what is present, that no record cites it, and that one `undecodable` block marks exactly its range. It was seen to fail on a fragment that is not one, on a record citing the orphan, on `dropped`, on a missing block, and on a wrong extent. |
 
 `check.py` verifies the pair: `packets.zpf` is seen to be a unit sequence, a
 record of `inner.zpf` is seen to cite two or more of its units, and that record

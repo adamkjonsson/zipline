@@ -283,7 +283,7 @@ never shipped (#167's first bullet) is **left alone**: `sessionized-across-break
 checks a crossing against a shipped input, which is what that bullet asked for.
 
 Estimated counts: **68 → 76 vectors**, about seven new `RULES` entries. Phases
-1–5 have reached 75 and 47. The real numbers go in the Definition of done.
+1–6 have reached 76 and 48. The real numbers go in the Definition of done.
 
 ---
 
@@ -472,6 +472,31 @@ argue the contrast twice.*
   of the bytes class covers exactly its range. Seen to fail on each of those
   before it is trusted.
 
+*Done 2026-10-29.* The paragraph follows the withholding rule directly,
+headed *An incomplete reassembly is not content of the stream*. It names both
+shapes, an IP datagram that lost a fragment and an SCTP message that lost a
+chunk, and says why neither record form is honest. It then pins the word:
+*The block **SHOULD** carry `reason = undecodable`*, with `comment` for which
+piece was missing. It closes on `copy` as the opposite case, which is why
+Phase 5 came first. The `retransmit` paragraph gains one sentence giving the
+fragments the same `capture`-source home as anything a reassembler discards.
+`SHOULD` went to 29, with its `NORMATIVE_ADDITIONS` entry. The companion's
+Discontinuity section has the argument: scope rather than exception, why not
+an unflagged record, and why not `dropped`.
+
+**The vector is built by the same function.** `build_fragments(name, lost)`
+now makes both `sessionized-fragments` and `sessionized-fragment-lost`.
+`sessionized-fragments` came out byte-identical after the refactor, so its
+digest, and every number in its README rows, is unchanged. The lost variant
+keeps fragment 1 at `[0,52)` and flow B at `[52,92)`, writes no record for the
+datagram, and marks `[0,52)` `undecodable` with the comment *fragment 1 of 2 of
+datagram id 0x1234; fragment 2 never arrived*. The orphan test does not compare
+identifications by hand. It asks `reassemble()`, Phase 3's helper, whether the
+fragments sharing the orphan's id reassemble, so *nothing was lost* means what
+it says. `check_fragment_lost()` was seen to fail five ways: on a unit that is
+not a fragment, a record citing the orphan, `dropped`, a missing block (which
+coverage also catches) and a wrong declared extent. **76 vectors, 48 rules.**
+
 ### Phase 7 — sweep, changelog, review, tag
 
 1. Sweep the spec, the companion, the vectors README and every `expect` string
@@ -515,7 +540,7 @@ argue the contrast twice.*
       break, and one with neither `seq_start` nor `message` owes both duties
       (#166).
 - [x] `copy` defined at `0x0100`, with its two `MUST NOT`s accounted for (#169).
-- [ ] The withholding rule states that an incomplete reassembly is not content
+- [x] The withholding rule states that an incomplete reassembly is not content
       of the stream, and its fragments are marked in the input's space (#170).
 - [x] Multi-file `merged` items name their file, and `chain` declares its
       three orders (#163).

@@ -417,6 +417,17 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
         "duplicate-discarded; two marks for one fact would let them disagree -- "
         "an Added line",
     ),
+    # 0.24 (#170). An incomplete reassembly is not content of a message-oriented
+    # stream, so the withholding rule does not reach it; its pieces are owed an
+    # Undecoded block in the input's space. The SHOULD pins the word, as
+    # capture-gap's does, so two producers name the shape alike.
+    (
+        r"The block \*\*SHOULD\*\* carry `reason = undecodable`",
+        {"SHOULD": 1},
+        "the vocabulary is open, and an unpinned shape gets a word per producer; "
+        "undecodable is the existing bytes-class value for tried-and-failed, and "
+        "what zpfwire already writes -- a Changed line, advisory strength",
+    ),
     (
         r"A reader that finds `copy` breaking either constraint \*\*MAY\*\* treat",
         {"MAY": 1},
@@ -694,6 +705,14 @@ RULES = {
         "a writer MUST NOT set copy unless the payload is byte-identical to the "
         "participant's preceding record's; a reader MAY isolate the session",
         "isolate-copy-differs",
+    ),
+    # 0.24 (#170). Fragments whose message never completed are not content of
+    # a message-oriented stream: no record, and the withholding rule does not
+    # reach them. Their input range is marked undecodable, which is the trace.
+    "incomplete-reassembly-not-content": (
+        "an incomplete reassembly writes no record; its fragments' input range is "
+        "marked Undecoded, reason undecodable (SHOULD), and nothing is withheld",
+        "sessionized-fragment-lost",
     ),
     "fin-position-owed-nothing": (
         "the sequence number a FIN occupies, inside the extent, is owed neither a "
@@ -2269,6 +2288,72 @@ def check_fragments() -> list[str]:
     return out
 
 
+def check_fragment_lost() -> list[str]:
+    """Verify sessionized-fragment-lost: an orphan fragment, no record, and the block in its place.
+
+    The pair check for #170. Some unit of packets.zpf must be an IPv4 fragment
+    whose datagram does not reassemble from the units present -- or nothing was
+    lost. No record of inner.zpf may cite it, since pieces of a message are not
+    content of the stream. An Undecoded block must name exactly its range in
+    the input's space with reason undecodable, the word the SHOULD pins: the
+    trace that makes leaving it out honest. With the usual coverage and
+    declared-extent checks.
+    """
+    import base64
+    import struct
+
+    name = "sessionized-fragment-lost"
+    d = os.path.join(HERE, name)
+    if not os.path.isdir(d):
+        return [f"{name}/ missing"]
+    out = fixture_digests(d, name, ("packets", "inner"), ("inner",))
+    packets = fixture_lines(d, "packets")
+    inner = fixture_lines(d, "inner")
+    units, at = [], 0
+    for o in packets:
+        if o.get("type") == "record":
+            p = base64.b64decode(o["payload"])
+            units.append((at, at + len(p), p))
+            at += len(p)
+    frags = [u for u in units if struct.unpack(">H", u[2][6:8])[0] & 0x3FFF]  # MF or offset
+    orphans = [
+        u
+        for u in frags
+        if isinstance(reassemble([f[2] for f in frags if f[2][4:6] == u[2][4:6]]), str)
+    ]
+    if not orphans:
+        out.append(f"{name}/packets: every fragment's datagram completes -- nothing was lost")
+    for a, b, _p in orphans:
+        if any(
+            s["off_start"] < b and a < s["off_end"]
+            for o in inner
+            if o.get("type") == "record"
+            for s in o["spans"]
+        ):
+            out.append(f"{name}/inner: a record cites the orphan fragment [{a},{b})")
+        marks = [
+            o
+            for o in inner
+            if o.get("type") == "undecoded" and (o["off_start"], o["off_end"]) == (a, b)
+        ]
+        if [o.get("reason") for o in marks] != ["undecodable"]:
+            out.append(f"{name}/inner: [{a},{b}) is not marked by one undecodable block")
+    out += covers(f"{name}/inner", inner, 5, 0, at)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if e["extent"] != at:
+                out.append(
+                    f"{name}: inner session {o['session_id']} declares {e['extent']}, not {at}"
+                )
+    if not out:
+        print(
+            f"  {name}: 2 files, digests match, coverage complete (packets [0,{at})); "
+            f"orphan fragment {[(a, b) for a, b, _p in orphans]} cited by no record and "
+            f"marked undecodable"
+        )
+    return out
+
+
 def tcp_join(packets: list[bytes]) -> tuple[int, bytes] | str:
     """Join TCP segments in one flow's sequence space: (first seq, payload), or why not.
 
@@ -2693,6 +2778,7 @@ def main() -> int:
     failures += check_merge()
     failures += check_past_fin()
     failures += check_fragments()
+    failures += check_fragment_lost()
     failures += check_across_break("sessionized-across-break", anchored=True)
     failures += check_across_break("isolate-transport-splice", anchored=False)
     failures += check_capability_coverage(manifest)

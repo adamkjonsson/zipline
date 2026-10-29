@@ -2744,6 +2744,51 @@
       ]
     },
     {
+      "name": "sessionized-fragment-lost",
+      "tier": "accept",
+      "violations": 0,
+      "blocks": [
+        "0x01",
+        "0x02",
+        "0x03",
+        "0x10",
+        "0x11",
+        "0x12",
+        "0x20",
+        "0x21",
+        "0x41"
+      ],
+      "options": [
+        "0x0001",
+        "0x0012",
+        "0x0013",
+        "0x0020",
+        "0x0021",
+        "0x0041",
+        "0x0042",
+        "0x0050",
+        "0x0060",
+        "0x0080",
+        "0x0090",
+        "0x0091",
+        "0x00A0",
+        "0x00C1"
+      ],
+      "bytes": 928,
+      "summary": "sessionized-fragments with the datagram's second fragment lost. packets.zpf is a unit sequence of two net:ip records with real headers: the first fragment (id 0x1234, MF) at [0,52) and another flow's datagram at [52,92). No second fragment ever arrived, so the first is pieces of a message, not a message. inner.zpf writes no record for it, which withholds nothing of the stream, and marks [0,52) of packets.zpf undecodable, with a comment naming the missing fragment. Session 21 is flow B. Through 0.23 the shape had no conformant form: a partial datagram is not a message, and the transport layer could not withhold it.",
+      "spec_section": "Discontinuity (0x22) -- an incomplete reassembly is not content of the stream",
+      "expect": "Accept both files. An incomplete reassembly is not content of a message-oriented stream, so leaving it out is not withholding: a check that calls the missing datagram withheld content reports a violation that is not there. The fragment's bytes are accounted for in the input's space by the Undecoded block, reason undecodable (the SHOULD), and inner.zpf's coverage of packets.zpf is complete with it. A reader wanting every input unit cited by some record finds the block in its place. Session 21 declares packets.zpf's full extent, 92.",
+      "has_jsonl": true,
+      "files": [
+        "inner.hex",
+        "inner.jsonl",
+        "inner.zpf",
+        "packets.hex",
+        "packets.jsonl",
+        "packets.zpf"
+      ]
+    },
+    {
       "name": "sessionized-across-break",
       "tier": "accept",
       "violations": 0,
