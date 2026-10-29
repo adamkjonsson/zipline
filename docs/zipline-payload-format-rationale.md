@@ -193,7 +193,8 @@ exception would have had the same effect on files, but it would have weakened
 the rule's text where only its reach needed saying. Writing the pieces as a
 record without `message` was the other option. It keeps the bytes, but it
 asserts a unit no sender sent, and a reader could not tell it from a whole
-datagram whose writer merely omitted the flag, which is only a `SHOULD` for UDP.
+datagram whose writer merely omitted the flag, which the specification only
+recommends for UDP.
 The word pinned is `undecodable` and not `dropped`, because `dropped` asserts
 that content *of the stream* was removed, which is the one thing this argument
 denies. `copy` is the boundary case on the other side: a whole message seen

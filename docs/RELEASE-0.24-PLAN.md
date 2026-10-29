@@ -497,6 +497,14 @@ it says. `check_fragment_lost()` was seen to fail five ways: on a unit that is
 not a fragment, a record citing the orphan, `dropped`, a missing block (which
 coverage also catches) and a wrong declared extent. **76 vectors, 48 rules.**
 
+*A slip, recorded.* The Phase 6 commit (`5d25393`) went out with a red
+`check.py`. The companion's paragraph said that `message` *is only a `SHOULD`
+for UDP*, and the companion may not carry normative keywords. The check
+reported it, but the command that ran the check filtered its output through
+`grep` and chained the commit with `&&` on grep's exit status, not on the
+checker's. The next commit rewords the sentence (*which the specification only
+recommends for UDP*). From here the check's own exit status gates every commit.
+
 ### Phase 7 — sweep, changelog, review, tag
 
 1. Sweep the spec, the companion, the vectors README and every `expect` string
