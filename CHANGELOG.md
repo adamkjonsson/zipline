@@ -68,11 +68,14 @@ neither is safe to skip within `0.x`.
 
 ## [0.24] — unreleased
 
-**The sessionizer release.** Five gaps found by producers that turn packet
+**The sessionizer release.** Six gaps, found by producers that turn packet
 streams into transport streams: the FIN's position in a closed stream's extent,
-a UDP datagram reassembled from fragments, a capture-point copy of a datagram,
-a sessionized record crossing a declared break, and merged orders in multi-file
-vectors. Scope and reasoning in
+a UDP datagram reassembled from fragments, the same datagram missing a fragment,
+a capture-point copy of a datagram, a sessionized record crossing a declared
+break, and merged orders in multi-file vectors. One flag is added (`copy`), and
+no byte of an existing file changes meaning. Keywords: `MAY` 55 → 56, `MUST NOT`
+44 → 46 (`MUST` 124 → 126, which counts them too), `SHOULD` 28 → 29. **76
+vectors, 35 options, 48 rules.** Scope and reasoning in
 [docs/RELEASE-0.24-PLAN.md](docs/RELEASE-0.24-PLAN.md).
 
 ### Added
@@ -101,20 +104,6 @@ vectors. Scope and reasoning in
 
 ### Changed
 
-- **An incomplete reassembly is not content of the stream** ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
-  `0.24`'s `message` permission covers a datagram reassembled whole. Split out
-  of #166 was the datagram that lost a fragment. Its pieces are not a message,
-  and the withholding rule seemed to forbid leaving them out of a UDP stream.
-  §Discontinuity now states the rule's scope. A message-oriented stream's
-  content is its messages, so pieces that never completed are not content, and
-  leaving them out withholds nothing. Their input range is still owed an
-  Undecoded block, which is the trace, and the block **SHOULD** carry
-  `reason = undecodable`, pinned as `capture-gap` is. A capture-sourced
-  reassembler cites the `capture` source, and the `retransmit` paragraph says
-  so.
-  - **Keywords:** `SHOULD` 28 → 29.
-  - **One pair.** `sessionized-fragment-lost` is `sessionized-fragments` with the
-    second fragment lost, built by the same function.
 - **A transport stream's extent is defined, and a FIN's position is owed nothing** ([#168](https://github.com/adamkjonsson/zipline/issues/168)).
   The extent is the furthest point a placeable record reaches, a zero-length
   record reaching its own offset. It counts sequence numbers, not bytes, as
@@ -147,12 +136,28 @@ vectors. Scope and reasoning in
   headers are in the input's bytes. A transport record carrying neither still
   owes both duties.
   - **No byte, and no keyword.** The existing `MAY` is rewritten.
-  - **Not settled here: an incomplete reassembly**, where a fragment is lost.
-    It runs into the withholding rule and is
-    [#170](https://github.com/adamkjonsson/zipline/issues/170).
+  - **The *Conformance* description of a sessionization stage** said its
+    records carry `seq_start` and may cross seams for that reason. It now names
+    both kinds of evidence, found by the release's sweep.
+  - **An incomplete reassembly**, where a fragment is lost, is settled in the
+    next entry ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
   - **One pair.** `sessionized-fragments` holds real IPv4 fragments, and
     `check.py` reassembles them to show that the record's payload is their
     datagram.
+- **An incomplete reassembly is not content of the stream** ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
+  `0.24`'s `message` permission covers a datagram reassembled whole. Split out
+  of #166 was the datagram that lost a fragment. Its pieces are not a message,
+  and the withholding rule seemed to forbid leaving them out of a UDP stream.
+  §Discontinuity now states the rule's scope. A message-oriented stream's
+  content is its messages, so pieces that never completed are not content, and
+  leaving them out withholds nothing. Their input range is still owed an
+  Undecoded block, which is the trace, and the block **SHOULD** carry
+  `reason = undecodable`, pinned as `capture-gap` is. A capture-sourced
+  reassembler cites the `capture` source, and the `retransmit` paragraph says
+  so.
+  - **Keywords:** `SHOULD` 28 → 29.
+  - **One pair.** `sessionized-fragment-lost` is `sessionized-fragments` with the
+    second fragment lost, built by the same function.
 - **A transport record crossing a declared break, both ways** ([#167](https://github.com/adamkjonsson/zipline/issues/167)).
   `0.22`'s permission lets a `seq_start` record cross input units **or an input
   Discontinuity**, and only the first half had a vector. `sessionized-across-units`

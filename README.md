@@ -154,6 +154,13 @@ rounds as they happened, not plans:
   release. One defect, shipped alone: a stored pure ACK was given an end and
   drew causal edges backwards, so an ordinary TCP session made a cycle. A
   record's end is now one past the last sequence number it occupies.
+- [docs/RELEASE-0.24-PLAN.md](docs/RELEASE-0.24-PLAN.md) — the sessionizer
+  release. Six gaps met by producers that turn packet streams into transport
+  streams, settled as five decisions: a transport extent counts sequence
+  numbers, a `message` record may cross its input's seams, an incomplete
+  reassembly is not content, a capture-point copy is marked `copy`, and
+  multi-file vectors state merged orders. It ends with the sweep's findings
+  and one slip, recorded.
 
 ## License
 

@@ -524,6 +524,58 @@ recommends for UDP*). From here the check's own exit status gates every commit.
 
 ---
 
+## What the sweep found (Phase 7, 2026-10-29)
+
+Four searches, one per decision, over the spec, the companion, both READMEs,
+and every `summary` and `expect` string in the manifest.
+
+**One site was wrong, and it is fixed.** *Conformance* defined a
+sessionization stage as `isn`-anchored with `seq_start` on its records, and said
+that *for the same reason* a record may cross its input's seams. That was true
+of every sessionizer in `0.22`. Since #166 a UDP sessionizer has neither, and its
+records cross for a different reason. The bullet now says `seq_start` where the
+transport has sequence numbers and `message` where it has messages, and that a
+record carrying the evidence of its own join, either kind, may cross. The
+changelog's #166 entry says so.
+
+**Everything else holds as written:**
+
+- **D1, extent as a byte count.** Every transport extent statement now points at
+  the new definition. The "bytes" hits are about unplaceable records (excluded
+  from the extent), decoded streams (concatenation plus widths), or three
+  `expect` strings (`isolate-extents-disagree`,
+  `isolate-extent-exceeds-coverage`, `stream-past-2gib`) whose streams have no
+  FIN, so their sequence numbers and bytes agree.
+- **D2, a permission naming only `seq_start`.** The spec has none left. The
+  vectors README's *Added in `0.22`* section and `sessionized-across-units`'
+  summary state `0.22`'s permission as it then was, and are still true. The
+  tunnel's description concerns TCP.
+- **D3, text saying a UDP copy cannot be marked.** None. The companion's
+  `duplicate-discarded` sentence argues against option 2 and is consistent.
+- **D5, text treating every bytes-class block in a transport output as
+  withholding.** None. The companion's *Why `dropped` is decidable* already
+  says `undecodable` asserts nothing about content of the stream, which is D5's
+  premise. *Conformance*'s restatement of the withholding rule points at
+  §Discontinuity, where the scope sentence now follows the rule.
+
+**Left open, as D3 planned: what a decode stage does with a copy.** A DNS
+decoder over `udp-capture-copy` may decode the flagged record or leave it to a
+consumer. Whether `skipped` fits a copy's range is a real question, because the
+bytes are positions of the stream but carry no new content, and no issue has
+asked it. It is a candidate issue, not filed without Adam.
+
+**Changelog.** The opening paragraph now counts six gaps and gives the
+keyword and vector totals. The Changed entries are reordered to follow their
+dependencies (#168, #166, #170, #167, #163). #166's sub-bullet says incomplete
+reassembly is settled in the next entry, not deferred.
+
+**Status history.** `0.24` is the first release to assign a Record `flags` bit.
+The reserved mask was `0xFF20` from the document's earliest revision, and
+`retransmit` and `message` were in it from the start. The spec's status note
+says so, beside `0.22`'s *first to add a `content_type` scheme*.
+
+---
+
 ## Risks
 
 | Risk | Likelihood | Mitigation |
@@ -552,10 +604,14 @@ recommends for UDP*). From here the check's own exit status gates every commit.
       of the stream, and its fragments are marked in the input's space (#170).
 - [x] Multi-file `merged` items name their file, and `chain` declares its
       three orders (#163).
-- [ ] The eight vectors above, or what the build made of them (#166–#170).
-- [ ] `python3 vectors/check.py` green at 0.24, with the real counts recorded;
-      `reject-unknown-minor` at `0/25`.
-- [ ] Keyword counts recorded, with every change accounted for.
-- [ ] `ruff check` and `ruff format` clean.
+- [x] The eight vectors above, or what the build made of them (#166–#170).
+- [x] `python3 vectors/check.py` green at 0.24, with the real counts recorded;
+      `reject-unknown-minor` at `0/25` *(**76 vectors, 35 options, 48 rules**: 67
+      single-file vectors and 9 fixtures. Against `0.23`'s 68, 35 and 40, that is
+      eight vectors and eight rules, and no option, since `copy` is a flag bit.)*
+- [x] Keyword counts recorded, with every change accounted for. *(`MAY 56,
+      MUST 126, MUST NOT 46, SHOULD 29`: +1 `MAY` and +2 `MUST NOT` (#169),
+      +1 `SHOULD` (#170), each in `NORMATIVE_ADDITIONS`.)*
+- [x] `ruff check` and `ruff format` clean.
 - [ ] `CHANGELOG.md` `[0.24]` dated; python-zipline reviewed the branch; `v0.24`
       tagged; #163 and #166–#170 closed.

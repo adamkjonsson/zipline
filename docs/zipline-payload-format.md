@@ -10,8 +10,9 @@
 > than only correct, `0.15` the first to change what already-written files mean,
 > `0.17` the first driven by an implementation decoding at field granularity,
 > `0.19` the first to *remove* rules rather than add them, `0.21` the first
-> since `0.15` to change a block body, and `0.22` the first to add a
-> `content_type` scheme. More are expected.
+> since `0.15` to change a block body, `0.22` the first to add a
+> `content_type` scheme, and `0.24` the first to assign a Record `flags` bit.
+> More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
@@ -2892,10 +2893,11 @@ the number went stale with the content.
   reads one or more `.zpf` inputs and produces a **transport** layer, its Decoder
   declaring `output_layer = transport`. Its records carry `spans` and `decoder_id`
   like any decode stage's, and everything else about it is a transport stream —
-  `isn`-anchored, hole-inclusive offsets, `seq_start` on records, no
+  `isn`-anchored, hole-inclusive offsets and `seq_start` on records where the
+  transport has sequence numbers, `message` on records where it has messages, no
   `content_type` and no `role`, and no [Discontinuity](#discontinuity-0x22), since
-  a hole is expressible without one — and, for the same reason, a record may
-  cross its input's seams (see
+  a hole is expressible without one. A record that carries the evidence of its
+  own join, `seq_start` or `message`, may cross its input's seams (see
   [what a consumer owes](#discontinuity-0x22)). It is the same operation as the head-of-pipeline
   reassembler with a different input kind, and giving it a Decoder is what gives its
   overlap policy, buffer depth and timeout somewhere to be recorded.
