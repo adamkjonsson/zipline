@@ -584,6 +584,41 @@ says so, beside `0.22`'s *first to add a `content_type` scheme*.
 
 ---
 
+## The review (python-zipline, 2026-10-29)
+
+python-zipline read `plan_0_24` at `66d2ec3`, as Phase 7 asks
+(`python-zipline/plans/SPEC-0.24-REVIEW.md`). Its verdict was *ready, after one
+fix to the text*. All 68 `0.23` vectors pass against it unchanged, and its
+mechanical checks agree with ours. Each finding was verified here before it was
+acted on, and all six are handled, in `cf15790` (Finding 1) and `9ea32b1`
+(Findings 2–6).
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | #170's trace is owed only to `.zpf`-sourced stages: a block against a `capture` source creates no obligation | yes. *Undecoded*'s capture paragraph says so in as many words | **Fixed, by Adam's decision: a `MUST`.** A reassembler reading a capture **MUST** write an Undecoded block against the `capture` source for the pieces of each message it could not complete. The review preferred a `SHOULD`. A `MUST` was chosen because exempting the commonest producer from the withholding rule without requiring the trace would hollow the rule. The capture-source paragraph names this one exception. New vector `capture-fragment-lost`. `MUST` 126 → 127 |
+| 2 | The changelog names `_extent_and_gaps`, which is gone. The plan said `check_coverage` "is right", and it has no FIN exemption | yes. python-zipline `1a8d293` removed it, and `StreamView.extent_and_gaps` is in `src/zpf/reassembly.py` | **Fixed.** The changelog names both computations and says which way each moves. D1's note is corrected in place, marked as such |
+| 3 | A record's *reach* and its *end* differ for a zero-length FIN, and the text does not say so | yes. Both `0.23` pure-ACK vectors declare extent 8 with a FIN ending at 9 | **Fixed.** One paragraph after the extent definition draws the contrast and names `sequenced-pure-ack-and-fin`. The FIN clause now says *where something is stored past it* |
+| 4 | Edges of `copy`: a dropped predecessor; the `seq_start` ban per record, not per stream; the decoded layer | yes, all three | **Fixed.** The ban is per stream, as D3 intended, and its `NORMATIVE_ADDITIONS` pattern and `check_copy` follow (seen to fail on a stream with `seq_start` on the copy's predecessor only). A stage that does not carry a predecessor forward clears the flag. `copy` has no meaning on a decoded record in this version and is preserved there like a reserved bit, pending #171. No keyword moved |
+| 5 | *Session End*'s `extent` links to the parent section | yes | **Fixed.** It links to *Referencing the source by stream offset* |
+| 6 | One unwrapped line in the vectors README | yes, line 477 | **Fixed** |
+
+**Two slips while handling it, both caught before they reached the branch's
+text:**
+
+- The companion's first rewrite for Finding 1 named the new keywords in
+  backticks. `check.py` refused it, and with commits gated on its exit status,
+  nothing was committed until the wording changed.
+- The script that first wrote this section failed an assertion, because an
+  earlier edit had dropped a period it expected. The command went on to commit
+  and push `9ea32b1` without the plan's part. That commit is complete for the
+  spec, the companion, the changelog and the vectors. This section and the
+  Definition of done came in the next commit.
+
+**Counts after the review: 77 vectors, 35 options, 49 rules; `MAY 56, MUST 127,
+MUST NOT 46, SHOULD 29`.**
+
+---
+
 ## Risks
 
 | Risk | Likelihood | Mitigation |
@@ -614,12 +649,15 @@ says so, beside `0.22`'s *first to add a `content_type` scheme*.
       three orders (#163).
 - [x] The eight vectors above, or what the build made of them (#166–#170).
 - [x] `python3 vectors/check.py` green at 0.24, with the real counts recorded;
-      `reject-unknown-minor` at `0/25` *(**76 vectors, 35 options, 48 rules**: 67
+      `reject-unknown-minor` at `0/25`. *(**77 vectors, 35 options, 49 rules**: 68
       single-file vectors and 9 fixtures. Against `0.23`'s 68, 35 and 40, that is
-      eight vectors and eight rules, and no option, since `copy` is a flag bit.)*
+      nine vectors and nine rules, and no option, since `copy` is a flag bit. The
+      ninth of each is the review's `capture-fragment-lost`.)*
 - [x] Keyword counts recorded, with every change accounted for. *(`MAY 56,
-      MUST 126, MUST NOT 46, SHOULD 29`: +1 `MAY` and +2 `MUST NOT` (#169),
-      +1 `SHOULD` (#170), each in `NORMATIVE_ADDITIONS`.)*
+      MUST 127, MUST NOT 46, SHOULD 29`: +1 `MAY` and +2 `MUST NOT` (#169),
+      +1 `SHOULD` (#170), and +1 `MUST` from the review's Finding 1, each in
+      `NORMATIVE_ADDITIONS`.)*
 - [x] `ruff check` and `ruff format` clean.
-- [ ] `CHANGELOG.md` `[0.24]` dated; python-zipline reviewed the branch; `v0.24`
-      tagged; #163 and #166–#170 closed.
+- [ ] `CHANGELOG.md` `[0.24]` dated; python-zipline reviewed the branch *(done:
+      six findings, all handled)*; `v0.24` tagged; #163 and #166–#171 closed
+      as fixed or filed.
