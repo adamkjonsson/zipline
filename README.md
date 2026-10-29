@@ -54,7 +54,7 @@ eyeballs and scripts. The work sits with writers so that readers stay simple.
 
 ## Status
 
-**Version 0.23 — a design in progress. Not ready for production.**
+**Version 0.24 — a design in progress. Not ready for production.**
 
 `0.x` means what it says: any minor release may change anything, including in
 ways that break existing readers. A reader must reject a `version_minor` it does
@@ -63,7 +63,7 @@ not implement.
 A release was designated `1.0` in July 2026, before any implementation existed.
 That was premature — the first implementation found enough to force a breaking
 revision — so it is retroactively designated `0.9`, and the work since is `0.10`
-through `0.23`. (`0.23` follows `0.9`; the components are integers, not decimals.)
+through `0.24`. (`0.24` follows `0.9`; the components are integers, not decimals.)
 `1.0` is reserved for a specification that has survived implementation. More `0.x` rounds
 are expected.
 
@@ -154,6 +154,13 @@ rounds as they happened, not plans:
   release. One defect, shipped alone: a stored pure ACK was given an end and
   drew causal edges backwards, so an ordinary TCP session made a cycle. A
   record's end is now one past the last sequence number it occupies.
+- [docs/RELEASE-0.24-PLAN.md](docs/RELEASE-0.24-PLAN.md) — the sessionizer
+  release. Six gaps met by producers that turn packet streams into transport
+  streams, settled as five decisions: a transport extent counts sequence
+  numbers, a `message` record may cross its input's seams, an incomplete
+  reassembly is not content, a capture-point copy is marked `copy`, and
+  multi-file vectors state merged orders. It ends with the sweep's findings
+  and one slip, recorded.
 
 ## License
 

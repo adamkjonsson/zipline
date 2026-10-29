@@ -43,7 +43,7 @@ def read_text(path: str) -> str:
 # The version this tree stamps. Every vector's File Header, every JSONL `format`
 # string and the manifest read these, so a version bump is a one-line change and
 # no site can be missed.
-MAJOR, MINOR = 0, 23
+MAJOR, MINOR = 0, 24
 FORMAT = f"zipline-payload/{MAJOR}.{MINOR}"
 
 # ---------------------------------------------------------------- primitives
@@ -629,6 +629,7 @@ FLAG_TOKENS = {
     0x0010: "urg",
     0x0040: "retransmit",
     0x0080: "message",
+    0x0100: "copy",
 }
 
 # Options whose repetition is a list (endpoint) or chunking (spans,
@@ -798,6 +799,7 @@ def vector(
     Required wherever that shape occurs, for the reason `extents` is. Checked
     here for shape only -- a permutation of the session's records that keeps
     each participant's own order -- and never computed: the merge is semantics.
+    A multi-file fixture declares it through fixture(), naming each file (#163).
     """
     if advisory and tier != "accept":
         raise ValueError(f"{name}: advisory is meaningless off the accept tier")
@@ -4867,6 +4869,305 @@ vector(
     merged=[(7, [4, 1, 5, 2, 6, 3])],
 )
 
+
+# 0.24 (#168). A closing side's final pure ACK is stored at the sequence number
+# its segment carries, one past that side's FIN, and the extent counts sequence
+# numbers: the stream reaches one past its last byte, and the position between
+# is the FIN's. The trace is asymmetric on purpose. The server's FIN rides on
+# its data and its final ACK is stored past it; the client's FIN rides on its
+# data with nothing after it, so the one stream reaches past its FIN and the
+# other does not. Shared with decoded-past-fin's capture.zpf.
+def closed_final_ack() -> tuple[list[Blk], list[dict]]:
+    """Build the capture-sourced close: both faces, for the vector and the fixture."""
+    blocks = [
+        file_header(),
+        source(1, 0, [o_uri("close.pcap")]),
+        session(7, [o_proto("tcp")]),
+        participant(7, 0, [o_endpoint("10.0.0.1:51000"), o_isn(1000)]),
+        participant(7, 1, [o_endpoint("93.184.216.34:80"), o_isn(5000)]),
+        record(7, 0, 1, 1000, b"PING", flags=0x0001, options=[o_seq_start(1001), o_ack(5001)]),
+        # Data and FIN: the data is [0,4), and the FIN occupies 5005, offset 4.
+        record(7, 1, 1, 1100, b"PONG", flags=0x0003, options=[o_seq_start(5001), o_ack(1005)]),
+        # Data and FIN again, [4,8) with the FIN at offset 8. It acks the
+        # server's FIN (5006), and nothing of the client's is stored past it.
+        record(7, 0, 1, 1200, b"QUIT", flags=0x0003, options=[o_seq_start(1005), o_ack(5006)]),
+        # The server's final pure ACK, at its wire number 5006: offset 5, one
+        # past its FIN. It acks the client's FIN (1010). No end, so no edge from it.
+        record(7, 1, 1, 1300, b"", options=[o_seq_start(5006), o_ack(1010)]),
+        end_block(),
+    ]
+
+    def rec(pid: int, ts: int, flags: list[str], payload: bytes, seq: int, ack: int) -> dict:
+        return {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": pid,
+            "source_id": 1,
+            "ts": ts,
+            **({"flags": flags} if flags else {}),
+            "payload": b64(payload),
+            "seq_start": seq,
+            "ack": ack,
+        }
+
+    jsonl = [
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "close.pcap"},
+        {"type": "session", "session_id": 7, "proto": "tcp"},
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:51000"],
+            "isn": 1000,
+        },
+        {
+            "type": "participant",
+            "session_id": 7,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["93.184.216.34:80"],
+            "isn": 5000,
+        },
+        rec(0, 1000, ["psh"], b"PING", 1001, 5001),
+        rec(1, 1100, ["psh", "fin"], b"PONG", 5001, 1005),
+        rec(0, 1200, ["psh", "fin"], b"QUIT", 1005, 5006),
+        rec(1, 1300, [], b"", 5006, 1010),
+        {"type": "end"},
+    ]
+    return blocks, jsonl
+
+
+CLOSED_BLOCKS, CLOSED_JSONL = closed_final_ack()
+vector(
+    "closed-final-ack",
+    "accept",
+    "A closed connection, as a sessionizer following Caveats writes it: each "
+    "side's FIN rides on its data, and the server's final pure ACK is stored "
+    "at the sequence number its segment carries, 5006 -- one past its own FIN "
+    "at 5005. The server's stream is PONG at [0,4), its FIN at offset 4, and "
+    "the pure ACK at offset 5, so the stream reaches 5: one past its last "
+    "byte, and the position between is the FIN's. The client's FIN at offset 8 "
+    "has nothing stored past it, so its stream ends at its last byte, 8. Since "
+    "0.24 the extent is stated as the furthest point a placeable record "
+    "reaches, measured in sequence numbers; through 0.23 it was never "
+    "defined, and python-zipline's decode stage and its own coverage check "
+    "disagreed on every closed connection zpfwire wrote.",
+    "Referencing the source by stream offset -- a transport stream's extent",
+    CLOSED_BLOCKS,
+    jsonl=CLOSED_JSONL,
+    expect="Accept. Extents are 8 for the client and 5 for the server: the "
+    "server's final pure ACK at offset 5 extends its stream past the FIN's "
+    "position, 4, which holds no byte. A reader that counts only bytes "
+    "measures the server's stream as 4 and is wrong. Ends for the merge, per "
+    "Fields used: PING 4, PONG 4 (a data record keeps its data end with FIN), "
+    "QUIT 8, and none for the pure ACK. Ack positions 0, 4, 5 and 9. The merge "
+    "is stored order.",
+    violations=0,
+    extents=[(7, 0, 8), (7, 1, 5)],
+    merged=[(7, [1, 2, 3, 4])],
+)
+
+
+# 0.24 (#169). A DNS answer seen twice through a mirror port. On UDP the copy
+# cannot be discarded -- the withholding rule makes it content of the stream --
+# so it is written, and since 0.24 the `copy` flag says the sender sent once.
+# The isolate twin flags a record whose bytes differ from its predecessor's, the
+# one constraint a reader can check without knowing how the producer told.
+DNS_QUERY = b"Q example.com A"
+DNS_ANSWER = b"R example.com A 93.184.216.34"
+
+
+def udp_capture_copy(copy_payload: bytes) -> tuple[list[Blk], list[dict]]:
+    """Build a query, its answer, and the answer's capture-point copy: both faces."""
+    sent = [(0, 1000, DNS_QUERY, 0x0080, ["message"]), (1, 1100, DNS_ANSWER, 0x0080, ["message"])]
+    recs = [*sent, (1, 1101, copy_payload, 0x0180, ["message", "copy"])]
+    blocks = [
+        file_header(),
+        source(1, 0, [o_uri("mirror.pcap")]),
+        session(9, [o_proto("udp")]),
+        participant(9, 0, [o_endpoint("10.0.0.1:53000")]),
+        participant(9, 1, [o_endpoint("10.0.0.53:53")]),
+        *(record(9, pid, 1, ts, p, flags=f) for pid, ts, p, f, _tokens in recs),
+        end_block(),
+    ]
+    jsonl = [
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {"type": "source", "source_id": 1, "kind": "capture", "uri": "mirror.pcap"},
+        {"type": "session", "session_id": 9, "proto": "udp"},
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.1:53000"],
+        },
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 1,
+            "adjacency": "contiguous",
+            "endpoint": ["10.0.0.53:53"],
+        },
+        *(
+            {
+                "type": "record",
+                "session_id": 9,
+                "sender_pid": pid,
+                "source_id": 1,
+                "ts": ts,
+                "flags": tokens,
+                "payload": b64(p),
+            }
+            for pid, ts, p, _f, tokens in recs
+        ),
+        {"type": "end"},
+    ]
+    return blocks, jsonl
+
+
+COPY_BLOCKS, COPY_JSONL = udp_capture_copy(DNS_ANSWER)
+vector(
+    "udp-capture-copy",
+    "accept",
+    "A DNS query and its answer over UDP, captured through a mirror port that "
+    "saw the answer twice, a microsecond apart. On a sequence-anchored stream "
+    "the reassembler would discard the copy and cite it; a stream without a "
+    "sequence anchor has no such exit, since the withholding rule makes the "
+    "copy content of the stream. So it is written, as the server's second "
+    "record, and since 0.24 the copy flag says the sender sent once. It "
+    "repeats its participant's preceding record byte for byte and carries no "
+    "seq_start, as the two MUST NOTs require. Through 0.23 the file could only "
+    "say the server answered twice.",
+    "Enums -- copy names the capture point's act, where the copy cannot be discarded",
+    COPY_BLOCKS,
+    jsonl=COPY_JSONL,
+    expect="Accept. The server's second record carries the token copy (flags "
+    "message and copy, 0x0180), and the JSONL projection names it; a reader "
+    "without the token renders 0x0100 as a hex token and fails the "
+    "projection. Read as messages as sent, the exchange is one query and one "
+    "answer: skip the flagged record. Read as what the capture saw, it is "
+    "three records. The copy is content of the stream either way, so the "
+    "server's extent counts it: 58, twice the answer's 29. The client's is 15. "
+    "The session is hint-less, so the merge is by timestamp: stored order.",
+    violations=0,
+    extents=[(9, 0, 15), (9, 1, 58)],
+    merged=[(9, [1, 2, 3])],
+)
+
+DIFF_BLOCKS, DIFF_JSONL = udp_capture_copy(DNS_ANSWER[:-1] + b"5")
+vector(
+    "isolate-copy-differs",
+    "isolate",
+    "udp-capture-copy with the copy's last byte changed: the record flagged "
+    "copy says 93.184.216.35 where the record it claims to repeat says "
+    "93.184.216.34. A writer MUST NOT set copy unless the record's payload is "
+    "byte-identical to its participant's preceding record's, so the flag "
+    "asserts a repeat the bytes contradict. This is the constraint a reader "
+    "can check from the file alone, whatever the producer knew.",
+    "Enums -- copy names the capture point's act, where the copy cannot be discarded",
+    DIFF_BLOCKS,
+    jsonl=DIFF_JSONL,
+    expect="Isolate session 9 (a reader MAY treat it as a semantic violation), "
+    "or reject. A reader that trusts the flag and skips the record drops an "
+    "answer that differs from the first, which is the misreading the "
+    "constraint prevents. The projection is still the .jsonl: the flag "
+    "round-trips as copy whatever the reader concludes about it.",
+    violations=1,
+)
+
+# 0.24 (#170, python-zipline's review of the release, Finding 1). The trace for
+# an incomplete reassembly is owed by the coverage guarantee only to a stage
+# reading a .zpf, which sessionized-fragment-lost shows. A reassembler reading a
+# capture owes no coverage, so a MUST asks it for the block instead: against
+# the capture source, naming the orphan fragment's frame by its byte offsets in
+# the pcap. Without it this file would be byte-identical to one that withheld a
+# whole datagram. The MUST is uncheckable from the file, like the withholding
+# rule it completes; the vector shows the shape a conformant producer writes.
+vector(
+    "capture-fragment-lost",
+    "accept",
+    "A head-of-pipeline reassembler over wg-inner.pcap, which holds two frames: "
+    "the first fragment of a UDP datagram whose second fragment never arrived, "
+    "and another flow's datagram. The fragment is pieces of a message, not a "
+    "message, so the file writes no record for it, and that withholds nothing "
+    "of the stream. Being capture-sourced, it owes no coverage, so the trace "
+    "is the MUST's: an Undecoded block against the capture source naming the "
+    "fragment's frame, bytes 40..106 of the pcap, reason undecodable (the "
+    "SHOULD), with a comment naming the missing piece. Session 9 is the other "
+    "flow's datagram. sessionized-fragment-lost is the same shape from a .zpf.",
+    "Discontinuity (0x22) -- an incomplete reassembly is not content of the stream",
+    [
+        file_header(),
+        source(1, 0, [o_uri("wg-inner.pcap"), o_link_type(1)]),
+        session(9, [o_proto("udp")]),
+        participant(9, 0, [o_endpoint("10.8.0.2:5001")]),
+        record(9, 0, 1, 1100, b"e" * 12, flags=0x0080),
+        undecoded(
+            1,
+            0,
+            0,
+            40,
+            106,
+            [
+                o_reason("undecodable"),
+                o_comment("fragment 1 of 2 of datagram id 0x1234; fragment 2 never arrived"),
+            ],
+            capture=True,
+        ),
+        end_block(),
+    ],
+    jsonl=[
+        {"type": "file", "format": FORMAT, "tick_hz": 1000000},
+        {
+            "type": "source",
+            "source_id": 1,
+            "kind": "capture",
+            "uri": "wg-inner.pcap",
+            "link_type": 1,
+        },
+        {"type": "session", "session_id": 9, "proto": "udp"},
+        {
+            "type": "participant",
+            "session_id": 9,
+            "pid": 0,
+            "adjacency": "contiguous",
+            "endpoint": ["10.8.0.2:5001"],
+        },
+        {
+            "type": "record",
+            "session_id": 9,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": 1100,
+            "flags": ["message"],
+            "payload": b64(b"e" * 12),
+        },
+        {
+            "type": "undecoded",
+            "source_id": 1,
+            "session_id": 0,
+            "pid": 0,
+            "off_start": 40,
+            "off_end": 106,
+            "reason": "undecodable",
+            "comment": "fragment 1 of 2 of datagram id 0x1234; fragment 2 never arrived",
+        },
+        {"type": "end"},
+    ],
+    expect="Accept. The file writes no record for the incomplete datagram, which "
+    "is not withholding: an incomplete reassembly is not content of the stream. "
+    "The Undecoded block is the trace the MUST requires of a reassembler reading "
+    "a capture. Its offsets are byte offsets into wg-inner.pcap (the fragment's "
+    "frame, after the 24-byte global header and 16-byte record header), its ids "
+    "are unused, and it creates no coverage obligation. A reader that "
+    "treats it as naming a stream of this file is wrong. Session 9's extent is "
+    "12, the one datagram written.",
+    violations=0,
+    extents=[(9, 0, 12)],
+)
+
 # 0.22 (#152). The carry duty's two recourses are both barred at the transport
 # layer, so a reassembler over a unit sequence could never coalesce two
 # packets. Its sequence numbers carry any break as a hole, so now it may.
@@ -5082,6 +5383,37 @@ def tcp_packet(sport: int, dport: int, seq: int, ack: int, payload: bytes) -> by
 def udp_packet(sport: int, dport: int, payload: bytes) -> bytes:
     """Build an IPv4 packet carrying one UDP datagram, 10.8.0.2 -> 10.8.0.9."""
     return ipv4(UDP, udp(sport, dport, payload, IPV4_SRC, IPV4_DST))
+
+
+def udp_fragments(sport: int, dport: int, payload: bytes, ident: int, cut: int) -> list[bytes]:
+    """Split one UDP datagram into two IPv4 fragments at byte `cut` of its IP payload.
+
+    Real headers, as ipv4() writes them, but with DF clear: both carry the
+    identification `ident`, the first sets More Fragments at offset 0, and the
+    second gives its offset in 8-byte units (#166). `cut` must be a multiple of 8.
+    """
+    datagram = udp(sport, dport, payload, IPV4_SRC, IPV4_DST)
+    out = []
+    for start, end, flags in ((0, cut, 0x2000), (cut, len(datagram), 0)):
+        chunk = datagram[start:end]
+        hdr = bytearray(
+            struct.pack(
+                ">BBHHHBBH4s4s",
+                0x45,
+                0,
+                20 + len(chunk),
+                ident,
+                flags | start // 8,
+                64,
+                UDP,
+                0,
+                IPV4_SRC,
+                IPV4_DST,
+            )
+        )
+        struct.pack_into(">H", hdr, 10, inet_checksum(bytes(hdr)))
+        out.append(bytes(hdr) + chunk)
+    return out
 
 
 ETH_DST, ETH_SRC = bytes.fromhex("aabbcc000002"), bytes.fromhex("aabbcc000001")
@@ -5891,8 +6223,23 @@ def member(fixture: str, name: str, summary: str, blocks: list[Blk], jsonl: list
     return to_bytes(assemble(blocks))
 
 
-def fixture(name: str, tier: str, summary: str, spec: str, expect: str, *, violations: int) -> None:
-    """Declare a multi-file fixture. Its files are added by member()."""
+def fixture(
+    name: str,
+    tier: str,
+    summary: str,
+    spec: str,
+    expect: str,
+    *,
+    violations: int,
+    merged: list[tuple[str, int, list[int]]] | None = None,
+) -> None:
+    """Declare a multi-file fixture. Its files are added by member().
+
+    `merged` is vector()'s key with the file named (#163): the files of one
+    fixture share session ids, so an order is `(file, session_id, order)`, the
+    file being the member's name. It is checked once the members exist, by
+    check_fixture_merged().
+    """
     FIXTURES[name] = {
         "name": name,
         "tier": tier,
@@ -5900,8 +6247,24 @@ def fixture(name: str, tier: str, summary: str, spec: str, expect: str, *, viola
         "spec": spec,
         "expect": expect,
         "violations": violations,
+        "merged": merged,
         "members": [],
     }
+
+
+def check_fixture_merged(fx: dict) -> list[dict] | None:
+    """Require `merged` per member file, by the single-file rule, and name each item's file."""
+    members = [c["name"] for c in fx["members"]]
+    given = fx["merged"] or []
+    unknown = sorted({f for f, _sid, _order in given} - set(members))
+    if unknown:
+        raise ValueError(f"{fx['name']}: merged names files {unknown}, not among {members}")
+    for c in fx["members"]:
+        mine = [(sid, order) for f, sid, order in given if f == c["name"]]
+        check_merged(f"{fx['name']}/{c['name']}", fx["tier"], c["blocks"], mine or None)
+    if not given:
+        return None
+    return [{"file": f, "session_id": sid, "order": order} for f, sid, order in given]
 
 
 def chain_file(name: str, summary: str, blocks: list[Blk], jsonl: list[dict]) -> bytes:
@@ -5922,6 +6285,10 @@ def build_chain() -> None:
         "digest is the real SHA-256 of the sibling file it names, so a reader "
         "can verify the chain.",
         violations=0,
+        # Each file's session 7 has two senders. raw is ordered by its acks
+        # (the response acks the request's end), the two decoded files by
+        # timestamp alone. Every order equals stored order (#163).
+        merged=[("raw", 7, [1, 2, 3]), ("decoded", 7, [1, 2]), ("annotated", 7, [1, 2])],
     )
     raw_blocks = [
         file_header(options=[o_creator("zpf-sessionize 1.0")]),
@@ -7494,12 +7861,618 @@ def build_merge() -> None:
     )
 
 
+# 0.24 (#168). closed-final-ack as the input to a decode stage. The server's
+# stream reaches 5 and its FIN occupies offset 4, which holds no byte: the
+# decoder spans [0,4), marks nothing at 4, and declares the extent 5. A
+# coverage check that counts the FIN's position reports a gap there, which is
+# the failure zipline-kober met on every TCP input over zpfwire 0.8.0.
+def build_past_fin() -> None:
+    """Build the capture and a decode stage over it that leaves the FIN's position bare."""
+    fixture(
+        "decoded-past-fin",
+        "accept",
+        "closed-final-ack's capture, and a decode stage over it. The server's "
+        "stream reaches 5, one past its FIN at offset 4, because its final pure "
+        "ACK is stored at its wire number. The decoder spans the server's data "
+        "[0,4), owes the FIN's position nothing and marks nothing there, and "
+        "declares the stream's extent as 5. The client's FIN has nothing past "
+        "it, so its stream is [0,8) and is covered exactly.",
+        "Coverage honesty -- the position a FIN occupies is owed nothing",
+        "Accept both files. decoded.zpf's Session End declares extents 8 and 5, "
+        "both what capture.zpf's sequence numbers give. A coverage check that "
+        "reports [4,5) of the server's stream as a gap, or an extent mismatch "
+        "against 4, is wrong: that position is the FIN's and holds no byte. "
+        "Marking it Undecoded is not required.",
+        violations=0,
+        merged=[("capture", 7, [1, 2, 3, 4]), ("decoded", 7, [1, 2, 3])],
+    )
+    capture = member(
+        "decoded-past-fin",
+        "capture",
+        "closed-final-ack, as this pair's input.",
+        CLOSED_BLOCKS,
+        CLOSED_JSONL,
+    )
+    dg = "sha256:" + hashlib.sha256(capture).hexdigest()
+
+    def dec(pid: int, ts: int, payload: bytes, start: int, end: int) -> tuple[Blk, dict]:
+        blk = record(
+            7, pid, 1, ts, payload, options=[o_decoder_id(1), o_spans([(1, 7, pid, start, end)])]
+        )
+        line = {
+            "type": "record",
+            "session_id": 7,
+            "sender_pid": pid,
+            "source_id": 1,
+            "ts": ts,
+            "payload": b64(payload),
+            "decoder_id": 1,
+            "spans": [
+                {"source_id": 1, "session_id": 7, "pid": pid, "off_start": start, "off_end": end}
+            ],
+        }
+        return blk, line
+
+    recs = [
+        dec(0, 1000, b"PING", 0, 4),
+        dec(1, 1100, b"PONG", 0, 4),
+        dec(0, 1200, b"QUIT", 4, 8),
+    ]
+    member(
+        "decoded-past-fin",
+        "decoded",
+        "A decode stage over capture.zpf. Its spans cover the client's [0,8) "
+        "and the server's [0,4); the server's offset 4 is its FIN's, and is "
+        "owed nothing.",
+        [
+            file_header(options=[o_produced_by("zpf-decode 0.4"), o_produced_at(1719500000)]),
+            source(1, 1, [o_uri("capture.zpf"), o_digest(dg)]),
+            decoder(1, [o_dec_name("ping"), o_dec_version("0.4")]),
+            session(7, [o_proto("ping")]),
+            participant(7, 0, [o_endpoint("10.0.0.1:51000")]),
+            participant(7, 1, [o_endpoint("93.184.216.34:80")]),
+            *(blk for blk, _ in recs),
+            session_end(7, [o_input_extents([(1, 7, 0, 8), (1, 7, 1, 5)])]),
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-decode 0.4",
+                "produced_at": 1719500000,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "capture.zpf",
+                "digest": dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "ping",
+                "version": "0.4",
+            },
+            {"type": "session", "session_id": 7, "proto": "ping"},
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.0.0.1:51000"],
+            },
+            {
+                "type": "participant",
+                "session_id": 7,
+                "pid": 1,
+                "adjacency": "contiguous",
+                "endpoint": ["93.184.216.34:80"],
+            },
+            *(line for _, line in recs),
+            {
+                "type": "session_end",
+                "session_id": 7,
+                "input_extents": [
+                    {"source_id": 1, "session_id": 7, "pid": 0, "extent": 8},
+                    {"source_id": 1, "session_id": 7, "pid": 1, "extent": 5},
+                ],
+            },
+            {"type": "end"},
+        ],
+    )
+
+
+# 0.24 (#166). One UDP datagram, IP-fragmented inside a tunnel, arrives as two
+# records of a unit sequence with another flow's packet between them. Its
+# reassembly is one message whose spans must cite both fragments, crossing two
+# seams, and it carries no seq_start. Through 0.23 the permission to cross was
+# keyed on seq_start alone, so the datagram had no conformant record. Since 0.24
+# the `message` flag is the evidence of a join a checker can see.
+FRAG_DATA, FLOW_B_DATA = b"d" * 40, b"e" * 12
+
+
+# 0.24 (#170). The same input with the datagram's second fragment lost. The
+# first fragment is not a message, so it is not content of the stream: the
+# stage writes no record for it, which withholds nothing, and marks its range
+# in the INPUT's space undecodable, the word the SHOULD pins. That block is the
+# trace. Flow B is written as before. Built by the same function, `lost=True`.
+FRAGMENT_LOST_SUMMARY = (
+    "sessionized-fragments with the datagram's second fragment lost. packets.zpf "
+    "is a unit sequence of two net:ip records with real headers: the first "
+    "fragment (id 0x1234, MF) at [0,52) and another flow's datagram at [52,92). "
+    "No second fragment ever arrived, so the first is pieces of a message, not a "
+    "message. inner.zpf writes no record for it, which withholds nothing of the "
+    "stream, and marks [0,52) of packets.zpf undecodable, with a comment naming "
+    "the missing fragment. Session 21 is flow B. Through 0.23 the shape had no "
+    "conformant form: a partial datagram is not a message, and the transport "
+    "layer could not withhold it."
+)
+FRAGMENT_LOST_EXPECT = (
+    "Accept both files. An incomplete reassembly is not content of a "
+    "message-oriented stream, so leaving it out is not withholding: a check that "
+    "calls the missing datagram withheld content reports a violation that is not "
+    "there. The fragment's bytes are accounted for in the input's space by the "
+    "Undecoded block, reason undecodable (the SHOULD), and inner.zpf's coverage "
+    "of packets.zpf is complete with it. A reader wanting every input unit cited "
+    "by some record finds the block in its place. Session 21 declares "
+    "packets.zpf's full extent, 92."
+)
+
+
+def build_fragments(name: str, lost: bool) -> None:
+    """Build a unit sequence carrying a fragmented datagram, and its reassembly or its loss."""
+    fixture(
+        name,
+        "accept",
+        "A sessionization stage reassembling an IP-fragmented UDP datagram. "
+        "packets.zpf is a decryptor's output, a unit sequence of three net:ip "
+        "records with real headers: the datagram's first fragment (id 0x1234, "
+        "MF, 32 bytes of IP payload) at [0,52), another flow's datagram at "
+        "[52,92), and the second fragment (offset 4, i.e. 32 bytes) at [92,128). "
+        "inner.zpf's session 20 is the datagram reassembled, one record flagged "
+        "message citing both fragments across two seams, with no seq_start. "
+        "Through 0.23 that record had no conformant form: the permission to "
+        "cross input units was keyed on seq_start."
+        if not lost
+        else FRAGMENT_LOST_SUMMARY,
+        "Discontinuity (0x22) -- a transport-layer record meets both duties when "
+        "it carries the evidence of its own join"
+        if not lost
+        else "Discontinuity (0x22) -- an incomplete reassembly is not content of the stream",
+        "Accept both files. Session 20's record is exactly one transport message, "
+        "so the units it cites are that message's fragments and join as its "
+        "reassembly: a splice check that requires seq_start to cross a unit "
+        "sequence's seams reports a violation that is not there. Its 40-byte "
+        "payload is the datagram's data, the fragments' IP payloads joined at "
+        "their offsets with the UDP header removed. Both sessions declare "
+        "packets.zpf's full extent, 128."
+        if not lost
+        else FRAGMENT_LOST_EXPECT,
+        violations=0,
+    )
+    frag1, frag2 = udp_fragments(5000, 5353, FRAG_DATA, 0x1234, 32)
+    flow_b = udp_packet(5001, 53, FLOW_B_DATA)
+    pkts = [(1000, frag1), (1100, flow_b)] + ([] if lost else [(1200, frag2)])
+    extent = sum(len(p) for _ts, p in pkts)
+    packets = member(
+        name,
+        "packets",
+        "A decryptor's output: two inner IPv4 packets as a unit sequence, the "
+        "first a fragment whose partner never arrived."
+        if lost
+        else "A decryptor's output: three inner IPv4 packets as a unit sequence, "
+        "the second between the two fragments of the first's datagram.",
+        [
+            file_header(options=[o_produced_by("zpf-wg 0.3"), o_produced_at(1719700000)]),
+            source(1, 0, [o_uri("wg.pcap")]),
+            decoder(1, [o_dec_name("wireguard-decrypt"), o_dec_version("0.3")]),
+            session(5, [o_proto("ip")]),
+            participant(5, 0, [o_endpoint("10.8.0.2")], adjacency=1),
+            *(
+                record(5, 0, 1, ts, p, options=[o_decoder_id(1), o_content_type("net:ip")])
+                for ts, p in pkts
+            ),
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-wg 0.3",
+                "produced_at": 1719700000,
+            },
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "wg.pcap"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "wireguard-decrypt",
+                "version": "0.3",
+            },
+            {"type": "session", "session_id": 5, "proto": "ip"},
+            {
+                "type": "participant",
+                "session_id": 5,
+                "pid": 0,
+                "adjacency": "units",
+                "endpoint": ["10.8.0.2"],
+            },
+            *(
+                {
+                    "type": "record",
+                    "session_id": 5,
+                    "sender_pid": 0,
+                    "source_id": 1,
+                    "ts": ts,
+                    "payload": b64(p),
+                    "decoder_id": 1,
+                    "content_type": "net:ip",
+                }
+                for ts, p in pkts
+            ),
+            {"type": "end"},
+        ],
+    )
+    dg = "sha256:" + hashlib.sha256(packets).hexdigest()
+
+    def flow(sess: int, port: int, ts: int, payload: bytes, spans: list) -> list:
+        """Both faces of one UDP flow's session: descriptors, its record, its end."""
+        blocks = [
+            session(sess, [o_proto("udp")]),
+            participant(sess, 0, [o_endpoint(f"10.8.0.2:{port}")]),
+            record(
+                sess,
+                0,
+                1,
+                ts,
+                payload,
+                flags=0x0080,
+                options=[o_decoder_id(1), o_spans([(1, 5, 0, a, b) for a, b in spans])],
+            ),
+            session_end(sess, [o_input_extents([(1, 5, 0, extent)])]),
+        ]
+        lines = [
+            {"type": "session", "session_id": sess, "proto": "udp"},
+            {
+                "type": "participant",
+                "session_id": sess,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": [f"10.8.0.2:{port}"],
+            },
+            {
+                "type": "record",
+                "session_id": sess,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": ts,
+                "flags": ["message"],
+                "payload": b64(payload),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": a, "off_end": b}
+                    for a, b in spans
+                ],
+            },
+            {
+                "type": "session_end",
+                "session_id": sess,
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": extent}],
+            },
+        ]
+        return [blocks, lines]
+
+    b_blocks, b_lines = flow(21, 5001, 1100, FLOW_B_DATA, [(52, 92)])
+    if lost:
+        # No record for flow A: its one fragment is pieces of a message. The
+        # block names the input's range, in the input's ids, and is the trace.
+        note = "fragment 1 of 2 of datagram id 0x1234; fragment 2 never arrived"
+        a_blocks = [
+            undecoded(1, 0, 5, 0, 52, [o_reason("undecodable"), o_decoder_id(1), o_comment(note)])
+        ]
+        a_lines = [
+            {
+                "type": "undecoded",
+                "source_id": 1,
+                "session_id": 5,
+                "pid": 0,
+                "off_start": 0,
+                "off_end": 52,
+                "reason": "undecodable",
+                "decoder_id": 1,
+                "comment": note,
+            }
+        ]
+    else:
+        # Flow A: one message, two spans, one per fragment, flow B's packet between.
+        a_blocks, a_lines = flow(20, 5000, 1000, FRAG_DATA, [(0, 52), (92, 128)])
+    member(
+        name,
+        "inner",
+        "The sessionization stage over packets.zpf: no record for the incomplete "
+        "datagram, its fragment marked undecodable, and flow B's datagram as its "
+        "own session."
+        if lost
+        else "The sessionization stage over packets.zpf: flow A's datagram "
+        "reassembled from its two fragments as one message record, and flow B's "
+        "datagram as its own session.",
+        [
+            file_header(options=[o_produced_by("zpf-sessionize 1.0"), o_produced_at(1719700100)]),
+            source(1, 1, [o_uri("packets.zpf"), o_digest(dg)]),
+            decoder(1, [o_dec_name("udp-reassembly"), o_dec_version("1.1")], output_layer=1),
+            *a_blocks,
+            *b_blocks,
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-sessionize 1.0",
+                "produced_at": 1719700100,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "packets.zpf",
+                "digest": dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "transport",
+                "name": "udp-reassembly",
+                "version": "1.1",
+            },
+            *a_lines,
+            *b_lines,
+            {"type": "end"},
+        ],
+    )
+
+
+# 0.24 (#167). The second half of 0.22's permission: a sequence-anchored record
+# crossing a DECLARED break, which sessionized-across-units never tested (it
+# crosses unit seams, which no splice check examines as declared blocks). The
+# input is contiguous, flow A, flow B, flow A, with a Discontinuity before A's
+# second packet: the lost packet upstream was another flow's, as #152's own
+# example puts it, so A's two packets join in A's sequence space. The mirror
+# is the same pair with A's record carrying neither seq_start nor message: no
+# evidence of the join, so it owes the carry duty, and a transport stream can
+# meet it with neither a Discontinuity nor units. Both pairs come from here.
+def build_across_break(name: str, anchored: bool) -> None:
+    """Build packets.zpf with a declared break, and a sessionizer crossing it."""
+    if anchored:
+        fixture(
+            name,
+            "accept",
+            "A sessionization stage crossing a DECLARED break. packets.zpf is a "
+            "contiguous packet stream of three net:ip records with real headers "
+            "-- flow A at [0,80), flow B at [80,140), flow A at [140,210) -- and "
+            "a Discontinuity (decrypt-failed, no width) between flow B's packet "
+            "and flow A's second. Flow A's sequence numbers join across it (1001 "
+            "+ 40 = 1041), so what was lost belonged to another flow. inner.zpf's "
+            "session 10 is flow A as one record with seq_start, its two spans "
+            "crossing the break; session 11 is flow B.",
+            "Discontinuity (0x22) -- a transport-layer record meets both duties "
+            "when it carries the evidence of its own join",
+            "Accept both files. Session 10's record carries seq_start, so its "
+            "sequence numbers assert the join and a break between its packets is "
+            "a range of sequence numbers no record covers: it MAY cross the "
+            "declared Discontinuity. A splice check that applies the decoded "
+            "layer's carry duty to it reports a violation that is not there. "
+            "isolate-transport-splice is this pair with the evidence removed.",
+            violations=0,
+        )
+    else:
+        fixture(
+            name,
+            "isolate",
+            "sessionized-across-break with flow A's record stripped of its "
+            "evidence: no isn on its participant, no seq_start and no ack on the "
+            "record, and no message flag, since it is TCP. The record still "
+            "crosses packets.zpf's declared Discontinuity with two spans, so it "
+            "asserts a join nothing in it can answer for. A transport output "
+            "without the evidence owes both duties, and has neither recourse: a "
+            "transport stream carries no Discontinuity and is never units.",
+            "Discontinuity (0x22) -- a transport record carrying neither owes both "
+            "duties as stated",
+            "Accept packets.zpf; it breaks no rule. ISOLATE or reject inner.zpf's "
+            "session 10: its record crosses a declared Discontinuity in its input "
+            "and carries neither seq_start nor message, so nothing in it says the "
+            "two packets join, and the break is gone one hop along. Session 11 "
+            "is conformant. A reader handed only inner.zpf cannot judge it: the "
+            "violation needs packets.zpf in hand, as splice does. This is the "
+            "pairwise twin of isolate-unmarked-break.",
+            violations=1,
+        )
+    pkts = [
+        (1000, tcp_packet(44300, 80, 1001, 7001, b"a" * 40)),  # flow A, [0,80)
+        (1100, tcp_packet(44301, 53, 5001, 9001, b"c" * 20)),  # flow B, [80,140)
+        (1300, tcp_packet(44300, 80, 1041, 7001, b"b" * 30)),  # flow A, [140,210)
+    ]
+
+    def pkt(ts: int, p: bytes) -> tuple[Blk, dict]:
+        line = {
+            "type": "record",
+            "session_id": 5,
+            "sender_pid": 0,
+            "source_id": 1,
+            "ts": ts,
+            "payload": b64(p),
+            "decoder_id": 1,
+            "content_type": "net:ip",
+        }
+        return record(5, 0, 1, ts, p, options=[o_decoder_id(1), o_content_type("net:ip")]), line
+
+    recs = [pkt(ts, p) for ts, p in pkts]
+    # The break sits after flow B's packet, before flow A's second.
+    brk = (
+        discontinuity(5, 0, [o_disc_reason("decrypt-failed")]),
+        {"type": "discontinuity", "session_id": 5, "pid": 0, "reason": "decrypt-failed"},
+    )
+    body = [recs[0], recs[1], brk, recs[2]]
+    packets = member(
+        name,
+        "packets",
+        "A decryptor's output: three inner IPv4 packets as a contiguous stream, "
+        "with a declared break after the second, where a packet failed to decrypt.",
+        [
+            file_header(options=[o_produced_by("zpf-wg 0.3"), o_produced_at(1719700000)]),
+            source(1, 0, [o_uri("wg.pcap")]),
+            decoder(1, [o_dec_name("wireguard-decrypt"), o_dec_version("0.3")]),
+            session(5, [o_proto("ip")]),
+            participant(5, 0, [o_endpoint("10.8.0.2")]),
+            *(b for b, _ in body),
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-wg 0.3",
+                "produced_at": 1719700000,
+            },
+            {"type": "source", "source_id": 1, "kind": "capture", "uri": "wg.pcap"},
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "decoded",
+                "name": "wireguard-decrypt",
+                "version": "0.3",
+            },
+            {"type": "session", "session_id": 5, "proto": "ip"},
+            {
+                "type": "participant",
+                "session_id": 5,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": ["10.8.0.2"],
+            },
+            *(line for _, line in body),
+            {"type": "end"},
+        ],
+    )
+    dg = "sha256:" + hashlib.sha256(packets).hexdigest()
+
+    def flow(sess: int, port: int, isn: int, ack: int, payload: bytes, spans: list) -> list:
+        """Both faces of one TCP flow's session; flow A loses its evidence in the mirror."""
+        evidence = anchored or sess != 10
+        blocks = [
+            session(sess, [o_proto("tcp")]),
+            participant(
+                sess, 0, [o_endpoint(f"10.8.0.2:{port}")] + ([o_isn(isn)] if evidence else [])
+            ),
+            record(
+                sess,
+                0,
+                1,
+                1000 if sess == 10 else 1100,
+                payload,
+                flags=0x0001,
+                options=[o_decoder_id(1), o_spans([(1, 5, 0, a, b) for a, b in spans])]
+                + ([o_seq_start(isn + 1), o_ack(ack)] if evidence else []),
+            ),
+            session_end(sess, [o_input_extents([(1, 5, 0, 210)])]),
+        ]
+        lines = [
+            {"type": "session", "session_id": sess, "proto": "tcp"},
+            {
+                "type": "participant",
+                "session_id": sess,
+                "pid": 0,
+                "adjacency": "contiguous",
+                "endpoint": [f"10.8.0.2:{port}"],
+                **({"isn": isn} if evidence else {}),
+            },
+            {
+                "type": "record",
+                "session_id": sess,
+                "sender_pid": 0,
+                "source_id": 1,
+                "ts": 1000 if sess == 10 else 1100,
+                "flags": ["psh"],
+                "payload": b64(payload),
+                "decoder_id": 1,
+                "spans": [
+                    {"source_id": 1, "session_id": 5, "pid": 0, "off_start": a, "off_end": b}
+                    for a, b in spans
+                ],
+                **({"seq_start": isn + 1, "ack": ack} if evidence else {}),
+            },
+            {
+                "type": "session_end",
+                "session_id": sess,
+                "input_extents": [{"source_id": 1, "session_id": 5, "pid": 0, "extent": 210}],
+            },
+        ]
+        return [blocks, lines]
+
+    # Flow A: one record, two spans, crossing the declared break at 140.
+    a_blocks, a_lines = flow(10, 44300, 1000, 7001, b"a" * 40 + b"b" * 30, [(0, 80), (140, 210)])
+    b_blocks, b_lines = flow(11, 44301, 5000, 9001, b"c" * 20, [(80, 140)])
+    member(
+        name,
+        "inner",
+        "The sessionization stage over packets.zpf: flow A as one record whose "
+        "spans cross the declared break, and flow B as its own session."
+        + ("" if anchored else " Flow A's record carries no seq_start, which is the violation."),
+        [
+            file_header(options=[o_produced_by("zpf-sessionize 1.0"), o_produced_at(1719700100)]),
+            source(1, 1, [o_uri("packets.zpf"), o_digest(dg)]),
+            decoder(1, [o_dec_name("tcp-reassembly"), o_dec_version("1.1")], output_layer=1),
+            *a_blocks,
+            *b_blocks,
+            end_block(),
+        ],
+        [
+            {
+                "type": "file",
+                "format": FORMAT,
+                "tick_hz": 1000000,
+                "produced_by": "zpf-sessionize 1.0",
+                "produced_at": 1719700100,
+            },
+            {
+                "type": "source",
+                "source_id": 1,
+                "kind": "zpf-input",
+                "uri": "packets.zpf",
+                "digest": dg,
+            },
+            {
+                "type": "decoder",
+                "decoder_id": 1,
+                "output_layer": "transport",
+                "name": "tcp-reassembly",
+                "version": "1.1",
+            },
+            *a_lines,
+            *b_lines,
+            {"type": "end"},
+        ],
+    )
+
+
 def main() -> int:
     check = "--check" in sys.argv
     build_chain()
     build_splice()
     build_tunnel()
     build_merge()
+    build_past_fin()
+    build_fragments("sessionized-fragments", lost=False)
+    build_fragments("sessionized-fragment-lost", lost=True)
+    build_across_break("sessionized-across-break", anchored=True)
+    build_across_break("isolate-transport-splice", anchored=False)
     manifest = []
     problems = []
 
@@ -7518,6 +8491,7 @@ def main() -> int:
             files[f"{c['name']}.hex"] = to_hexdump(pieces, f"{fx['name']}/{c['name']}").encode()
             files[f"{c['name']}.jsonl"] = jsonl_bytes(c["jsonl"])
         problems += emit(fdir, files, fx["name"], check)
+        merged = check_fixture_merged(fx)
         fixture_entries.append(
             {
                 "name": fx["name"],
@@ -7531,6 +8505,7 @@ def main() -> int:
                 "expect": fx["expect"],
                 "has_jsonl": True,
                 "files": sorted(files),
+                **({"merged": merged} if merged is not None else {}),
             }
         )
     for v in VECTORS:

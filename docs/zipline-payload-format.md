@@ -1,6 +1,6 @@
-# Zipline Payload Format (v0.23)
+# Zipline Payload Format (v0.24)
 
-> Status: **version 0.23** — a design in progress. **`0.x` means exactly what it
+> Status: **version 0.24** — a design in progress. **`0.x` means exactly what it
 > says**: any minor release may change anything, including in ways that break
 > existing readers. Do not build production on it. `1.0` is reserved for a
 > specification that has survived implementation, and this one has not yet.
@@ -10,14 +10,15 @@
 > than only correct, `0.15` the first to change what already-written files mean,
 > `0.17` the first driven by an implementation decoding at field granularity,
 > `0.19` the first to *remove* rules rather than add them, `0.21` the first
-> since `0.15` to change a block body, and `0.22` the first to add a
-> `content_type` scheme. More are expected.
+> since `0.15` to change a block body, `0.22` the first to add a
+> `content_type` scheme, and `0.24` the first to assign a Record `flags` bit.
+> More are expected.
 >
 > **On the renumbering.** A release was designated `1.0` in July 2026, before any
 > implementation existed. That was premature, and the work that followed —
 > collected here — breaks it. Rather than disguise that as a minor bump, the July
-> release is retroactively designated **`0.9`**; `0.10` through `0.23`
-> followed. Note `0.23` is *greater* than `0.9`: the components are independent integers, never a
+> release is retroactively designated **`0.9`**; `0.10` through `0.24`
+> followed. Note `0.24` is *greater* than `0.9`: the components are independent integers, never a
 > decimal fraction. See [CHANGELOG.md](../CHANGELOG.md) for the delta and
 > [implementation-review-response.md](implementation-review-response.md) for the
 > reasoning.
@@ -290,7 +291,7 @@ idle room it says so with a `session_end` — nothing references session 8 after
 that line.
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.24","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"chat.pcap"}
 
 {"type":"session","session_id":8,"proto":"irc","key":"#zipline@irc.example.net"}
@@ -524,7 +525,9 @@ never changing the algorithm.
   *reassembler* before records are emitted; the format records the reassembled
   result and its favor-old overlap policy, not the raw segments. Whether the
   *sender* resent is kept as the `retransmit` flag (see [enums](#enums)); what
-  the reassembler discarded is an Undecoded block.
+  the reassembler discarded is an Undecoded block. On a stream without a
+  sequence anchor a duplicate cannot be discarded, and the `copy` flag marks it
+  instead.
 - A **mid-stream** capture (handshake never seen) needs no special handling for
   *ordering* — the writer simply omits `isn` (it is responsible for confirming the
   SYN is genuinely absent rather than merely delayed before declaring a
@@ -539,7 +542,7 @@ The canonical case for seq/ack ordering — the two directions captured to
 *separate files* with skewed clocks:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000}
+{"type":"file","format":"zipline-payload/0.24","tick_hz":1000000}
 {"type":"source","source_id":1,"kind":"capture","uri":"sideA.pcap"}
 {"type":"source","source_id":2,"kind":"capture","uri":"sideB.pcap"}
 
@@ -628,7 +631,7 @@ identity span, naming the input's ids, is what ties it back — and stores the t
 records in causal order despite the inverted timestamps:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.24","tick_hz":1000000,
  "produced_by":"zpf-merge 1.2","produced_at":1719510000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"sideA.zpf","digest":"sha256:11aa…"}
 {"type":"source","source_id":2,"kind":"zpf-input","uri":"sideB.zpf","digest":"sha256:22bb…"}
@@ -843,6 +846,25 @@ remain readable, and a consumer indexing by anything other than offset still see
 it. Where such a record carries payload those bytes are excluded from the extent
 and from every coverage answer the file supports, which is the price of not
 trusting the wrapped offset.
+
+**A transport stream's extent is the furthest point its placeable records
+reach.** A record reaches its offset plus its `payload_len`, so a zero-length
+record reaches its own offset, and an unplaceable record reaches nothing. Like
+every offset here, the extent is measured in sequence numbers, not in delivered
+bytes: a hole before the furthest record counts, and so does the sequence number
+a FIN occupies, where something is stored past it. A pure ACK is stored at the
+sequence number its segment carries, which on a closing side's final ACK is one
+past that side's FIN. The stream then reaches one past its last byte, and the
+position between is the FIN's (see [Fields used](#fields-used)). That position
+holds no byte, and [the coverage guarantee](#coverage-honesty-undecoded-blocks)
+owes it nothing. A stream whose FIN has nothing stored past it ends at its last
+byte, as before.
+
+**How far a record reaches is not its [end](#fields-used).** The two differ on
+one kind of record: a zero-length FIN ends one past its offset, for the merge,
+but reaches only its offset. A stream whose last record is a zero-length FIN
+therefore ends where the FIN sits. `sequenced-pure-ack-and-fin`'s client stream
+is one: its FIN at offset 8 ends at 9, and the stream's extent is 8.
 
 **Each layer has its own offset space.** Everything above describes a
 **transport** stream — one whose offsets are true positions with holes counted,
@@ -1123,6 +1145,16 @@ whether the bytes are fetchable at all — and is the part it must get right; th
 own ends, as one counting genuinely unparsed bytes does when it separates
 `undecodable` from `skipped` (see [Undecoded](#undecoded-0x21)).
 
+**The position a FIN occupies is owed nothing.** Where a transport stream reaches
+past its FIN, the sequence number the FIN occupies lies inside the
+[extent](#referencing-the-source-by-stream-offset) and holds no byte. It is not a
+hole, so it takes no `gap`. It is not content, so it takes no span. A span
+reaching over it covers it harmlessly, as a span over any hole resolves to no
+bytes. A checker finds the position in the input: it is the data end of the
+record carrying `fin`, or the offset of a zero-length `fin` record. Where the FIN's
+segment was lost and a later record was captured, no record marks the position,
+and it is the one-wide hole it then is.
+
 ### A decoded file, end to end
 
 Putting the pieces together — a decoded file derived from the TCP capture in
@@ -1136,7 +1168,7 @@ bytes it could not parse — its ids read in `transport.zpf`'s namespace, coinci
 equal to the output's here — not copying them):
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.24","tick_hz":1000000,
  "produced_by":"zpf-decode 0.4","produced_at":1719500000}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"transport.zpf",
  "digest":"sha256:9f2c…"}
@@ -1204,7 +1236,7 @@ records are byte runs, the participants carry `isn`, and the offsets are
 hole-inclusive. It also **fans out** — one input stream becomes two sessions:
 
 ```jsonl
-{"type":"file","format":"zipline-payload/0.23","tick_hz":1000000,
+{"type":"file","format":"zipline-payload/0.24","tick_hz":1000000,
  "produced_by":"zpf-sessionize 1.0","produced_at":1719700100}
 {"type":"source","source_id":1,"kind":"zpf-input","uri":"packets.zpf","digest":"sha256:…"}
 {"type":"decoder","decoder_id":1,"output_layer":"transport","name":"tcp-reassembly",
@@ -1346,7 +1378,7 @@ MUST be the first block in the file. Body:
 |-----------------|------|--------------------------------------------------------------|
 | `magic`         | u32  | file signature `0x5A495046` (`"ZIPF"`); on disk always the little-endian bytes `46 50 49 5A` |
 | `version_major` | u16  | `0` for this document                                        |
-| `version_minor` | u16  | `23` for this document                                       |
+| `version_minor` | u16  | `24` for this document                                       |
 | `tick_hz`       | u64  | time units per second (e.g. `1000000` = µs, `1000000000` = ns); MUST be non-zero |
 
 **File signature.** `magic` sits at **fixed file offset 8** (the frame is a
@@ -1360,7 +1392,7 @@ Suggested file extension `.zpf`.
 
 **Version numbering.** `version_major` and `version_minor` are independent
 non-negative integers, compared **componentwise**. They are never a decimal
-number: `0.23` is the twenty-third minor and is **greater** than `0.9`. A writer stamps
+number: `0.24` is the twenty-fourth minor and is **greater** than `0.9`. A writer stamps
 the version it implements — there is no obligation to compute the lowest version
 whose features the file happens to use, which a streaming writer could not do
 anyway, since the File Header is written before the file's content is known.
@@ -1724,7 +1756,7 @@ lead so the u64s stay 4-byte aligned, as in a span-list entry. The triple
 `(source_id, session_id, pid)` names an input participant stream **in the
 source's id namespace**, never this file's — the same rule that governs `spans`.
 `extent` is that stream's length in **its own** offset space, as
-[Layers](#layers-transport-and-decoded-live-in-separate-streams) defines it — this
+[Referencing the source by stream offset](#referencing-the-source-by-stream-offset) defines it — this
 re-states nothing, so there is one place to change if that definition ever moves.
 
 One consequence is worth naming, because it is easy to miss and no vector
@@ -1940,7 +1972,9 @@ duplicated — which nothing else in the file can express.
 creates one.** The [coverage guarantee](#coverage-honesty-undecoded-blocks) is
 scoped *within each input participant stream*, and a capture has none, so a block
 naming one is purely declarative: it records what a stage discarded, and no rule
-consumes it. A [decoded stream with no predecessor file](#conformance) carries
+consumes it. One rule requires such a block: a reassembler that could not
+complete a message writes one for its pieces, because nothing else would show
+they were there (see [Discontinuity](#discontinuity-0x22)). A [decoded stream with no predecessor file](#conformance) carries
 none for a different reason — it read no input at all, so it has nothing to
 declare.
 
@@ -2127,6 +2161,31 @@ reader can check it** — a file that withheld and one that did not are byte-ide
 is precisely the defect. A stage that needs to withhold from such a stream emits a
 decoded layer instead, where the break is expressible.
 
+**An incomplete reassembly is not content of the stream.** A message-oriented
+stream's content is its messages. An IP datagram that lost a fragment, or an
+SCTP message that lost a chunk, never reached the stage as a message, only as
+pieces of one. Leaving those pieces out withholds nothing of the stream, so the
+rule above does not reach them. Writing them as a record would be false either
+way. Flagged `message`, the record would claim a whole message. Unflagged, it
+would carry bytes that no sender sent as a unit.
+
+What makes leaving them out honest is a **trace**: an Undecoded block naming the
+pieces, so that a reader of the file can see which input bytes became no
+message. A stage reading a `.zpf` owes one already, because the pieces are
+content of its **input** and the
+[coverage guarantee](#coverage-honesty-undecoded-blocks) covers them. A
+reassembler reading a capture owes no coverage, so nothing there would require
+the block. Without it, the file would be byte-identical to one that withheld a
+whole datagram, which is the case the rule above forbids. So a reassembler
+reading a capture **MUST** write an Undecoded block against the `capture`
+source for the pieces of each message it could not complete, as it would for
+anything it discards (see [`retransmit`](#enums)). Either block **SHOULD** carry
+`reason = undecodable`, since the reassembler tried and failed, so that two
+producers name the shape alike. Its `comment` can say which piece was missing.
+`dropped` is the wrong word, because it asserts that content of the stream was
+removed. The [`copy`](#enums) flag marks the opposite case: a whole message seen
+twice is content, and it is written.
+
 **Do these two join?** is the whole test, and it falls to the producer because
 only the producer knows what it did with the input:
 
@@ -2230,19 +2289,28 @@ layer no third case is defined — a stage that knows two units join has the sam
 recourse as one that knows it for a declared break, which is to say none but the
 declaration.
 
-**A transport-layer output whose records carry `seq_start` meets both duties
-through its offsets.** It has neither recourse, since a transport-layer stream
-carries no Discontinuity (below) and is never declared `units`. It needs neither,
-because a break in such a stream is a range of sequence numbers that no record
-covers, and that cannot be lost. Such a stage — a
-[sessionization stage](#conformance) reassembling a packet stream — **MAY** emit
-a record whose `spans` cross input units, or an input Discontinuity. Its
-sequence numbers then assert that those bytes join, and it answers for that
-assertion as any reassembler does. Crossing a declared break is ordinary under
-fan-out. The input unit missing between two of a flow's packets may have
-belonged to another flow, and the packets either side then join in their own
-sequence space. A transport output without sequence numbers has no hole to carry
-a break in, and owes both duties as stated.
+**A transport-layer record meets both duties when it carries the evidence of its
+own join.** It has neither recourse, since a transport-layer stream carries no
+Discontinuity (below) and is never declared `units`. A record needs neither when
+it carries one of two kinds of evidence:
+
+- **sequence numbers**, in a record carrying `seq_start`. A break in such a
+  stream is a range of sequence numbers that no record covers, and that cannot
+  be lost;
+- **one message's reassembly**, in a record flagged [`message`](#enums). The
+  record is exactly one transport message, so the input units it cites are that
+  message's fragments: the IP fragments of one datagram, or the SCTP DATA chunks
+  of one message.
+
+Such a stage — a [sessionization stage](#conformance) reassembling a packet
+stream — **MAY** emit a record of either kind whose `spans` cross input units, or
+an input Discontinuity. The record then asserts that those bytes join, and the
+stage answers for that assertion as any reassembler does. Crossing a declared
+break is ordinary under fan-out. The input unit missing between two of a flow's
+packets, or between two fragments of one datagram, may have belonged to another
+flow, and the units either side then join, in their own sequence space or as
+their own message. A transport record carrying neither has no evidence of a join
+for a checker to see, and owes both duties as stated.
 
 The no-splice sentence is what carries the property down a chain, and it is worth
 stating explicitly because it is easy to think the MUST NOT before it covers the
@@ -2543,7 +2611,8 @@ array (see [JSONL mapping](#jsonl--binary-field-mapping)):
 | `0x0010` | `urg`        | TCP URG seen                                             |
 | `0x0040` | `retransmit` | the sender **resent** bytes of this record's range — a retransmission — and the reassembler resolved it inside this record (see below) |
 | `0x0080` | `message`    | message boundary: the record is exactly one transport message (a UDP datagram, an SCTP message, …) |
-| `0xFF20` | —            | reserved, MUST be written 0, and MUST be ignored on read; a bit nonetheless set is preserved through a round-trip (as a hex token in JSONL), never interpreted |
+| `0x0100` | `copy`       | the capture point saw this record's transmission twice: it repeats its participant's preceding record, and the sender sent once (see below) |
+| `0xFE20` | —            | reserved, MUST be written 0, and MUST be ignored on read; a bit nonetheless set is preserved through a round-trip (as a hex token in JSONL), never interpreted |
 
 **`retransmit` names the sender's act, not the reassembler's.** A copy of one
 transmission — every packet seen twice through a mirror port, a two-interface
@@ -2551,12 +2620,43 @@ capture, a veth pair — is not a retransmission: the sender sent once, and the
 flag is not set, however the reassembler dealt with the copy. What the
 reassembler *discarded*, whether a retransmitted segment or a duplicated one, has
 its own home: an [Undecoded](#undecoded-0x21) block against the `capture` source.
+So do the fragments of a message it could not complete
+([Discontinuity](#discontinuity-0x22)).
 The two mechanisms split cleanly — the flag says what the sender did, the block
 says what the reassembler dropped. How a producer tells a copy from a
 retransmission is its own affair (the TCP Timestamps option is one way, and is
 not always negotiated); a producer that **cannot** tell them apart SHOULD treat
 the repeat as a retransmission, which is the conservative reading and what every
 producer did before this paragraph.
+
+**`copy` names the capture point's act, where the copy cannot be discarded.** On
+a sequence-anchored stream the reassembler discards a copy, and the block above
+records it. A stream without a sequence anchor, such as UDP, has no such exit: the
+[withholding rule](#discontinuity-0x22) makes the copy content of the stream, so
+it is written as a record of its own. Unmarked, it reads as a message the sender
+sent twice. The flag is the mark. A reader that wants messages as sent skips
+flagged records, and one that wants what the capture saw keeps them. Two
+constraints make the flag checkable from the file alone:
+
+- a writer **MUST NOT** set `copy` unless the record's payload is byte-identical
+  to that of its participant's preceding record. A copy that arrives after
+  another of the participant's messages stays unflagged;
+- a writer **MUST NOT** set `copy` on a record of a stream whose records carry
+  `seq_start`. Such a copy is the reassembler's to discard, as above.
+
+A reader that finds `copy` breaking either constraint **MAY** treat the session as
+a semantic violation and isolate it. How a producer tells a copy from a resend is
+its own affair, as for `retransmit`. The same nonzero IPv4 identification on
+identical bytes, microseconds apart, is one way. A producer that cannot tell
+leaves the flag unset, which is the conservative reading the paragraph above
+asks for.
+
+The flag is the writer's statement about its own output. A stage that does not
+carry a copy's predecessor forward, such as a filter or a time window that drops
+it, clears `copy`, since the record no longer repeats the one before it. This
+version defines `copy` on transport-layer records only. On a decoded record it
+has no meaning, and a reader treats it there as it treats a reserved bit:
+preserved, never interpreted.
 
 `content_type` `prim:` vocabulary (Record option, string): the legal `prim:`
 tokens are **exactly** the fixed-width integers below plus `prim:bytes` (an
@@ -2815,10 +2915,11 @@ the number went stale with the content.
   reads one or more `.zpf` inputs and produces a **transport** layer, its Decoder
   declaring `output_layer = transport`. Its records carry `spans` and `decoder_id`
   like any decode stage's, and everything else about it is a transport stream —
-  `isn`-anchored, hole-inclusive offsets, `seq_start` on records, no
+  `isn`-anchored, hole-inclusive offsets and `seq_start` on records where the
+  transport has sequence numbers, `message` on records where it has messages, no
   `content_type` and no `role`, and no [Discontinuity](#discontinuity-0x22), since
-  a hole is expressible without one — and, for the same reason, a record may
-  cross its input's seams (see
+  a hole is expressible without one. A record that carries the evidence of its
+  own join, `seq_start` or `message`, may cross its input's seams (see
   [what a consumer owes](#discontinuity-0x22)). It is the same operation as the head-of-pipeline
   reassembler with a different input kind, and giving it a Decoder is what gives its
   overlap policy, buffer depth and timeout somewhere to be recorded.
@@ -3220,7 +3321,7 @@ Offsets are hex; each line is annotated.
 0004  10 00 00 00              length = 16
 0008  46 50 49 5A              magic  = 0x5A495046  ("ZIPF")
 000C  00 00                    version_major = 0
-000E  17 00                    version_minor = 23   (0.23, little-endian)
+000E  18 00                    version_minor = 24   (0.24, little-endian)
 0010  40 42 0F 00 00 00 00 00  tick_hz = 1_000_000  (microseconds)
 
 # ── Source Descriptor (0x02) ────────────────────────────────────────

@@ -69,7 +69,7 @@ def read_text(path: str) -> str:
 
 
 MAGIC = 0x5A495046
-MAJOR, MINOR = 0, 23
+MAJOR, MINOR = 0, 24
 
 # How many violations each tier must declare. A negative vector carrying two
 # silently tests whichever the reader detects first, and passes implementations
@@ -386,15 +386,69 @@ NORMATIVE_ADDITIONS: tuple[tuple[str, dict[str, int], str], ...] = (
     # units participant -- are both barred at the transport layer, so read
     # literally a reassembler over a packet stream could never coalesce two
     # packets. Its sequence numbers already carry any break as a hole, which is
-    # the reason the document gives for barring the block there.
+    # the reason the document gives for barring the block there. 0.24 (#166)
+    # widened the same MAY to a record flagged `message`, whose reassembly of one
+    # message is evidence of the join as sequence numbers are; no keyword moved.
     (
-        r"\*\*MAY\*\* emit\s*a record whose `spans` cross input units, or an input Discontinuity",
+        r"\*\*MAY\*\* emit\s*a record of either kind whose `spans` cross input units, "
+        r"or\s*an input Discontinuity",
         {"MAY": 1},
         "the duty exists so a break seen at one stage is not lost at the next, and "
         "at a sequence-anchored transport output it cannot be: a missing range is "
         "a range no record covers. Without the permission the duty's letter "
         "forbade what its purpose allowed -- a Clarified line, since a file that "
         "declined every crossing stays conformant",
+    ),
+    # 0.24 (#169). A capture-point copy on a stream without a sequence anchor
+    # must be written, and nothing could mark it. The `copy` flag does, and two
+    # MUST NOTs make it checkable from one file; the MAY gives a reader its
+    # remedy, and the isolate vector something to test.
+    (
+        r"a writer \*\*MUST NOT\*\* set `copy` unless the record's payload is byte-identical",
+        {"MUST": 1, "MUST NOT": 1},
+        "a flag that may sit on any record cannot be checked; tying it to the "
+        "participant's preceding record and identical bytes makes every flagged "
+        "record verifiable from the file alone -- an Added line",
+    ),
+    (
+        r"a writer \*\*MUST NOT\*\* set `copy` on a record of a stream whose records "
+        r"carry\s*`seq_start`",
+        {"MUST": 1, "MUST NOT": 1},
+        "a sequence-anchored copy already has a home, discarded and cited "
+        "duplicate-discarded; two marks for one fact would let them disagree -- "
+        "an Added line",
+    ),
+    # 0.24 (#170). An incomplete reassembly is not content of a message-oriented
+    # stream, so the withholding rule does not reach it; its pieces are owed an
+    # Undecoded block in the input's space. The SHOULD pins the word, as
+    # capture-gap's does, so two producers name the shape alike.
+    (
+        r"Either block \*\*SHOULD\*\* carry\s*`reason = undecodable`",
+        {"SHOULD": 1},
+        "the vocabulary is open, and an unpinned shape gets a word per producer; "
+        "undecodable is the existing bytes-class value for tried-and-failed, and "
+        "what zpfwire already writes -- a Changed line, advisory strength",
+    ),
+    # 0.24 (#170, python-zipline's review, Finding 1). The trace that makes
+    # leaving an incomplete reassembly out honest is owed by the coverage
+    # guarantee only to a stage reading a .zpf. A reassembler reading a capture
+    # owes no coverage, so without this MUST its file could be byte-identical to
+    # one that withheld a whole datagram -- the case the withholding MUST NOT
+    # forbids. The exemption from that MUST NOT is paid for by a MUST.
+    (
+        r"So a reassembler\s*reading a capture \*\*MUST\*\* write an Undecoded block",
+        {"MUST": 1},
+        "an exemption from an uncheckable MUST NOT that left the commonest producer "
+        "free to leave no trace would hollow the rule; the block is what separates "
+        "an incomplete reassembly from a withheld datagram -- a Changed line, "
+        "uncheckable from the file like the rule it completes",
+    ),
+    (
+        r"A reader that finds `copy` breaking either constraint \*\*MAY\*\* treat",
+        {"MAY": 1},
+        "a flag that asserts a repeat the bytes contradict misdescribes the "
+        "stream; isolating the session is the ordinary semantic-violation "
+        "remedy, stated so a reader knows it is open -- an Added line",
     ),
 )
 
@@ -616,6 +670,76 @@ RULES = {
         "(timestamp, participant_id); with the server's clock behind, each wrong "
         "end reading gives a different merged order, or a stall",
         "merge-pure-ack-and-fin",
+    ),
+    # 0.24 (#168). The extent is measured in sequence numbers. A closing side's
+    # final pure ACK, stored at its wire number, sits one past that side's FIN
+    # and extends the stream by one. Read as bytes, the stream measures short.
+    "extent-reaches-past-fin": (
+        "a transport extent is the furthest point a placeable record reaches; a "
+        "final pure ACK stored one past its side's FIN extends it past the last byte",
+        "closed-final-ack",
+    ),
+    # 0.24 (#168). The FIN's position inside such an extent holds no byte. A
+    # coverage check that counts it reports a gap no decode stage could fill.
+    # 0.24 (#166). A record flagged `message` is exactly one transport message,
+    # so the units it cites are that message's fragments, and its reassembly
+    # is evidence of their join as sequence numbers are. Through 0.23 the
+    # permission to cross was keyed on seq_start, and a fragmented datagram over
+    # a unit sequence had no conformant record.
+    "message-record-may-cross": (
+        "a transport-layer record flagged message MAY cite input units across "
+        "seams or a declared break, as one message's reassembly, without seq_start",
+        "sessionized-fragments",
+    ),
+    # 0.24 (#167). The second half of 0.22's permission, which only crossing
+    # unit seams had tested: a seq_start record crossing a DECLARED break. A
+    # splice check examines declared blocks, so this is the case it can misread.
+    "transport-record-crosses-declared-break": (
+        "a transport-layer record carrying seq_start MAY cite input on both sides "
+        "of a declared Discontinuity; its sequence numbers carry the break",
+        "sessionized-across-break",
+    ),
+    # 0.24 (#167, #166). The mirror: the same crossing with neither seq_start
+    # nor message has no evidence of its join, owes the carry duty, and has no
+    # way to meet it at the transport layer. Twin of isolate-unmarked-break.
+    "transport-crossing-needs-evidence": (
+        "a transport-layer record carrying neither seq_start nor message that "
+        "crosses a declared break in its input violates the carry duty",
+        "isolate-transport-splice",
+    ),
+    # 0.24 (#169). A capture-point copy on a stream without a sequence anchor
+    # is written, being content, and the copy flag says the sender sent once.
+    "copy-marks-capture-point-repeat": (
+        "a record flagged copy repeats its participant's preceding record as one "
+        "transmission seen twice; it stays in the stream and counts in its extent",
+        "udp-capture-copy",
+    ),
+    # 0.24 (#169). The constraint a reader can check: a copy whose bytes differ
+    # from the record it claims to repeat misdescribes the stream.
+    "copy-must-repeat-exactly": (
+        "a writer MUST NOT set copy unless the payload is byte-identical to the "
+        "participant's preceding record's; a reader MAY isolate the session",
+        "isolate-copy-differs",
+    ),
+    # 0.24 (#170). Fragments whose message never completed are not content of
+    # a message-oriented stream: no record, and the withholding rule does not
+    # reach them. Their input range is marked undecodable, which is the trace.
+    # 0.24 (#170, review Finding 1). A reassembler reading a capture owes no
+    # coverage, so the trace is a MUST: a capture-source block for the pieces.
+    "capture-reassembler-marks-incomplete": (
+        "a reassembler reading a capture MUST write an Undecoded block against the "
+        "capture source for the pieces of a message it could not complete",
+        "capture-fragment-lost",
+    ),
+    "incomplete-reassembly-not-content": (
+        "an incomplete reassembly writes no record; its fragments' input range is "
+        "marked Undecoded, reason undecodable (SHOULD), and nothing is withheld",
+        "sessionized-fragment-lost",
+    ),
+    "fin-position-owed-nothing": (
+        "the sequence number a FIN occupies, inside the extent, is owed neither a "
+        "span nor an Undecoded block",
+        "decoded-past-fin",
     ),
     # 0.22 (#152). The permission the carry duty's letter withheld. No checker
     # can see a wrong coalesce -- the sequence numbers are the producer's
@@ -1799,6 +1923,11 @@ def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
     fixture whose sequence numbers passed through 2**32 (the Phase 0 probe in
     RELEASE-0.21-PLAN.md); stream-wraps-seq is the vector that keeps it gone.
     """
+    return [(k, start, end) if keyed else (start, end) for k, start, end, _o in placed(lines)]
+
+
+def placed(lines: list[dict]) -> list[tuple[tuple[int, int], int, int, dict]]:
+    """Each placeable record as (key, start, end, record): the walk anchored_ranges reports."""
     import base64
 
     prev: dict[tuple[int, int], tuple[int, int]] = {}  # key -> (seq_start, offset)
@@ -1815,8 +1944,18 @@ def anchored_ranges(lines: list[dict], keyed: bool = False) -> list:
             start = off_prev + delta
             end = start + len(base64.b64decode(o["payload"]))
             prev[k] = (o["seq_start"], start)
-            out.append((k, start, end) if keyed else (start, end))
+            out.append((k, start, end, o))
     return out
+
+
+def fin_positions(lines: list[dict]) -> dict[tuple[int, int], int]:
+    """Map each stream (session_id, pid) to the offset its FIN occupies (#168).
+
+    The data end of the record carrying `fin`, which for a zero-length FIN is its
+    own offset. A stream reaching past it holds no byte there, and the coverage
+    guarantee owes the position nothing.
+    """
+    return {k: end for k, _start, end, o in placed(lines) if "fin" in o.get("flags", ())}
 
 
 def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -1831,7 +1970,13 @@ def merge_ranges(rs: list[tuple[int, int]]) -> list[tuple[int, int]]:
 
 
 def covers(
-    label: str, lines: list[dict], sess: int, pid: int, want_end: int, source_id: int | None = None
+    label: str,
+    lines: list[dict],
+    sess: int,
+    pid: int,
+    want_end: int,
+    source_id: int | None = None,
+    exempt: tuple[int, ...] = (),
 ) -> list[str]:
     """Confirm one hop accounts for every offset of the input stream it reads.
 
@@ -1839,8 +1984,9 @@ def covers(
     fan-out one input stream feeds several output sessions and no single one
     covers it, which is the property tunnel/inner.zpf exists to show. `source_id`
     narrows to one input where a hop reads several, as merged.zpf does.
+    `exempt` names positions owed nothing -- a FIN's, inside the extent (#168).
     """
-    cov: list[tuple[int, int]] = []
+    cov: list[tuple[int, int]] = [(p, p + 1) for p in exempt]
     for o in lines:
         for sp in o.get("spans", []):
             if (sp["session_id"], sp["pid"]) == (sess, pid) and source_id in (
@@ -2000,6 +2146,347 @@ def check_merge() -> list[str]:
     return out
 
 
+def check_past_fin() -> list[str]:
+    """Verify decoded-past-fin: the extent reaches past a FIN, and the FIN is owed nothing.
+
+    The fourth pair check (#168). capture.zpf's extents are re-derived from its
+    sequence numbers, so a final pure ACK stored one past its side's FIN
+    extends its stream. The FIN's position must really lie inside an extent and
+    really be left uncovered by decoded.zpf, or the fixture tests nothing. With
+    that position exempt, decoded.zpf must cover each stream exactly, and its
+    Session End must declare the derived extents.
+    """
+    d = os.path.join(HERE, "decoded-past-fin")
+    if not os.path.isdir(d):
+        return ["decoded-past-fin/ missing"]
+
+    out = fixture_digests(d, "decoded-past-fin", ("capture", "decoded"), ("decoded",))
+    capture = fixture_lines(d, "capture")
+    decoded = fixture_lines(d, "decoded")
+    ext = anchored_extents(capture)
+    fins = fin_positions(capture)
+    inside = {k: p for k, p in fins.items() if p < ext[k]}
+    if not inside:
+        out.append("decoded-past-fin/capture: no stream reaches past its FIN -- nothing to exempt")
+    for (sess, pid), p in sorted(inside.items()):
+        if not covers("", decoded, sess, pid, ext[(sess, pid)]):
+            out.append(
+                f"decoded-past-fin/decoded: covers the FIN's position {p} of pid {pid} -- "
+                f"the exemption is never tested"
+            )
+
+    declared = {
+        (e["session_id"], e["pid"]): e["extent"]
+        for o in decoded
+        if o.get("type") == "session_end"
+        for e in o.get("input_extents", [])
+    }
+    for (sess, pid), end in sorted(ext.items()):
+        exempt = (inside[(sess, pid)],) if (sess, pid) in inside else ()
+        out += covers("decoded-past-fin/decoded", decoded, sess, pid, end, exempt=exempt)
+        if declared.get((sess, pid)) != end:
+            out.append(
+                f"decoded-past-fin/decoded: pid {pid} is [0,{end}) by its sequence numbers, "
+                f"but Session End declares {declared.get((sess, pid))}"
+            )
+
+    if not out:
+        print(
+            "  decoded-past-fin: 2 files, digests match, coverage complete with each FIN "
+            "inside an extent exempt ("
+            + ", ".join(
+                f"pid {p} [0,{e})" + (f" FIN at {inside[(s, p)]}" if (s, p) in inside else "")
+                for (s, p), e in sorted(ext.items())
+            )
+            + ")"
+        )
+    return out
+
+
+def reassemble(packets: list[bytes]) -> bytes | str:
+    """Join IPv4 fragments into their datagram's IP payload, or say why they do not join.
+
+    Only what sessionized-fragments needs: one identification, fragment offsets
+    that close from 0, and a last fragment without More Fragments. This is the
+    fixture showing its own join is real, not a reassembler the suite offers.
+    """
+    import struct
+
+    heads = [struct.unpack(">HH", p[4:8]) for p in packets]  # identification, flags|offset
+    if len({ident for ident, _fo in heads}) != 1:
+        return "cites packets of different datagrams"
+    frags = sorted(
+        ((fo & 0x1FFF) * 8, fo & 0x2000, p[(p[0] & 0x0F) * 4 :])
+        for (_ident, fo), p in zip(heads, packets, strict=True)
+    )
+    joined = b""
+    for off, _mf, chunk in frags:
+        if off != len(joined):
+            return "has fragments that do not close from offset 0"
+        joined += chunk
+    if frags[-1][1]:
+        return "has no last fragment: More Fragments is set on every one"
+    return joined
+
+
+def crossing(o: dict, units: list[tuple[int, int, bytes]]) -> list[str] | None:
+    """Test one inner record that cites two or more input units; None if it cites fewer.
+
+    Returns its label followed by its failures: it must be a message record
+    without seq_start, and its cited packets must reassemble to its payload.
+    """
+    import base64
+
+    cited = [
+        u for u in units if any(s["off_start"] < u[1] and u[0] < s["off_end"] for s in o["spans"])
+    ]
+    if len(cited) < 2:
+        return None
+    label = f"sessionized-fragments/inner: session {o['session_id']}'s record"
+    out = [label]
+    if "message" not in o.get("flags", ()) or "seq_start" in o:
+        out.append(f"{label} crosses units, but is not a message record without seq_start")
+    datagram = reassemble([p for _a, _b, p in cited])
+    if isinstance(datagram, str):
+        out.append(f"{label} {datagram}")
+    elif datagram[8:] != base64.b64decode(o["payload"]):
+        out.append(f"{label}: its payload is not the fragments' datagram reassembled")
+    return out
+
+
+def check_fragments() -> list[str]:
+    """Verify sessionized-fragments: a message record crosses units, and its join is real.
+
+    The fifth pair check (#166). packets.zpf must be a unit sequence, so every
+    seam is a declared break, and inner.zpf must hold a record whose spans cite
+    two or more of its units -- or the fixture crosses nothing. That record
+    carries `message` and no seq_start, which is the case the permission newly
+    covers. Its join is then shown rather than asserted: the cited packets'
+    IPv4 headers share one identification, their fragment offsets close from 0
+    to a fragment without More Fragments, and their IP payloads joined at those
+    offsets, less the 8-byte UDP header, are the record's payload. With the
+    usual coverage and declared-extent checks over packets.zpf's concatenation.
+    """
+    import base64
+
+    d = os.path.join(HERE, "sessionized-fragments")
+    if not os.path.isdir(d):
+        return ["sessionized-fragments/ missing"]
+
+    out = fixture_digests(d, "sessionized-fragments", ("packets", "inner"), ("inner",))
+    packets = fixture_lines(d, "packets")
+    inner = fixture_lines(d, "inner")
+    if not any(o.get("type") == "participant" and o.get("adjacency") == "units" for o in packets):
+        out.append("sessionized-fragments/packets: not a unit sequence -- no seam is a break")
+    units, at = [], 0  # each packet's [start, end) in the concatenation, and its bytes
+    for o in packets:
+        if o.get("type") == "record":
+            p = base64.b64decode(o["payload"])
+            units.append((at, at + len(p), p))
+            at += len(p)
+    extent = at
+
+    crossings = [c for o in inner if o.get("type") == "record" for c in [crossing(o, units)] if c]
+    for found in crossings:
+        out += found[1:]
+    if not crossings:
+        out.append("sessionized-fragments/inner: no record crosses a seam -- nothing is tested")
+
+    out += covers("sessionized-fragments/inner", inner, 5, 0, extent)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if e["extent"] != extent:
+                out.append(
+                    f"sessionized-fragments: inner session {o['session_id']} declares "
+                    f"packets' extent {e['extent']}, but its records concatenate to {extent}"
+                )
+
+    if not out:
+        print(
+            f"  sessionized-fragments: 2 files, digests match, coverage complete "
+            f"(packets [0,{extent}), {len(units)} units); {len(crossings)} message record crosses "
+            f"seams, and its fragments reassemble to its payload"
+        )
+    return out
+
+
+def check_fragment_lost() -> list[str]:
+    """Verify sessionized-fragment-lost: an orphan fragment, no record, and the block in its place.
+
+    The pair check for #170. Some unit of packets.zpf must be an IPv4 fragment
+    whose datagram does not reassemble from the units present -- or nothing was
+    lost. No record of inner.zpf may cite it, since pieces of a message are not
+    content of the stream. An Undecoded block must name exactly its range in
+    the input's space with reason undecodable, the word the SHOULD pins: the
+    trace that makes leaving it out honest. With the usual coverage and
+    declared-extent checks.
+    """
+    import base64
+    import struct
+
+    name = "sessionized-fragment-lost"
+    d = os.path.join(HERE, name)
+    if not os.path.isdir(d):
+        return [f"{name}/ missing"]
+    out = fixture_digests(d, name, ("packets", "inner"), ("inner",))
+    packets = fixture_lines(d, "packets")
+    inner = fixture_lines(d, "inner")
+    units, at = [], 0
+    for o in packets:
+        if o.get("type") == "record":
+            p = base64.b64decode(o["payload"])
+            units.append((at, at + len(p), p))
+            at += len(p)
+    frags = [u for u in units if struct.unpack(">H", u[2][6:8])[0] & 0x3FFF]  # MF or offset
+    orphans = [
+        u
+        for u in frags
+        if isinstance(reassemble([f[2] for f in frags if f[2][4:6] == u[2][4:6]]), str)
+    ]
+    if not orphans:
+        out.append(f"{name}/packets: every fragment's datagram completes -- nothing was lost")
+    for a, b, _p in orphans:
+        if any(
+            s["off_start"] < b and a < s["off_end"]
+            for o in inner
+            if o.get("type") == "record"
+            for s in o["spans"]
+        ):
+            out.append(f"{name}/inner: a record cites the orphan fragment [{a},{b})")
+        marks = [
+            o
+            for o in inner
+            if o.get("type") == "undecoded" and (o["off_start"], o["off_end"]) == (a, b)
+        ]
+        if [o.get("reason") for o in marks] != ["undecodable"]:
+            out.append(f"{name}/inner: [{a},{b}) is not marked by one undecodable block")
+    out += covers(f"{name}/inner", inner, 5, 0, at)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if e["extent"] != at:
+                out.append(
+                    f"{name}: inner session {o['session_id']} declares {e['extent']}, not {at}"
+                )
+    if not out:
+        print(
+            f"  {name}: 2 files, digests match, coverage complete (packets [0,{at})); "
+            f"orphan fragment {[(a, b) for a, b, _p in orphans]} cited by no record and "
+            f"marked undecodable"
+        )
+    return out
+
+
+def tcp_join(packets: list[bytes]) -> tuple[int, bytes] | str:
+    """Join TCP segments in one flow's sequence space: (first seq, payload), or why not.
+
+    Only what the across-break pairs need: one source port, and each segment's
+    sequence number exactly where the previous one's payload ended. This is the
+    fixture showing its own join is real, not a reassembler the suite offers.
+    """
+    import struct
+
+    segs = []
+    for p in packets:
+        tcp = p[(p[0] & 0x0F) * 4 :]
+        sport, _dport, seq = struct.unpack(">HHI", tcp[:8])
+        segs.append((sport, seq, tcp[(tcp[12] >> 4) * 4 :]))
+    if len({sport for sport, _seq, _data in segs}) != 1:
+        return "cites packets of different flows"
+    joined = b""
+    for _sport, seq, data in segs:
+        if seq != segs[0][1] + len(joined):
+            return "cites segments whose sequence numbers do not join"
+        joined += data
+    return segs[0][1], joined
+
+
+def check_across_break(name: str, anchored: bool) -> list[str]:
+    """Verify an across-break pair: a record crosses a DECLARED break, with or without evidence.
+
+    Pair checks six and seven (#167). packets.zpf must be contiguous, so the
+    seam crossed is a declared Discontinuity and not a unit sequence's. A
+    record of inner.zpf must have spans on both sides of that break, or the pair
+    crosses nothing. Its cited packets must really join in one flow's sequence
+    space, their TCP payloads making its payload. Then the two pairs differ in
+    exactly one thing. sessionized-across-break's record carries seq_start, at
+    the first segment's number, which is the evidence that permits the crossing.
+    isolate-transport-splice's carries neither seq_start nor message, so its
+    one violation is that crossing and nothing else.
+    """
+    import base64
+
+    d = os.path.join(HERE, name)
+    if not os.path.isdir(d):
+        return [f"{name}/ missing"]
+    out = fixture_digests(d, name, ("packets", "inner"), ("inner",))
+    packets = fixture_lines(d, "packets")
+    inner = fixture_lines(d, "inner")
+    if any(o.get("type") == "participant" and o.get("adjacency") != "contiguous" for o in packets):
+        out.append(f"{name}/packets: not contiguous -- the break crossed would not be declared")
+    units, breaks, at = [], [], 0
+    for o in packets:
+        if o.get("type") == "discontinuity":
+            breaks.append(at)
+            at += o.get("width", 0)
+        elif o.get("type") == "record":
+            p = base64.b64decode(o["payload"])
+            units.append((at, at + len(p), p))
+            at += len(p)
+    across = [
+        o
+        for o in inner
+        if o.get("type") == "record"
+        and any(
+            any(s["off_end"] <= b for s in o["spans"])
+            and any(s["off_start"] >= b for s in o["spans"])
+            for b in breaks
+        )
+    ]
+    if not across:
+        out.append(f"{name}/inner: no record crosses a declared break -- nothing is tested")
+    for o in across:
+        out += crossed_break(name, o, units, anchored)
+    out += covers(f"{name}/inner", inner, 5, 0, at)
+    for o in inner:
+        for e in o.get("input_extents", []) if o.get("type") == "session_end" else []:
+            if e["extent"] != at:
+                out.append(
+                    f"{name}: inner session {o['session_id']} declares {e['extent']}, not {at}"
+                )
+    if not out:
+        print(
+            f"  {name}: 2 files, digests match, coverage complete (packets [0,{at}), break at "
+            f"{breaks}); the crossing record joins in its flow's sequence space and carries "
+            + ("seq_start" if anchored else "neither seq_start nor message -- the violation")
+        )
+    return out
+
+
+def crossed_break(
+    name: str, o: dict, units: list[tuple[int, int, bytes]], anchored: bool
+) -> list[str]:
+    """Test one record crossing a declared break: a real join, and the evidence it should carry."""
+    import base64
+
+    label = f"{name}/inner: session {o['session_id']}'s record"
+    cited = [
+        u for u in units if any(s["off_start"] < u[1] and u[0] < s["off_end"] for s in o["spans"])
+    ]
+    joined = tcp_join([p for _a, _b, p in cited])
+    if isinstance(joined, str):
+        return [f"{label} {joined}"]
+    seq, data = joined
+    out = []
+    if data != base64.b64decode(o["payload"]):
+        out.append(f"{label}: its payload is not its segments' payloads joined")
+    evidence = "seq_start" in o or "message" in o.get("flags", ())
+    if anchored and o.get("seq_start") != seq:
+        out.append(f"{label} should carry seq_start {seq}, the evidence that permits the crossing")
+    if not anchored and evidence:
+        out.append(f"{label} carries evidence of its join, so the pair has no violation")
+    return out
+
+
 def check_capability_coverage(manifest: dict) -> list[str]:
     """Every capability the format defines must be exercised by some vector.
 
@@ -2115,6 +2602,37 @@ def check_extents(v: dict) -> list[str]:
     return out
 
 
+def check_copy(v: dict) -> list[str]:
+    """Check every record flagged `copy` against the two constraints a reader can check (#169).
+
+    A writer MUST NOT set `copy` unless the payload is byte-identical to the
+    participant's preceding record's, nor on a record of a stream whose records
+    carry seq_start (per stream since the release review, Finding 4). Both
+    are decidable from one file, so the suite holds itself to them: an accept
+    vector's every copy satisfies both, and a copy in a negative vector breaks
+    one, so that it is that vector's violation and not a bystander.
+    """
+    if "files" in v or not v.get("has_jsonl"):
+        return []
+    name = v["name"]
+    lines = fixture_lines(os.path.join(HERE, name), name)
+    anchored = {(o["session_id"], o["sender_pid"]) for o in lines if "seq_start" in o}
+    prev: dict[tuple[int, int], str] = {}
+    out = []
+    for o in lines:
+        if o.get("type") != "record":
+            continue
+        k = (o["session_id"], o["sender_pid"])
+        if "copy" in o.get("flags", ()):
+            broken = prev.get(k) != o["payload"] or k in anchored
+            if v["tier"] == "accept" and broken:
+                out.append(f"{name}: a record flagged copy breaks a MUST NOT on an accept vector")
+            elif v["tier"] != "accept" and not broken:
+                out.append(f"{name}: its copy flag keeps both constraints -- not the violation")
+        prev[k] = o["payload"]
+    return out
+
+
 def check_merged(v: dict) -> list[str]:
     """Check a vector's declared merged orders are shaped right, and present where owed.
 
@@ -2129,18 +2647,42 @@ def check_merged(v: dict) -> list[str]:
     keeps every participant's own order, and that exactly the owed sessions
     are named. Computing the merge here would make check.py a second normative
     authority.
+
+    A multi-file entry owes the same, file by file (#163). Its files share
+    session ids, so each of its items names its file by the stem `files`
+    lists, and a single-file entry's items name none.
     """
     name, tier = v["name"], v["tier"]
-    if "files" in v or tier != "accept":
-        return [f"{name}: declares merged off the single-file accept tier"] if "merged" in v else []
-    jl = fixture_lines(os.path.join(HERE, name), name)
+    if tier != "accept":
+        return [f"{name}: declares merged off the accept tier"] if "merged" in v else []
+    given = v.get("merged", [])
+    d = os.path.join(HERE, name)
+    if "files" not in v:
+        if any("file" in m for m in given):
+            return [f"{name}: a single-file entry's merged items name a file"]
+        return merged_orders(name, fixture_lines(d, name), given)
+    if any("file" not in m for m in given):
+        return [f"{name}: a multi-file entry's merged items each name their file"]
+    stems = sorted({f.rsplit(".", 1)[0] for f in v["files"]})
+    unknown = sorted({m["file"] for m in given} - set(stems))
+    if unknown:
+        return [f"{name}: merged names files {unknown}, not among {stems}"]
+    out = []
+    for stem in stems:
+        mine = [m for m in given if m["file"] == stem]
+        out += merged_orders(f"{name}/{stem}", fixture_lines(d, stem), mine)
+    return out
+
+
+def merged_orders(name: str, jl: list[dict], merged: list[dict]) -> list[str]:
+    """Check one file's merged orders: exactly the owed sessions, each a stable permutation."""
     sequenced = {o["session_id"] for o in jl if o.get("type") == "session" and o.get("sequenced")}
     senders: dict[int, list[int]] = {}
     for o in jl:
         if o.get("type") == "record" and o["session_id"] not in sequenced:
             senders.setdefault(o["session_id"], []).append(o["sender_pid"])
     owed = {sid: pids for sid, pids in senders.items() if len(set(pids)) > 1}
-    given = {m["session_id"]: m["order"] for m in v.get("merged", [])}
+    given = {m["session_id"]: m["order"] for m in merged}
     if sorted(given) != sorted(owed):
         return [f"{name}: merged names sessions {sorted(given)}, owes {sorted(owed)}"]
     out = []
@@ -2253,11 +2795,17 @@ def main() -> int:
         failures += check_violations(v)
         failures += check_extents(v)
         failures += check_merged(v)
+        failures += check_copy(v)
         failures += check_vector(v)
 
     failures += check_chain()
     failures += check_tunnel()
     failures += check_merge()
+    failures += check_past_fin()
+    failures += check_fragments()
+    failures += check_fragment_lost()
+    failures += check_across_break("sessionized-across-break", anchored=True)
+    failures += check_across_break("isolate-transport-splice", anchored=False)
     failures += check_capability_coverage(manifest)
     failures += check_jsonl_keys()
     failures += check_retired_claims()

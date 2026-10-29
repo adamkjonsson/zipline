@@ -66,6 +66,135 @@ neither is safe to skip within `0.x`.
 
 ---
 
+## [0.24] — 2026-10-29
+
+**The sessionizer release.** Six gaps, found by producers that turn packet
+streams into transport streams: the FIN's position in a closed stream's extent,
+a UDP datagram reassembled from fragments, the same datagram missing a fragment,
+a capture-point copy of a datagram, a sessionized record crossing a declared
+break, and merged orders in multi-file vectors. One flag is added (`copy`), and
+no byte of an existing file changes meaning. Keywords: `MAY` 55 → 56, `MUST`
+124 → 127 (one new `MUST`, plus the two `MUST NOT`s it also counts), `MUST NOT`
+44 → 46, `SHOULD` 28 → 29. **77 vectors, 35 options, 49 rules.**
+python-zipline reviewed the candidate. Its six findings are handled, and the
+first added the `MUST`. Scope and reasoning in
+[docs/RELEASE-0.24-PLAN.md](docs/RELEASE-0.24-PLAN.md).
+
+### Added
+
+- **The `copy` flag, `0x0100`** ([#169](https://github.com/adamkjonsson/zipline/issues/169)).
+  The `retransmit` paragraph separates a sender's resend from a copy the
+  capture point saw twice, and on a sequence-anchored stream the reassembler
+  discards the copy and cites it. A stream without a sequence anchor, such as
+  UDP, has no such exit. The withholding rule makes the copy content, so it is
+  written, and through `0.23` nothing could say it was a copy. A DNS answer seen
+  twice through a mirror port read as two answers. `copy` names the capture
+  point's act: the record repeats its participant's preceding record, and the
+  sender sent once.
+  - **Two `MUST NOT`s make it checkable from one file.** A writer must not set it
+    unless the payload is byte-identical to the participant's preceding
+    record's, nor on a record of a stream whose records carry `seq_start`. A
+    reader **MAY** isolate a session whose `copy` breaks either. A producer that
+    cannot tell leaves it unset. A stage that drops a copy's predecessor clears
+    the flag, and on a decoded record it has no meaning in this version (#171
+    asks what it should mean).
+  - **The reserved mask is `0xFE20`.** `0x0020` stays reserved, because
+    `escape-reserved-flag-bit` sets it.
+  - **Keywords:** `MUST NOT` 44 → 46 (each also counted under `MUST`, 124 →
+    126) and `MAY` 55 → 56.
+  - **Two vectors.** `udp-capture-copy` is a DNS exchange with the answer
+    flagged as copied. Its server extent counts the copy, because the copy is
+    content. `isolate-copy-differs` flags a record whose bytes differ.
+
+### Changed
+
+- **A transport stream's extent is defined, and a FIN's position is owed nothing** ([#168](https://github.com/adamkjonsson/zipline/issues/168)).
+  The extent is the furthest point a placeable record reaches, a zero-length
+  record reaching its own offset. It counts sequence numbers, not bytes, as
+  every transport offset does. This is the arithmetic `check.py`,
+  python-zipline's `check_coverage` and zpfwire already used, now stated, under
+  *Referencing the source by stream offset*. A closing side's final pure ACK is
+  stored at its wire number, one past that side's FIN, so the stream reaches one
+  past its last byte. *Coverage honesty* now says the FIN's position holds no
+  byte and is owed neither a span nor an Undecoded block. A record's reach is
+  not its end: a zero-length FIN ends one past its offset for the merge, but
+  reaches only its offset, so a stream ending in one ends where it sits.
+  - **Who changes.** A decode stage that declared the extent as the end of its
+    data declares one more on such a stream. A coverage check exempts the FIN's
+    position. In python-zipline both change: `StreamView.extent_and_gaps`
+    measures the server's stream in `closed-final-ack` as 4 where `0.24` says 5,
+    and `check_coverage`, which measures 5 already, needs the exemption.
+  - **No byte of any file changes, and no keyword.** No earlier vector stores a
+    record past a FIN.
+  - **Two vectors.** `closed-final-ack` declares extents 8 and 5, and a reader
+    counting bytes gets 4 for the server. `decoded-past-fin` is a pair: a
+    decode stage over the same capture leaves the FIN's position bare, and
+    `check.py` exempts it. The reason the byte-count reading was not taken is
+    in the rationale companion.
+- **A transport record flagged `message` may cross its input's seams** ([#166](https://github.com/adamkjonsson/zipline/issues/166)).
+  `0.22`'s permission let a sessionization stage emit a record whose spans
+  cross input units or a declared break, but only when the record carries
+  `seq_start`. A UDP datagram IP-fragmented inside a tunnel arrives as two
+  records of a unit sequence, and its reassembly carries no `seq_start`. So it
+  had no conformant record, and every such datagram was lost. The permission
+  now names two kinds of evidence of a join: sequence numbers, or one message's
+  reassembly in a record flagged `message`, as from IP fragments or SCTP DATA
+  chunks. The evidence is keyed on the flag rather than on the fragments
+  themselves because a checker can see the flag, while the fragments' IP
+  headers are in the input's bytes. A transport record carrying neither still
+  owes both duties.
+  - **No byte, and no keyword.** The existing `MAY` is rewritten.
+  - **The *Conformance* description of a sessionization stage** said its
+    records carry `seq_start` and may cross seams for that reason. It now names
+    both kinds of evidence, found by the release's sweep.
+  - **An incomplete reassembly**, where a fragment is lost, is settled in the
+    next entry ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
+  - **One pair.** `sessionized-fragments` holds real IPv4 fragments, and
+    `check.py` reassembles them to show that the record's payload is their
+    datagram.
+- **An incomplete reassembly is not content of the stream** ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
+  `0.24`'s `message` permission covers a datagram reassembled whole. Split out
+  of #166 was the datagram that lost a fragment. Its pieces are not a message,
+  and the withholding rule seemed to forbid leaving them out of a UDP stream.
+  §Discontinuity now states the rule's scope. A message-oriented stream's
+  content is its messages, so pieces that never completed are not content, and
+  leaving them out withholds nothing. What makes that honest is a trace, an
+  Undecoded block naming the pieces. A stage reading a `.zpf` owes one under
+  the coverage guarantee. A reassembler reading a capture owes no coverage, so
+  it **MUST** write one against the `capture` source. Either block **SHOULD**
+  carry `reason = undecodable`, pinned as `capture-gap` is.
+  - **Keywords:** `MUST` +1, `SHOULD` 28 → 29. The `MUST` came from
+    python-zipline's review: without it the commonest producer could leave no
+    trace at all, and its file would be byte-identical to one that withheld a
+    whole datagram.
+  - **Two vectors.** `sessionized-fragment-lost` is `sessionized-fragments` with
+    the second fragment lost, built by the same function. `capture-fragment-lost`
+    is the same shape from a capture, its trace against the `capture` source.
+- **A transport record crossing a declared break, both ways** ([#167](https://github.com/adamkjonsson/zipline/issues/167)).
+  `0.22`'s permission lets a `seq_start` record cross input units **or an input
+  Discontinuity**, and only the first half had a vector. `sessionized-across-units`
+  crosses unit seams, which no splice check examines as declared blocks, so an
+  implementation that misapplied the carry duty to transport records passed
+  every vector. python-zipline's `check_splice` did, through `0.6.0.dev0`.
+  `sessionized-across-break` is the conformant pair: flow A's `seq_start` record
+  crosses a declared break in a contiguous packet stream.
+  `isolate-transport-splice` is its mirror, the same record with neither
+  `seq_start` nor `message`, which must be reported. `check.py` reads the
+  packets' TCP headers to show that the crossing's join is real. Suite only:
+  no specification text changes.
+- **Multi-file vectors state merged orders too** ([#163](https://github.com/adamkjonsson/zipline/issues/163)).
+  `0.23`'s `merged` was single-file only, because the files of one entry share
+  session ids and the key named a session alone. A multi-file entry's items now
+  name their file by the stem `files` lists, as `{"file", "session_id",
+  "order"}`. The key is required on a multi-file entry and refused on a
+  single-file one. The ownership rule applies per file. `chain` is the only
+  multi-file vector that owes it, and each of its three orders (`raw` 1 2 3,
+  `decoded` 1 2, `annotated` 1 2) equals stored order. It lands first so the
+  release's new multi-file vectors are held to it. Suite only: no
+  specification text changes.
+
+---
+
 ## [0.23] — 2026-10-14
 
 **The pure-ACK release.** One defect, shipped alone: merge step 2 gave a

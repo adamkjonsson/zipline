@@ -1,4 +1,4 @@
-# Zipline Payload Format — rationale companion (v0.23)
+# Zipline Payload Format — rationale companion (v0.24)
 
 *Why the rules in [the specification](zipline-payload-format.md) are the way they
 are: the argument that produced each one, what an earlier version got wrong, and
@@ -95,10 +95,44 @@ to end.
 whose bytes it cannot attribute to any offset, and a zero-width range is the only
 claim that stays true whatever the writer meant.
 
+**Why an extent counts a FIN's sequence number rather than only bytes**
+([#168](https://github.com/adamkjonsson/zipline/issues/168)).
+The other reading, that a zero-length record extends no extent, is one sentence
+too. But it is a rule written to undo what the offset space already is, and it
+costs evidence. A pure ACK stored after a lost tail segment is the only record
+that the tail was sent:
+
+```
+A: data [0, 100)      lost: [100, 150)      A: pure ACK at 150
+```
+
+Counted in sequence numbers, the extent is 150, and `[100, 150)` is a gap that a
+decode stage must mark. Counted in bytes, it is 100, and the loss vanishes. The
+mirror of the handshake's answer, storing the final ACK on the FIN's own number
+as a SYN record sits at the origin, was tried downstream. python-zipline reported
+that its linearizing writer then stalled on 13 of zpfwire's 22 fixtures, and the
+wire number is what a capture gives a producer anyway. The cost of the reading
+taken is one sentence: the FIN's position is not a hole.
+
 ## Binary encoding (normative reference)
 
 *Field-layout decisions: what a body field costs against an option, why packed
 types state their entry size, and where an alignment choice was forced.*
+
+**Why `copy` is a flag tied to its predecessor, and why it takes `0x0100`**
+([#169](https://github.com/adamkjonsson/zipline/issues/169)). Two other answers
+were weighed. Permitting a stage to withhold an exact copy and cite it
+`duplicate-discarded` contradicts the withholding rule's premise: the block names
+bytes, but nothing ties them to the record they repeat. Saying only that such
+streams may hold copies leaves every reader to deduplicate at its own risk. A
+flag keeps the content in the stream and says what the producer knew. It is
+**tied to the participant's preceding record and to identical bytes** so that a
+reader can check every flagged record without knowing how the producer told a
+copy from a resend. A copy that arrives after another message stays unflagged,
+which costs a mark and never misplaces one. The bit is `0x0100` rather than the
+free `0x0020` because `escape-reserved-flag-bit` sets `0x0020`. Taking it would
+have changed that vector's bytes and its lesson for no gain, since under `0.x`
+no reader of an older minor reads a `0.24` file anyway.
 
 ### Undecoded (`0x21`)
 
@@ -147,6 +181,32 @@ guarantee exists to prevent: the consumer would assert that nothing was there,
 having established only that it could not look.
 
 ### Discontinuity (`0x22`)
+
+**Why an incomplete reassembly is a matter of the withholding rule's scope, not
+an exception to it** ([#170](https://github.com/adamkjonsson/zipline/issues/170)).
+The rule exists because a datagram that never reaches a stream without a
+sequence anchor leaves no trace, and a file that withheld one is byte-identical
+to a file that did not. Neither half holds for fragments that never completed.
+They were never a datagram of the stream, and an Undecoded block marks them.
+For a stage reading a `.zpf`, the coverage guarantee already requires that
+block. For a reassembler reading a capture nothing did, because a block against
+a capture creates no coverage obligation. python-zipline's review of the
+release caught this: the argument held for the stages that need it least. Hence
+the requirement on a capture reassembler to write the block. Exempting the
+commonest producer from the withholding rule without requiring the trace would
+have let its files be byte-identical to ones that withheld whole datagrams. A
+recommendation was weighed instead, and it would have left that open for a
+producer with reasons. Writing the rule an
+exception would have had the same effect on files, but it would have weakened
+the rule's text where only its reach needed saying. Writing the pieces as a
+record without `message` was the other option. It keeps the bytes, but it
+asserts a unit no sender sent, and a reader could not tell it from a whole
+datagram whose writer merely omitted the flag, which the specification only
+recommends for UDP.
+The word pinned is `undecodable` and not `dropped`, because `dropped` asserts
+that content *of the stream* was removed, which is the one thing this argument
+denies. `copy` is the boundary case on the other side: a whole message seen
+twice did reach the stage, is content, and is written.
 
 **Why the output space needs its own marker at all.** Absent the block, a decode
 stage's output space is just the concatenation of its record payloads, so two
